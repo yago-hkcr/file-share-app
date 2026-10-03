@@ -48,8 +48,14 @@ async function initDatabase() {
     }
   }
   if (!db && fs.existsSync(dbPath)) {
-    db = new SQL.Database(fs.readFileSync(dbPath));
-  } else if (!db) {
+    try {
+      db = new SQL.Database(fs.readFileSync(dbPath));
+    } catch (error) {
+      console.warn('Invalid local database snapshot, recreating it:', error.message);
+      fs.unlinkSync(dbPath);
+    }
+  }
+  if (!db) {
     db = new SQL.Database();
   }
 
