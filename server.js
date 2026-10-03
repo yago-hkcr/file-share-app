@@ -235,7 +235,9 @@ app.get('/sala/:slug', (req, res) => {
 
 // =================== AUTH API ===================
 app.post('/api/register', (req, res) => {
-  const { username, email, password } = req.body;
+  const username = String(req.body.username || '').trim();
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
   if (!username || !email || !password) return res.status(400).json({ error: 'Preencha todos os campos' });
   if (password.length < 4) return res.status(400).json({ error: 'Senha mínima: 4 caracteres' });
   if (queryOne('SELECT id FROM users WHERE username = ?', [username]))
@@ -248,7 +250,7 @@ app.post('/api/register', (req, res) => {
   const hash = bcrypt.hashSync(password, 10);
   const color = colors[Math.floor(Math.random() * colors.length)];
   runSql('INSERT INTO users (id, username, email, password_hash, avatar_color) VALUES (?,?,?,?,?)',
-    [id, username.trim(), email.trim().toLowerCase(), hash, color]);
+    [id, username, email, hash, color]);
 
   // Notify admin
   const admins = queryAll("SELECT id FROM users WHERE role = 'admin'");
@@ -261,8 +263,9 @@ app.post('/api/register', (req, res) => {
 });
 
 app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-  const user = queryOne('SELECT * FROM users WHERE username = ? OR email = ?', [username, username]);
+  const identifier = String(req.body.username || '').trim();
+  const password = String(req.body.password || '');
+  const user = queryOne('SELECT * FROM users WHERE username = ? OR email = ?', [identifier, identifier.toLowerCase()]);
   if (!user || !bcrypt.compareSync(password, user.password_hash))
     return res.status(401).json({ error: 'Credenciais inválidas' });
   if (user.status === 'rejected')
