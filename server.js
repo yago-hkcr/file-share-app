@@ -167,7 +167,7 @@ const upload = multer({ storage, limits: { fileSize: 200 * 1024 * 1024 } });
 
 // Auth helpers
 function requireAuth(req, res, next) {
-  if (req.session && req.session.userId) return next();
+  if (req.session && req.session.userId && queryOne('SELECT id FROM users WHERE id = ?', [req.session.userId])) return next();
   res.status(401).json({ error: 'Não autorizado' });
 }
 function requireAdmin(req, res, next) {
@@ -175,7 +175,12 @@ function requireAdmin(req, res, next) {
   res.status(403).json({ error: 'Acesso restrito ao administrador' });
 }
 function requireApproved(req, res, next) {
-  if (req.session && (req.session.status === 'approved' || req.session.role === 'admin')) return next();
+  const user = req.session && req.session.userId ? queryOne('SELECT role, status FROM users WHERE id = ?', [req.session.userId]) : null;
+  if (user) {
+    req.session.role = user.role;
+    req.session.status = user.status;
+  }
+  if (user && (user.status === 'approved' || user.role === 'admin')) return next();
   res.status(403).json({ error: 'Conta aguardando aprovação' });
 }
 
@@ -208,16 +213,23 @@ app.get('/admin', (req, res) => {
 });
 app.get('/dashboard', (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
-  if (req.session.status !== 'approved' && req.session.role !== 'admin') {
+  const user = queryOne('SELECT role, status FROM users WHERE id = ?', [req.session.userId]);
+  if (!user) return res.redirect('/');
+  req.session.role = user.role;
+  req.session.status = user.status;
+  if (user.status !== 'approved' && user.role !== 'admin') {
     return res.sendFile(path.join(__dirname, 'public', 'pending.html'));
   }
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 app.get('/sala/:slug', (req, res) => {
+  if (!req.session || !req.session.userId) return res.redirect('/');
   const room = queryOne('SELECT * FROM rooms WHERE slug = ?', [req.params.slug]);
   if (!room) return res.status(404).send('Sala não encontrada');
+  const user = queryOne('SELECT role, status FROM users WHERE id = ?', [req.session.userId]);
+  if (!user || (user.status !== 'approved' && user.role !== 'admin')) return res.redirect('/dashboard');
   const isMember = req.session && (req.session.role === 'admin' || queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [room.id, req.session.userId]));
-  if (!room.is_public && !isMember) return res.status(403).send('Esta sala é privada');
+  if (user.role !== 'admin' && !isMember) return res.status(403).send('Entre na sala para acessar seus arquivos');
   res.sendFile(path.join(__dirname, 'public', 'sala.html'));
 });
 
@@ -315,7 +327,7 @@ app.post('/api/rooms', requireAdmin, (req, res) => {
   res.json(queryOne('SELECT * FROM rooms WHERE id = ?', [id]));
 });
 
-app.get('/api/rooms', requireAuth, (req, res) => {
+app.get('/api/rooms', requireAuth, requireApproved, (req, res) => {
   let rooms;
   if (req.session.role === 'admin') {
     rooms = queryAll('SELECT * FROM rooms ORDER BY created_at DESC');
@@ -390,7 +402,7 @@ app.delete('/api/rooms/:roomId/members/:userId', requireAdmin, (req, res) => {
 });
 
 // =================== FILES ===================
-app.post('/api/rooms/:id/files', requireAuth, upload.array('files', 20), (req, res) => {
+app.post('/api/rooms/:id/files', requireAuth, requireApproved, upload.array('files', 20), (req, res) => {
   const room = queryOne('SELECT * FROM rooms WHERE id = ?', [req.params.id]);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
   const isAdmin = req.session.role === 'admin';
@@ -417,9 +429,12 @@ app.delete('/api/files/:id', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/download/:fileId', (req, res) => {
+app.get('/download/:fileId', requireAuth, requireApproved, (req, res) => {
   const file = queryOne('SELECT * FROM files WHERE id = ?', [req.params.fileId]);
   if (!file) return res.status(404).send('Arquivo não encontrado');
+  const room = queryOne('SELECT * FROM rooms WHERE id = ?', [file.room_id]);
+  const isMember = req.session.role === 'admin' || !!queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [file.room_id, req.session.userId]);
+  if (!room || !isMember) return res.status(403).send('Sem permissão para baixar este arquivo');
   const fp = path.join(uploadsDir, file.stored_name);
   if (!fs.existsSync(fp)) return res.status(404).send('Arquivo não encontrado');
   res.download(fp, file.original_name);
@@ -456,10 +471,10 @@ app.post('/api/notifications/read', requireAuth, (req, res) => {
 });
 
 // =================== PUBLIC ROOM ===================
-app.get('/api/sala/:slug', (req, res) => {
+app.get('/api/sala/:slug', requireAuth, requireApproved, (req, res) => {
   const room = queryOne('SELECT * FROM rooms WHERE slug = ?', [req.params.slug]);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
-  if (!room.is_public) return res.status(403).json({ error: 'Esta sala é privada' });
+  if (req.session.role !== 'admin' && !queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [room.id, req.session.userId])) return res.status(403).json({ error: 'Entre na sala para acessar seus arquivos' });
   const files = queryAll('SELECT id, original_name, size, mime_type, uploaded_at FROM files WHERE room_id = ? ORDER BY uploaded_at DESC', [room.id]);
   const memberCount = queryAll('SELECT COUNT(*) as c FROM room_members WHERE room_id = ?', [room.id])[0]?.c || 0;
   res.json({ ...room, files, memberCount });
