@@ -39,10 +39,17 @@ async function initDatabase() {
     }
   }
   if (persistentData) {
-    db = new SQL.Database(persistentData);
-  } else if (fs.existsSync(dbPath)) {
+    try {
+      db = new SQL.Database(persistentData);
+    } catch (error) {
+      console.warn('Invalid Blob database snapshot, recreating it:', error.message);
+      persistentData = null;
+      await del(databaseBlobPath, blobOptions).catch(() => {});
+    }
+  }
+  if (!db && fs.existsSync(dbPath)) {
     db = new SQL.Database(fs.readFileSync(dbPath));
-  } else {
+  } else if (!db) {
     db = new SQL.Database();
   }
 
