@@ -9,6 +9,7 @@ const fs = require('fs');
 
 const app = express();
 const PORT = 3000;
+app.set('trust proxy', 1);
 
 const uploadsDir = process.env.VERCEL ? path.join('/tmp', 'uploads') : path.join(__dirname, 'uploads');
 const dataDir = process.env.VERCEL ? path.join('/tmp', 'data') : path.join(__dirname, 'data');
