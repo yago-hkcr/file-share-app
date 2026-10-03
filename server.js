@@ -1,5 +1,5 @@
 const express = require('express');
-const session = require('express-session');
+const cookieSession = require('cookie-session');
 const multer = require('multer');
 const initSqlJs = require('sql.js');
 const bcrypt = require('bcryptjs');
@@ -145,11 +145,13 @@ function migrateDatabase() {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'fileshare-local-development-secret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: Boolean(process.env.VERCEL), sameSite: 'lax' }
+app.use(cookieSession({
+  name: 'fileshare_session',
+  keys: [process.env.SESSION_SECRET || 'fileshare-local-development-secret'],
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  httpOnly: true,
+  secure: Boolean(process.env.VERCEL),
+  sameSite: 'lax'
 }));
 app.use((req, res, next) => {
   ensureDatabase().then(next).catch(next);
@@ -259,7 +261,7 @@ app.post('/api/login', (req, res) => {
   res.json({ success: true, role: user.role, status: user.status });
 });
 
-app.post('/api/logout', (req, res) => { req.session.destroy(); res.json({ success: true }); });
+app.post('/api/logout', (req, res) => { req.session = null; res.json({ success: true }); });
 
 app.get('/api/me', requireAuth, (req, res) => {
   const user = queryOne('SELECT id, username, email, role, status, avatar_color, created_at FROM users WHERE id = ?', [req.session.userId]);

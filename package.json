@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "cookie-session": "^2.1.0",
     "express": "^4.21.1",
-    "express-session": "^1.18.1",
     "multer": "^2.4.0",
     "sql.js": "^1.14.2",
     "uuid": "^11.0.2"
