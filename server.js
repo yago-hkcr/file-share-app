@@ -125,7 +125,7 @@ function saveDb() {
   const data = Buffer.from(db.export());
   fs.writeFileSync(dbPath, data);
   if (blobEnabled) {
-    persistencePromise = persistencePromise.then(() => put(databaseBlobPath, data, { ...blobOptions, addRandomSuffix: false }));
+    persistencePromise = persistencePromise.then(() => put(databaseBlobPath, data, { ...blobOptions, allowOverwrite: true }));
   }
   return persistencePromise;
 }
@@ -450,7 +450,7 @@ app.post('/api/rooms/:id/files', requireAuth, requireApproved, upload.array('fil
 
   const inserted = [];
   for (const file of req.files) {
-    if (blobEnabled) await put(fileBlobPath(file.filename), fs.readFileSync(file.path), { ...blobOptions, addRandomSuffix: false });
+    if (blobEnabled) await put(fileBlobPath(file.filename), fs.readFileSync(file.path), { ...blobOptions, allowOverwrite: true });
     const fid = uuidv4();
     runSql('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type) VALUES (?,?,?,?,?,?,?)',
       [fid, room.id, req.session.userId, file.originalname, file.filename, file.size, file.mimetype]);
