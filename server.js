@@ -4,6 +4,7 @@ const multer = require('multer');
 const initSqlJs = require('sql.js');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const { neon } = require('@neondatabase/serverless');
 const path = require('path');
 const fs = require('fs');
 
@@ -17,13 +18,25 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const dbPath = process.env.VERCEL ? path.join('/tmp', 'database.sqlite') : path.join(dataDir, 'database.sqlite');
+const postgresEnabled = Boolean(process.env.VERCEL && process.env.POSTGRES_URL);
+const sql = postgresEnabled ? neon(process.env.POSTGRES_URL) : null;
 let db;
 let dbInitPromise;
+let postgresInitPromise;
+let persistencePromise = Promise.resolve();
 
 async function initDatabase() {
   if (db) return;
   const SQL = await initSqlJs({ locateFile: () => require.resolve('sql.js/dist/sql-wasm.wasm') });
-  if (fs.existsSync(dbPath)) {
+  let persistentData;
+  if (postgresEnabled) {
+    await ensurePostgres();
+    const rows = await sql`SELECT data FROM fileshare_state WHERE id = 1`;
+    if (rows[0]?.data) persistentData = Buffer.from(rows[0].data);
+  }
+  if (persistentData) {
+    db = new SQL.Database(persistentData);
+  } else if (fs.existsSync(dbPath)) {
     db = new SQL.Database(fs.readFileSync(dbPath));
   } else {
     db = new SQL.Database();
@@ -105,7 +118,15 @@ function ensureDatabase() {
 }
 
 function saveDb() {
-  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  const data = Buffer.from(db.export());
+  fs.writeFileSync(dbPath, data);
+  if (postgresEnabled) {
+    persistencePromise = persistencePromise.then(() => sql`
+      INSERT INTO fileshare_state (id, data, updated_at) VALUES (1, ${data}, NOW())
+      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+    `);
+  }
+  return persistencePromise;
 }
 
 function queryAll(sql, params = []) {
@@ -125,6 +146,35 @@ function queryOne(sql, params = []) {
 function runSql(sql, params = []) {
   db.run(sql, params);
   saveDb();
+}
+
+function ensurePostgres() {
+  if (!postgresEnabled) return Promise.resolve();
+  if (!postgresInitPromise) {
+    postgresInitPromise = Promise.all([
+      sql`CREATE TABLE IF NOT EXISTS fileshare_state (id INTEGER PRIMARY KEY, data BYTEA NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
+      sql`CREATE TABLE IF NOT EXISTS fileshare_files (stored_name TEXT PRIMARY KEY, data BYTEA NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`
+    ]);
+  }
+  return postgresInitPromise;
+}
+
+function saveFileToPostgres(storedName, data) {
+  if (!postgresEnabled) return Promise.resolve();
+  return ensurePostgres().then(() => sql`
+    INSERT INTO fileshare_files (stored_name, data, updated_at) VALUES (${storedName}, ${data}, NOW())
+    ON CONFLICT (stored_name) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+  `);
+}
+
+async function restoreFileFromPostgres(file) {
+  if (!postgresEnabled) return null;
+  await ensurePostgres();
+  const rows = await sql`SELECT data FROM fileshare_files WHERE stored_name = ${file.stored_name}`;
+  if (!rows[0]?.data) return null;
+  const localPath = path.join(uploadsDir, file.stored_name);
+  fs.writeFileSync(localPath, Buffer.from(rows[0].data));
+  return localPath;
 }
 
 function ensureColumn(table, column, definition) {
@@ -156,7 +206,7 @@ app.use(cookieSession({
   sameSite: 'lax'
 }));
 app.use((req, res, next) => {
-  ensureDatabase().then(next).catch(next);
+  ensureDatabase().then(() => persistencePromise).then(next).catch(next);
 });
 
 const storage = multer.diskStorage({
@@ -384,6 +434,7 @@ app.delete('/api/rooms/:id', requireAdmin, async (req, res) => {
   const files = queryAll('SELECT * FROM files WHERE room_id = ?', [req.params.id]);
   for (const file of files) {
     try { fs.unlinkSync(path.join(uploadsDir, file.stored_name)); } catch(e){}
+    if (postgresEnabled) await ensurePostgres().then(() => sql`DELETE FROM fileshare_files WHERE stored_name = ${file.stored_name}`);
   }
   runSql('DELETE FROM files WHERE room_id = ?', [req.params.id]);
   runSql('DELETE FROM room_members WHERE room_id = ?', [req.params.id]);
@@ -416,6 +467,7 @@ app.post('/api/rooms/:id/files', requireAuth, requireApproved, upload.array('fil
 
   const inserted = [];
   for (const file of req.files) {
+    if (postgresEnabled) await saveFileToPostgres(file.filename, fs.readFileSync(file.path));
     const fid = uuidv4();
     runSql('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type) VALUES (?,?,?,?,?,?,?)',
       [fid, room.id, req.session.userId, file.originalname, file.filename, file.size, file.mimetype]);
@@ -430,6 +482,7 @@ app.delete('/api/files/:id', requireAuth, async (req, res) => {
   if (req.session.role !== 'admin' && file.uploaded_by !== req.session.userId)
     return res.status(403).json({ error: 'Sem permissão' });
   try { fs.unlinkSync(path.join(uploadsDir, file.stored_name)); } catch(e){}
+  if (postgresEnabled) await ensurePostgres().then(() => sql`DELETE FROM fileshare_files WHERE stored_name = ${file.stored_name}`);
   runSql('DELETE FROM files WHERE id = ?', [file.id]);
   res.json({ success: true });
 });
@@ -441,6 +494,7 @@ app.get('/download/:fileId', requireAuth, requireApproved, async (req, res) => {
   const isMember = req.session.role === 'admin' || !!queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [file.room_id, req.session.userId]);
   if (!room || !isMember) return res.status(403).send('Sem permissão para baixar este arquivo');
   const fp = path.join(uploadsDir, file.stored_name);
+  if (!fs.existsSync(fp)) await restoreFileFromPostgres(file);
   if (!fs.existsSync(fp)) return res.status(404).send('Arquivo não encontrado');
   res.download(fp, file.original_name);
 });
