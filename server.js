@@ -4,7 +4,6 @@ const multer = require('multer');
 const initSqlJs = require('sql.js');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
-const { put, head, del } = require('@vercel/blob');
 const path = require('path');
 const fs = require('fs');
 
@@ -18,48 +17,15 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const dbPath = process.env.VERCEL ? path.join('/tmp', 'database.sqlite') : path.join(dataDir, 'database.sqlite');
-const blobEnabled = Boolean(process.env.VERCEL && process.env.BLOB_STORE_ID);
-const blobOptions = { access: 'private', storeId: process.env.BLOB_STORE_ID, oidcToken: process.env.VERCEL_OIDC_TOKEN };
-const databaseBlobPath = 'database.sqlite';
 let db;
 let dbInitPromise;
-let persistencePromise = Promise.resolve();
 
 async function initDatabase() {
   if (db) return;
   const SQL = await initSqlJs({ locateFile: () => require.resolve('sql.js/dist/sql-wasm.wasm') });
-  let persistentData;
-  if (blobEnabled) {
-    try {
-      const blob = await head(databaseBlobPath, blobOptions);
-      const response = await fetch(blob.downloadUrl || blob.url);
-      persistentData = Buffer.from(await response.arrayBuffer());
-    } catch (error) {
-      if (error.name !== 'BlobNotFoundError') console.warn('Blob database unavailable:', error.message);
-    }
-  }
-  if (persistentData) {
-    try {
-      db = new SQL.Database(persistentData);
-      db.exec('SELECT name FROM sqlite_master LIMIT 1');
-    } catch (error) {
-      console.warn('Invalid Blob database snapshot, recreating it:', error.message);
-      db = null;
-      persistentData = null;
-      await del(databaseBlobPath, blobOptions).catch(() => {});
-    }
-  }
-  if (!db && fs.existsSync(dbPath)) {
-    try {
-      db = new SQL.Database(fs.readFileSync(dbPath));
-      db.exec('SELECT name FROM sqlite_master LIMIT 1');
-    } catch (error) {
-      console.warn('Invalid local database snapshot, recreating it:', error.message);
-      db = null;
-      fs.unlinkSync(dbPath);
-    }
-  }
-  if (!db) {
+  if (fs.existsSync(dbPath)) {
+    db = new SQL.Database(fs.readFileSync(dbPath));
+  } else {
     db = new SQL.Database();
   }
 
@@ -130,7 +96,7 @@ async function initDatabase() {
       [adminId, 'admin', 'admin@fileshare.com', hash, 'admin', 'approved', '#ef4444']);
     console.log('✅ Admin criado');
   }
-  await saveDb();
+  saveDb();
 }
 
 function ensureDatabase() {
@@ -139,16 +105,7 @@ function ensureDatabase() {
 }
 
 function saveDb() {
-  const data = Buffer.from(db.export());
-  fs.writeFileSync(dbPath, data);
-  if (blobEnabled) {
-    persistencePromise = persistencePromise
-      .then(() => put(databaseBlobPath, data, { ...blobOptions, allowOverwrite: true }))
-      .catch(error => {
-        console.error('Blob database save failed:', JSON.stringify(error));
-      });
-  }
-  return persistencePromise;
+  fs.writeFileSync(dbPath, Buffer.from(db.export()));
 }
 
 function queryAll(sql, params = []) {
@@ -185,20 +142,6 @@ function migrateDatabase() {
   saveDb();
 }
 
-function fileBlobPath(storedName) {
-  return `files/${storedName}`;
-}
-
-async function restoreFileFromBlob(file) {
-  const localPath = path.join(uploadsDir, file.stored_name);
-  if (fs.existsSync(localPath) || !blobEnabled) return localPath;
-  const blob = await head(fileBlobPath(file.stored_name), blobOptions);
-  const response = await fetch(blob.downloadUrl || blob.url);
-  if (!response.ok) throw new Error('Arquivo remoto indisponível');
-  fs.writeFileSync(localPath, Buffer.from(await response.arrayBuffer()));
-  return localPath;
-}
-
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -213,7 +156,7 @@ app.use(cookieSession({
   sameSite: 'lax'
 }));
 app.use((req, res, next) => {
-  ensureDatabase().then(() => persistencePromise).then(next).catch(next);
+  ensureDatabase().then(next).catch(next);
 });
 
 const storage = multer.diskStorage({
@@ -438,7 +381,6 @@ app.delete('/api/rooms/:id', requireAdmin, async (req, res) => {
   const files = queryAll('SELECT * FROM files WHERE room_id = ?', [req.params.id]);
   for (const file of files) {
     try { fs.unlinkSync(path.join(uploadsDir, file.stored_name)); } catch(e){}
-    if (blobEnabled) await del(fileBlobPath(file.stored_name), blobOptions).catch(() => {});
   }
   runSql('DELETE FROM files WHERE room_id = ?', [req.params.id]);
   runSql('DELETE FROM room_members WHERE room_id = ?', [req.params.id]);
@@ -471,7 +413,6 @@ app.post('/api/rooms/:id/files', requireAuth, requireApproved, upload.array('fil
 
   const inserted = [];
   for (const file of req.files) {
-    if (blobEnabled) await put(fileBlobPath(file.filename), fs.readFileSync(file.path), { ...blobOptions, allowOverwrite: true });
     const fid = uuidv4();
     runSql('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type) VALUES (?,?,?,?,?,?,?)',
       [fid, room.id, req.session.userId, file.originalname, file.filename, file.size, file.mimetype]);
@@ -486,7 +427,6 @@ app.delete('/api/files/:id', requireAuth, async (req, res) => {
   if (req.session.role !== 'admin' && file.uploaded_by !== req.session.userId)
     return res.status(403).json({ error: 'Sem permissão' });
   try { fs.unlinkSync(path.join(uploadsDir, file.stored_name)); } catch(e){}
-  if (blobEnabled) await del(fileBlobPath(file.stored_name), blobOptions);
   runSql('DELETE FROM files WHERE id = ?', [file.id]);
   res.json({ success: true });
 });
@@ -497,8 +437,8 @@ app.get('/download/:fileId', requireAuth, requireApproved, async (req, res) => {
   const room = queryOne('SELECT * FROM rooms WHERE id = ?', [file.room_id]);
   const isMember = req.session.role === 'admin' || !!queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [file.room_id, req.session.userId]);
   if (!room || !isMember) return res.status(403).send('Sem permissão para baixar este arquivo');
-  let fp;
-  try { fp = await restoreFileFromBlob(file); } catch (error) { return res.status(404).send('Arquivo não encontrado'); }
+  const fp = path.join(uploadsDir, file.stored_name);
+  if (!fs.existsSync(fp)) return res.status(404).send('Arquivo não encontrado');
   res.download(fp, file.original_name);
 });
 
