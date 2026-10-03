@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FileShare - Salas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
+    .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
+    .dashboard-intro h2 { color:var(--gray-900); margin-bottom:4px; }
+    .dashboard-intro p { color:var(--gray-500); }
+    .rooms-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:20px; }
+    .room-card { display:flex; flex-direction:column; min-height:220px; }
+    .room-card-body { flex:1; }
+    .room-card h3 { margin-bottom:6px; color:var(--gray-900); }
+    .room-description { color:var(--gray-500); min-height:48px; }
+    .room-meta { display:flex; gap:16px; color:var(--gray-500); font-size:13px; margin:18px 0; }
+    .room-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .empty-state { text-align:center; padding:52px 20px; color:var(--gray-500); }
+    .empty-state i { font-size:42px; margin-bottom:12px; color:var(--gray-300); }
+    .profile-pill { display:flex; align-items:center; gap:8px; color:var(--gray-700); font-size:14px; }
+    .avatar { flex:none; }
+    .modal-content { max-width:720px; }
+    .file-list { display:grid; gap:8px; margin-top:12px; }
+    .file-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; background:var(--gray-50); border-radius:var(--radius-sm); }
+    .file-row-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .chat-list { max-height:280px; overflow:auto; display:grid; gap:8px; margin-bottom:14px; }
+    .chat-message { padding:8px 10px; background:var(--gray-100); border-radius:var(--radius-sm); }
+    .chat-message strong { color:var(--primary); }
+    @media (max-width:640px) { .dashboard-content { padding:20px 14px; } .dashboard-intro { align-items:flex-start; flex-direction:column; } .header { padding:14px 16px; } .header-right .profile-pill { display:none; } }
+  </style>
+</head>
+<body class="app-page">
+  <header class="header">
+    <div class="header-left"><i class="fas fa-share-alt header-logo"></i><h1>FileShare</h1><span class="badge">Salas</span></div>
+    <div class="header-right">
+      <span class="profile-pill"><span class="avatar" id="userAvatar"></span><span id="userName">Carregando...</span></span>
+      <button class="btn btn-sm btn-outline" onclick="showPasswordModal()" title="Alterar senha"><i class="fas fa-key"></i></button>
+      <button class="btn btn-sm btn-danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
+    </div>
+  </header>
+
+  <main class="dashboard-content">
+    <div class="dashboard-intro">
+      <div><h2><i class="fas fa-door-open"></i> Suas salas</h2><p>Entre em uma sala para compartilhar e encontrar arquivos.</p></div>
+      <button class="btn btn-outline" onclick="loadRooms()"><i class="fas fa-sync-alt"></i> Atualizar</button>
+    </div>
+    <div id="roomsGrid" class="rooms-grid"><div class="loading"><i class="fas fa-spinner fa-spin"></i> Carregando salas...</div></div>
+  </main>
+
+  <div id="roomModal" class="modal" style="display:none;">
+    <div class="modal-overlay" onclick="closeRoom()"></div>
+    <div class="modal-content modal-lg">
+      <div class="modal-header"><h3 id="roomModalTitle">Sala</h3><button class="modal-close" onclick="closeRoom()">&times;</button></div>
+      <div class="modal-body">
+        <div id="roomFiles" class="file-list"></div>
+        <form id="uploadForm" style="margin-top:18px;">
+          <label class="btn btn-primary" style="cursor:pointer;"><i class="fas fa-upload"></i> Enviar arquivos<input id="fileInput" type="file" multiple hidden></label>
+          <span id="uploadStatus" class="text-muted"></span>
+        </form>
+        <hr style="margin:22px 0;border:0;border-top:1px solid var(--gray-200);">
+        <h4><i class="fas fa-comments"></i> Chat</h4>
+        <div id="chatList" class="chat-list"></div>
+        <form id="messageForm" class="form-row"><input id="messageInput" type="text" placeholder="Escreva uma mensagem..." required><button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane"></i></button></form>
+      </div>
+    </div>
+  </div>
+
+  <div id="passwordModal" class="modal" style="display:none;">
+    <div class="modal-overlay" onclick="closePasswordModal()"></div>
+    <div class="modal-content"><div class="modal-header"><h3>Alterar senha</h3><button class="modal-close" onclick="closePasswordModal()">&times;</button></div><div class="modal-body"><div class="form-group"><label>Senha atual</label><input id="currentPassword" type="password" required></div><div class="form-group"><label>Nova senha</label><input id="newPassword" type="password" required minlength="4"></div></div><div class="modal-footer"><button class="btn btn-primary" onclick="changePassword()">Salvar</button></div></div>
+  </div>
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script>
+    let currentRoom = null;
+    const esc = value => { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; };
+    const formatSize = bytes => { if (!bytes) return '0 B'; const units = ['B','KB','MB','GB']; const i = Math.floor(Math.log(bytes) / Math.log(1024)); return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`; };
+    function toast(message, type='success') { const item = document.createElement('div'); item.className = `toast toast-${type} show`; item.textContent = message; document.getElementById('toastContainer').appendChild(item); setTimeout(() => item.remove(), 3000); }
+    async function api(url, options) { const response = await fetch(url, options); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação'); return data; }
+    async function loadUser() { try { const user = await api('/api/me'); document.getElementById('userName').textContent = user.username; const avatar = document.getElementById('userAvatar'); avatar.textContent = user.username[0].toUpperCase(); avatar.style.background = user.avatar_color; } catch (error) { window.location.href = '/'; } }
+    async function loadRooms() { const grid = document.getElementById('roomsGrid'); try { const rooms = await api('/api/rooms'); if (!rooms.length) { grid.innerHTML = '<div class="empty-state"><i class="fas fa-door-open"></i><h3>Nenhuma sala disponível</h3><p>O administrador ainda não criou uma sala para você.</p></div>'; return; } grid.innerHTML = rooms.map(room => `<article class="card room-card"><div class="room-card-body"><div class="room-card-header"><i class="fas fa-folder-open"></i><span class="badge ${room.is_public ? 'badge-green' : 'badge-yellow'}">${room.is_public ? 'Pública' : 'Privada'}</span></div><h3>${esc(room.name)}</h3><p class="room-description">${esc(room.description || 'Sem descrição')}</p><div class="room-meta"><span><i class="fas fa-file"></i> ${room.fileCount} arquivo(s)</span><span><i class="fas fa-users"></i> ${room.memberCount}</span></div></div><div class="room-actions">${room.isMember ? `<button class="btn btn-primary" onclick="openRoom('${room.id}', '${esc(room.name)}')"><i class="fas fa-folder-open"></i> Abrir</button><button class="btn btn-outline btn-danger" onclick="leaveRoom('${room.id}')"><i class="fas fa-sign-out-alt"></i> Sair</button>` : `<button class="btn btn-primary" onclick="joinRoom('${room.id}')"><i class="fas fa-door-open"></i> Entrar na sala</button>`}<a class="btn btn-outline" href="/sala/${encodeURIComponent(room.slug)}" target="_blank"><i class="fas fa-link"></i> Link público</a></div></article>`).join(''); } catch (error) { grid.innerHTML = `<div class="alert alert-error">${esc(error.message)}</div>`; } }
+    async function joinRoom(id) { try { await api(`/api/rooms/${id}/join`, { method:'POST' }); toast('Você entrou na sala'); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
+    async function leaveRoom(id) { if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${id}/leave`, { method:'POST' }); toast('Você saiu da sala'); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
+    async function openRoom(id, name) { currentRoom = id; document.getElementById('roomModalTitle').textContent = name; document.getElementById('roomModal').style.display = 'flex'; await Promise.all([loadFiles(), loadMessages()]); }
+    function closeRoom() { currentRoom = null; document.getElementById('roomModal').style.display = 'none'; }
+    async function loadFiles() { const rooms = await api('/api/rooms'); const room = rooms.find(item => item.id === currentRoom); const list = document.getElementById('roomFiles'); list.innerHTML = room && room.files.length ? room.files.map(file => `<div class="file-row"><span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)} <small class="text-muted">(${formatSize(file.size)})</small></span><a class="btn btn-sm btn-outline" href="/download/${file.id}"><i class="fas fa-download"></i></a></div>`).join('') : '<div class="empty-state"><i class="fas fa-inbox"></i><p>Nenhum arquivo nesta sala.</p></div>'; }
+    async function loadMessages() { const messages = await api(`/api/rooms/${currentRoom}/messages`); document.getElementById('chatList').innerHTML = messages.length ? messages.map(message => `<div class="chat-message"><strong>${esc(message.username)}</strong> ${esc(message.content)}</div>`).join('') : '<p class="text-muted">Ainda não há mensagens.</p>'; }
+    document.getElementById('uploadForm').addEventListener('submit', async event => { event.preventDefault(); const input = document.getElementById('fileInput'); if (!input.files.length) return; const form = new FormData(); [...input.files].forEach(file => form.append('files', file)); try { await api(`/api/rooms/${currentRoom}/files`, { method:'POST', body:form }); input.value = ''; document.getElementById('uploadStatus').textContent = ' Enviado'; toast('Arquivos enviados'); loadFiles(); loadRooms(); } catch (error) { toast(error.message, 'error'); } });
+    document.getElementById('messageForm').addEventListener('submit', async event => { event.preventDefault(); const input = document.getElementById('messageInput'); try { await api(`/api/rooms/${currentRoom}/messages`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content:input.value}) }); input.value = ''; loadMessages(); } catch (error) { toast(error.message, 'error'); } });
+    function showPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
+    function closePasswordModal() { document.getElementById('passwordModal').style.display = 'none'; }
+    async function changePassword() { try { await api('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ currentPassword:document.getElementById('currentPassword').value, newPassword:document.getElementById('newPassword').value }) }); closePasswordModal(); toast('Senha alterada'); } catch (error) { toast(error.message, 'error'); } }
+    async function logout() { await fetch('/api/logout', { method:'POST' }); window.location.href = '/'; }
+    document.querySelector('.btn-danger').addEventListener('click', logout);
+    loadUser(); loadRooms();
+  </script>
+</body>
+</html>

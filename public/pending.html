@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FileShare - Aguardando Aprovação</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-container">
+    <div class="auth-card" style="text-align:center;">
+      <div class="pending-icon">
+        <i class="fas fa-hourglass-half"></i>
+      </div>
+      <h1 style="margin-bottom:12px;">Aguardando Aprovação</h1>
+      <p style="color:#6b7280;margin-bottom:24px;line-height:1.7;">
+        Sua conta foi criada com sucesso!<br>
+        O administrador precisa aprovar seu acesso antes que você possa usar o sistema.<br>
+        Você receberá acesso assim que for aprovado.
+      </p>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <button class="btn btn-outline" onclick="checkStatus()"><i class="fas fa-sync-alt"></i> Verificar Status</button>
+        <button class="btn btn-danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
+      </div>
+      <div id="statusMsg" class="alert" style="display:none;margin-top:16px;"></div>
+    </div>
+  </div>
+  <script>
+    async function checkStatus() {
+      const msg = document.getElementById('statusMsg');
+      try {
+        const res = await fetch('/api/me');
+        const data = await res.json();
+        if (data.status === 'approved') {
+          msg.className = 'alert alert-success';
+          msg.innerHTML = '<i class="fas fa-check-circle"></i> Sua conta foi aprovada! Redirecionando...';
+          msg.style.display = 'block';
+          setTimeout(() => window.location.href = '/dashboard', 1500);
+        } else {
+          msg.className = 'alert alert-warning';
+          msg.innerHTML = '<i class="fas fa-clock"></i> Ainda aguardando aprovação...';
+          msg.style.display = 'block';
+        }
+      } catch(e) {
+        msg.className = 'alert alert-error';
+        msg.textContent = 'Erro ao verificar';
+        msg.style.display = 'block';
+      }
+    }
+    async function logout() {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/';
+    }
+  </script>
+</body>
+</html>

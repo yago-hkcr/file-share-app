@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FileShare - Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="app-page">
+  <header class="header">
+    <div class="header-left">
+      <i class="fas fa-share-alt header-logo"></i>
+      <h1>FileShare</h1>
+      <span class="badge badge-red">Admin</span>
+    </div>
+    <div class="header-right">
+      <button class="btn btn-sm btn-outline notif-btn" onclick="showNotifs()" id="notifBtn">
+        <i class="fas fa-bell"></i><span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+      </button>
+      <button class="btn btn-sm btn-outline" onclick="showPasswordModal()"><i class="fas fa-key"></i></button>
+      <button class="btn btn-sm btn-danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
+    </div>
+  </header>
+
+  <div class="app-layout">
+    <nav class="sidebar">
+      <button class="nav-item active" onclick="showTab('stats')"><i class="fas fa-chart-bar"></i> Dashboard</button>
+      <button class="nav-item" onclick="showTab('users')"><i class="fas fa-users"></i> Usuários <span class="nav-badge" id="pendingBadge" style="display:none;"></span></button>
+      <button class="nav-item" onclick="showTab('rooms')"><i class="fas fa-door-open"></i> Salas</button>
+      <button class="nav-item" onclick="showTab('create-room')"><i class="fas fa-plus-circle"></i> Nova Sala</button>
+    </nav>
+
+    <main class="main-content">
+      <!-- Stats Tab -->
+      <div id="tab-stats" class="tab-content active">
+        <h2><i class="fas fa-chart-bar"></i> Dashboard</h2>
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-card"><div class="stat-icon" style="background:#4f46e5;"><i class="fas fa-users"></i></div><div><div class="stat-value" id="statUsers">-</div><div class="stat-label">Usuários</div></div></div>
+          <div class="stat-card"><div class="stat-icon" style="background:#f59e0b;"><i class="fas fa-user-clock"></i></div><div><div class="stat-value" id="statPending">-</div><div class="stat-label">Pendentes</div></div></div>
+          <div class="stat-card"><div class="stat-icon" style="background:#22c55e;"><i class="fas fa-door-open"></i></div><div><div class="stat-value" id="statRooms">-</div><div class="stat-label">Salas</div></div></div>
+          <div class="stat-card"><div class="stat-icon" style="background:#8b5cf6;"><i class="fas fa-file"></i></div><div><div class="stat-value" id="statFiles">-</div><div class="stat-label">Arquivos</div></div></div>
+        </div>
+      </div>
+
+      <!-- Users Tab -->
+      <div id="tab-users" class="tab-content">
+        <h2><i class="fas fa-users"></i> Gerenciar Usuários</h2>
+        <div id="usersList"></div>
+      </div>
+
+      <!-- Rooms Tab -->
+      <div id="tab-rooms" class="tab-content">
+        <h2><i class="fas fa-door-open"></i> Gerenciar Salas</h2>
+        <div id="roomsList"></div>
+      </div>
+
+      <!-- Create Room Tab -->
+      <div id="tab-create-room" class="tab-content">
+        <h2><i class="fas fa-plus-circle"></i> Criar Nova Sala</h2>
+        <div class="card" style="max-width:600px;">
+          <form id="createRoomForm">
+            <div class="form-group">
+              <label>Nome da Sala *</label>
+              <input type="text" id="roomName" placeholder="Ex: Projeto Alpha" required>
+            </div>
+            <div class="form-group">
+              <label>Descrição</label>
+              <input type="text" id="roomDesc" placeholder="Descrição da sala">
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="roomPublic"> Sala pública (visível para todos os usuários aprovados)
+              </label>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Criar Sala</button>
+          </form>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Notifications Panel -->
+  <div id="notifPanel" class="slide-panel" style="display:none;">
+    <div class="slide-panel-overlay" onclick="hideNotifs()"></div>
+    <div class="slide-panel-content">
+      <div class="slide-panel-header"><h3><i class="fas fa-bell"></i> Notificações</h3><button onclick="hideNotifs()">&times;</button></div>
+      <div id="notifList" class="slide-panel-body"></div>
+      <div class="slide-panel-footer"><button class="btn btn-sm btn-outline btn-full" onclick="markAllRead()">Marcar todas como lidas</button></div>
+    </div>
+  </div>
+
+  <!-- Modals -->
+  <div id="confirmModal" class="modal" style="display:none;">
+    <div class="modal-overlay" onclick="closeModal('confirmModal')"></div>
+    <div class="modal-content">
+      <div class="modal-header"><h3 id="modalTitle">Confirmar</h3><button class="modal-close" onclick="closeModal('confirmModal')">&times;</button></div>
+      <div class="modal-body"><p id="modalText"></p></div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('confirmModal')">Cancelar</button><button class="btn btn-danger" id="modalConfirmBtn">Confirmar</button></div>
+    </div>
+  </div>
+  <div id="passwordModal" class="modal" style="display:none;">
+    <div class="modal-overlay" onclick="closeModal('passwordModal')"></div>
+    <div class="modal-content">
+      <div class="modal-header"><h3><i class="fas fa-key"></i> Alterar Senha</h3><button class="modal-close" onclick="closeModal('passwordModal')">&times;</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>Senha Atual</label><input type="password" id="curPass"></div>
+        <div class="form-group"><label>Nova Senha</label><input type="password" id="newPass"></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('passwordModal')">Cancelar</button><button class="btn btn-primary" onclick="changePassword()">Salvar</button></div>
+    </div>
+  </div>
+  <div id="membersModal" class="modal" style="display:none;">
+    <div class="modal-overlay" onclick="closeModal('membersModal')"></div>
+    <div class="modal-content modal-lg">
+      <div class="modal-header"><h3><i class="fas fa-users"></i> Membros da Sala</h3><button class="modal-close" onclick="closeModal('membersModal')">&times;</button></div>
+      <div class="modal-body" id="membersModalBody"></div>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script>
+    function showToast(msg, type='success') {
+      const c = document.getElementById('toastContainer');
+      const t = document.createElement('div');
+      t.className = 'toast toast-'+type;
+      const icons = {success:'check-circle',error:'times-circle',info:'info-circle',warning:'exclamation-triangle'};
+      t.innerHTML = '<i class="fas fa-'+icons[type]+'"></i> '+msg;
+      c.appendChild(t);
+      setTimeout(() => t.classList.add('show'), 10);
+      setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
+    }
+    function esc(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
+    function fmtSize(b) { if(!b)return '0 B'; const k=1024,s=['B','KB','MB','GB']; const i=Math.floor(Math.log(b)/Math.log(k)); return parseFloat((b/Math.pow(k,i)).toFixed(1))+' '+s[i]; }
+    function fmtDate(d) { if(!d)return ''; return new Date(d+'Z').toLocaleDateString('pt-BR')+' '+new Date(d+'Z').toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+    function fileIcon(m) { if(!m)return 'fa-file'; if(m.startsWith('image/'))return 'fa-file-image'; if(m.startsWith('video/'))return 'fa-file-video'; if(m.startsWith('audio/'))return 'fa-file-audio'; if(m.includes('pdf'))return 'fa-file-pdf'; if(m.includes('zip')||m.includes('rar'))return 'fa-file-zipper'; return 'fa-file'; }
+
+    // Tabs
+    function showTab(name) {
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.getElementById('tab-'+name).classList.add('active');
+      const tabIndex = ['stats', 'users', 'rooms', 'create-room'].indexOf(name);
+      if (tabIndex >= 0) document.querySelectorAll('.nav-item')[tabIndex].classList.add('active');
+      if (name==='users') loadUsers();
+      if (name==='rooms') loadRooms();
+      if (name==='stats') loadStats();
+    }
+
+    // Stats
+    async function loadStats() {
+      const res = await fetch('/api/admin/stats');
+      const s = await res.json();
+      document.getElementById('statUsers').textContent = s.totalUsers;
+      document.getElementById('statPending').textContent = s.pendingUsers;
+      document.getElementById('statRooms').textContent = s.totalRooms;
+      document.getElementById('statFiles').textContent = s.totalFiles;
+      if (s.pendingUsers > 0) {
+        const b = document.getElementById('pendingBadge');
+        b.textContent = s.pendingUsers; b.style.display = 'inline';
+      }
+    }
+
+    // Users
+    async function loadUsers() {
+      const res = await fetch('/api/admin/users');
+      const users = await res.json();
+      const c = document.getElementById('usersList');
+      if (!users.length) { c.innerHTML='<div class="empty-state"><i class="fas fa-users"></i><p>Nenhum usuário</p></div>'; return; }
+      c.innerHTML = users.map(u => {
+        const statusMap = {pending:{label:'Pendente',cls:'badge-yellow',icon:'clock'},approved:{label:'Aprovado',cls:'badge-green',icon:'check'},rejected:{label:'Rejeitado',cls:'badge-red',icon:'times'}};
+        const st = statusMap[u.status] || statusMap.pending;
+        return `<div class="card card-row">
+          <div class="avatar" style="background:${u.avatar_color}">${esc(u.username[0].toUpperCase())}</div>
+          <div class="card-row-info">
+            <strong>${esc(u.username)}</strong> ${u.role==='admin'?'<span class="badge badge-red">Admin</span>':''}
+            <div class="text-muted">${esc(u.email)} · ${fmtDate(u.created_at)}</div>
+          </div>
+          <span class="badge ${st.cls}"><i class="fas fa-${st.icon}"></i> ${st.label}</span>
+          <div class="card-row-actions">
+            ${u.status==='pending'?`<button class="btn btn-sm btn-success" onclick="approveUser('${u.id}')"><i class="fas fa-check"></i> Aprovar</button>
+            <button class="btn btn-sm btn-danger" onclick="rejectUser('${u.id}')"><i class="fas fa-times"></i> Rejeitar</button>`:''}
+            ${u.role!=='admin'?`<button class="btn btn-sm btn-outline btn-danger" onclick="confirmAction('Excluir usuário ${esc(u.username)}?',()=>deleteUser('${u.id}'))"><i class="fas fa-trash"></i></button>`:''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+    async function approveUser(id) { await fetch('/api/admin/users/'+id+'/approve',{method:'POST'}); showToast('Usuário aprovado!'); loadUsers(); loadStats(); }
+    async function rejectUser(id) { await fetch('/api/admin/users/'+id+'/reject',{method:'POST'}); showToast('Usuário rejeitado','warning'); loadUsers(); }
+    async function deleteUser(id) { await fetch('/api/admin/users/'+id,{method:'DELETE'}); showToast('Usuário excluído'); loadUsers(); loadStats(); }
+
+    // Rooms
+    async function loadRooms() {
+      const res = await fetch('/api/rooms');
+      const rooms = await res.json();
+      const c = document.getElementById('roomsList');
+      if (!rooms.length) { c.innerHTML='<div class="empty-state"><i class="fas fa-door-open"></i><p>Nenhuma sala criada</p></div>'; return; }
+      c.innerHTML = rooms.map(r => `
+        <div class="card room-card-admin">
+          <div class="room-card-top">
+            <div>
+              <h3><i class="fas fa-door-open" style="color:var(--primary)"></i> ${esc(r.name)}</h3>
+              ${r.description?`<p class="text-muted">${esc(r.description)}</p>`:''}
+            </div>
+            <div class="room-badges">
+              ${r.is_public?'<span class="badge badge-green"><i class="fas fa-globe"></i> Pública</span>':'<span class="badge badge-yellow"><i class="fas fa-lock"></i> Privada</span>'}
+              <span class="badge badge-blue"><i class="fas fa-users"></i> ${r.memberCount}</span>
+              <span class="badge"><i class="fas fa-file"></i> ${r.fileCount}</span>
+            </div>
+          </div>
+          <div class="room-link-bar">
+            <i class="fas fa-link"></i>
+            <a href="/sala/${r.slug}" target="_blank">${location.origin}/sala/${r.slug}</a>
+            <button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText('${location.origin}/sala/${r.slug}');showToast('Link copiado!','info')"><i class="fas fa-copy"></i></button>
+          </div>
+          <div class="room-actions-bar">
+            <button class="btn btn-sm btn-outline" onclick="showMembers('${r.id}')"><i class="fas fa-users-cog"></i> Membros</button>
+            <label class="btn btn-sm btn-primary" style="cursor:pointer;"><i class="fas fa-upload"></i> Upload
+              <input type="file" multiple style="display:none;" onchange="uploadFiles('${r.id}',this.files)">
+            </label>
+            <button class="btn btn-sm btn-danger" onclick="confirmAction('Excluir sala ${esc(r.name)}?',()=>deleteRoom('${r.id}'))"><i class="fas fa-trash"></i> Excluir</button>
+          </div>
+          ${r.files.length?`<div class="room-files-list">${r.files.map(f=>`
+            <div class="file-row">
+              <i class="fas ${fileIcon(f.mime_type)}" style="color:var(--primary)"></i>
+              <span class="file-row-name">${esc(f.original_name)}</span>
+              <span class="text-muted">${fmtSize(f.size)}</span>
+              <span class="text-muted">${f.uploader||''}</span>
+              <a href="/download/${f.id}" class="btn btn-sm btn-outline"><i class="fas fa-download"></i></a>
+              <button class="btn btn-sm btn-danger" onclick="deleteFile('${f.id}')"><i class="fas fa-trash"></i></button>
+            </div>`).join('')}</div>`:'<p class="text-muted" style="padding:12px 16px;">Nenhum arquivo</p>'}
+        </div>
+      `).join('');
+    }
+
+    async function deleteRoom(id) { await fetch('/api/rooms/'+id,{method:'DELETE'}); showToast('Sala excluída'); loadRooms(); loadStats(); }
+    async function deleteFile(id) { await fetch('/api/files/'+id,{method:'DELETE'}); showToast('Arquivo excluído'); loadRooms(); }
+    async function uploadFiles(roomId, files) {
+      if(!files.length) return;
+      showToast('Enviando...','info');
+      const fd = new FormData();
+      for(const f of files) fd.append('files',f);
+      const res = await fetch('/api/rooms/'+roomId+'/files',{method:'POST',body:fd});
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return showToast(data.error || 'Erro ao enviar arquivos', 'error');
+      showToast('Arquivos enviados!'); loadRooms();
+    }
+
+    // Members modal
+    async function showMembers(roomId) {
+      const [roomsRes, usersRes] = await Promise.all([fetch('/api/rooms'), fetch('/api/admin/users')]);
+      const rooms = await roomsRes.json();
+      const allUsers = await usersRes.json();
+      const room = rooms.find(r=>r.id===roomId);
+      if(!room) return;
+      const approvedUsers = allUsers.filter(u=>u.status==='approved'&&u.role!=='admin');
+      const memberIds = room.members.map(m=>m.id);
+      const body = document.getElementById('membersModalBody');
+      body.innerHTML = `
+        <h4>Membros atuais (${room.members.length})</h4>
+        ${room.members.length?room.members.map(m=>`
+          <div class="card-row" style="padding:8px 0;">
+            <div class="avatar avatar-sm" style="background:${m.avatar_color}">${m.username[0].toUpperCase()}</div>
+            <span><strong>${esc(m.username)}</strong></span>
+            <button class="btn btn-sm btn-danger" onclick="removeMember('${roomId}','${m.id}')"><i class="fas fa-times"></i></button>
+          </div>
+        `).join(''):'<p class="text-muted">Nenhum membro</p>'}
+        <hr style="margin:16px 0;">
+        <h4>Adicionar Membro</h4>
+        ${approvedUsers.filter(u=>!memberIds.includes(u.id)).map(u=>`
+          <div class="card-row" style="padding:8px 0;">
+            <div class="avatar avatar-sm" style="background:${u.avatar_color}">${u.username[0].toUpperCase()}</div>
+            <span>${esc(u.username)}</span>
+            <button class="btn btn-sm btn-success" onclick="addMember('${roomId}','${u.id}')"><i class="fas fa-plus"></i></button>
+          </div>
+        `).join('')||'<p class="text-muted">Todos os usuários já são membros</p>'}
+      `;
+      document.getElementById('membersModal').style.display='flex';
+    }
+    async function addMember(roomId, userId) {
+      await fetch('/api/rooms/'+roomId+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId})});
+      showToast('Membro adicionado!'); showMembers(roomId); loadRooms();
+    }
+    async function removeMember(roomId, userId) {
+      await fetch('/api/rooms/'+roomId+'/members/'+userId,{method:'DELETE'});
+      showToast('Membro removido'); showMembers(roomId); loadRooms();
+    }
+
+    // Create room
+    document.getElementById('createRoomForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const res = await fetch('/api/rooms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        name:document.getElementById('roomName').value,
+        description:document.getElementById('roomDesc').value,
+        is_public:document.getElementById('roomPublic').checked
+      })});
+      const data = await res.json().catch(() => ({}));
+      if(res.ok) { showToast('Sala criada!'); document.getElementById('createRoomForm').reset(); showTab('rooms'); }
+      else showToast(data.error || 'Erro ao criar sala','error');
+    });
+
+    // Notifications
+    async function loadNotifCount() {
+      const res = await fetch('/api/me'); const data = await res.json();
+      const b = document.getElementById('notifBadge');
+      if(data.unread_notifications > 0) { b.textContent=data.unread_notifications; b.style.display='inline'; }
+      else b.style.display='none';
+    }
+    async function showNotifs() {
+      const res = await fetch('/api/notifications'); const notifs = await res.json();
+      document.getElementById('notifList').innerHTML = notifs.length ?
+        notifs.map(n=>`<div class="notif-item ${n.read?'':'notif-unread'}"><div class="notif-title">${esc(n.title)}</div><div class="notif-msg">${esc(n.message)}</div><div class="text-muted">${fmtDate(n.created_at)}</div></div>`).join('') :
+        '<p class="text-muted" style="padding:20px;text-align:center;">Nenhuma notificação</p>';
+      document.getElementById('notifPanel').style.display='flex';
+    }
+    function hideNotifs() { document.getElementById('notifPanel').style.display='none'; }
+    async function markAllRead() { await fetch('/api/notifications/read',{method:'POST'}); loadNotifCount(); hideNotifs(); showToast('Notificações lidas','info'); }
+
+    // Modals & misc
+    function confirmAction(text, fn) {
+      document.getElementById('modalText').textContent=text;
+      document.getElementById('modalConfirmBtn').onclick=()=>{closeModal('confirmModal');fn();};
+      document.getElementById('confirmModal').style.display='flex';
+    }
+    function closeModal(id) { document.getElementById(id).style.display='none'; }
+    function showPasswordModal() { document.getElementById('passwordModal').style.display='flex'; }
+    async function changePassword() {
+      const res = await fetch('/api/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:document.getElementById('curPass').value,newPassword:document.getElementById('newPass').value})});
+      const d = await res.json();
+      if(res.ok){showToast('Senha alterada!');closeModal('passwordModal');}else showToast(d.error,'error');
+    }
+    async function logout() { await fetch('/api/logout',{method:'POST'}); window.location.href='/'; }
+
+    // Init
+    loadStats(); loadNotifCount();
+    setInterval(loadNotifCount, 30000);
+  </script>
+</body>
+</html>

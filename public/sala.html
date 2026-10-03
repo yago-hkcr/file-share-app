@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FileShare - Sala</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="sala-page">
+  <div class="sala-container">
+    <div class="sala-header">
+      <div class="sala-logo">
+        <i class="fas fa-share-alt"></i> FileShare
+      </div>
+    </div>
+
+    <div id="roomContent" class="sala-content">
+      <div class="loading"><i class="fas fa-spinner fa-spin"></i> Carregando sala...</div>
+    </div>
+
+    <footer class="sala-footer">
+      <p>Powered by <strong>FileShare</strong> <i class="fas fa-heart" style="color: #ef4444;"></i></p>
+    </footer>
+  </div>
+
+  <script>
+    function formatSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatDate(dateStr) {
+      const d = new Date(dateStr + 'Z');
+      return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function getFileIcon(mimeType) {
+      if (!mimeType) return 'fa-file';
+      if (mimeType.startsWith('image/')) return 'fa-file-image';
+      if (mimeType.startsWith('video/')) return 'fa-file-video';
+      if (mimeType.startsWith('audio/')) return 'fa-file-audio';
+      if (mimeType.includes('pdf')) return 'fa-file-pdf';
+      if (mimeType.includes('word') || mimeType.includes('document')) return 'fa-file-word';
+      if (mimeType.includes('sheet') || mimeType.includes('excel')) return 'fa-file-excel';
+      if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return 'fa-file-powerpoint';
+      if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('compress')) return 'fa-file-zipper';
+      if (mimeType.startsWith('text/')) return 'fa-file-lines';
+      return 'fa-file';
+    }
+
+    function getFileColor(mimeType) {
+      if (!mimeType) return '#6b7280';
+      if (mimeType.startsWith('image/')) return '#8b5cf6';
+      if (mimeType.startsWith('video/')) return '#ec4899';
+      if (mimeType.startsWith('audio/')) return '#f59e0b';
+      if (mimeType.includes('pdf')) return '#ef4444';
+      if (mimeType.includes('word')) return '#3b82f6';
+      if (mimeType.includes('sheet') || mimeType.includes('excel')) return '#22c55e';
+      if (mimeType.includes('presentation')) return '#f97316';
+      if (mimeType.includes('zip') || mimeType.includes('rar')) return '#a855f7';
+      return '#6b7280';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    async function loadRoom() {
+      const slug = window.location.pathname.split('/sala/')[1];
+      if (!slug) return;
+
+      try {
+        const res = await fetch(`/api/sala/${slug}`);
+        if (!res.ok) {
+          document.getElementById('roomContent').innerHTML = `
+            <div class="sala-error">
+              <i class="fas fa-exclamation-circle"></i>
+              <h2>Sala não encontrada</h2>
+              <p>Esta sala não existe ou foi removida.</p>
+            </div>`;
+          return;
+        }
+
+        const room = await res.json();
+        document.title = `FileShare - ${room.name}`;
+
+        let filesHtml = '';
+        if (room.files && room.files.length > 0) {
+          filesHtml = `
+            <div class="sala-files-grid">
+              ${room.files.map(file => `
+                <div class="sala-file-card">
+                  <div class="sala-file-icon" style="color: ${getFileColor(file.mime_type)}">
+                    <i class="fas ${getFileIcon(file.mime_type)}"></i>
+                  </div>
+                  <div class="sala-file-info">
+                    <h4>${escapeHtml(file.original_name)}</h4>
+                    <div class="sala-file-meta">
+                      <span><i class="fas fa-weight-hanging"></i> ${formatSize(file.size)}</span>
+                      <span><i class="fas fa-clock"></i> ${formatDate(file.uploaded_at)}</span>
+                    </div>
+                  </div>
+                  <a href="/download/${file.id}" class="btn btn-primary btn-download">
+                    <i class="fas fa-download"></i> Baixar
+                  </a>
+                </div>
+              `).join('')}
+            </div>`;
+        } else {
+          filesHtml = `
+            <div class="sala-empty">
+              <i class="fas fa-inbox"></i>
+              <h3>Sala vazia</h3>
+              <p>Nenhum arquivo foi compartilhado nesta sala ainda.</p>
+            </div>`;
+        }
+
+        document.getElementById('roomContent').innerHTML = `
+          <div class="sala-info">
+            <h1><i class="fas fa-folder-open"></i> ${escapeHtml(room.name)}</h1>
+            ${room.description ? `<p class="sala-desc">${escapeHtml(room.description)}</p>` : ''}
+            <div class="sala-stats">
+              <span><i class="fas fa-file"></i> ${room.files ? room.files.length : 0} arquivo(s)</span>
+              <span><i class="fas fa-calendar"></i> Criada em ${formatDate(room.created_at)}</span>
+            </div>
+          </div>
+          ${filesHtml}
+        `;
+      } catch (err) {
+        document.getElementById('roomContent').innerHTML = `
+          <div class="sala-error">
+            <i class="fas fa-wifi-slash"></i>
+            <h2>Erro de conexão</h2>
+            <p>Não foi possível carregar esta sala. Tente novamente.</p>
+          </div>`;
+      }
+    }
+
+    loadRoom();
+  </script>
+</body>
+</html>
