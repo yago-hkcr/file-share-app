@@ -41,8 +41,10 @@ async function initDatabase() {
   if (persistentData) {
     try {
       db = new SQL.Database(persistentData);
+      db.exec('SELECT name FROM sqlite_master LIMIT 1');
     } catch (error) {
       console.warn('Invalid Blob database snapshot, recreating it:', error.message);
+      db = null;
       persistentData = null;
       await del(databaseBlobPath, blobOptions).catch(() => {});
     }
@@ -50,8 +52,10 @@ async function initDatabase() {
   if (!db && fs.existsSync(dbPath)) {
     try {
       db = new SQL.Database(fs.readFileSync(dbPath));
+      db.exec('SELECT name FROM sqlite_master LIMIT 1');
     } catch (error) {
       console.warn('Invalid local database snapshot, recreating it:', error.message);
+      db = null;
       fs.unlinkSync(dbPath);
     }
   }
