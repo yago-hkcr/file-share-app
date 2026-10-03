@@ -142,7 +142,11 @@ function saveDb() {
   const data = Buffer.from(db.export());
   fs.writeFileSync(dbPath, data);
   if (blobEnabled) {
-    persistencePromise = persistencePromise.then(() => put(databaseBlobPath, data, { ...blobOptions, allowOverwrite: true }));
+    persistencePromise = persistencePromise
+      .then(() => put(databaseBlobPath, data, { ...blobOptions, allowOverwrite: true }))
+      .catch(error => {
+        console.error('Blob database save failed:', JSON.stringify(error));
+      });
   }
   return persistencePromise;
 }
