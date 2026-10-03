@@ -21,7 +21,7 @@ let dbInitPromise;
 
 async function initDatabase() {
   if (db) return;
-  const SQL = await initSqlJs();
+  const SQL = await initSqlJs({ locateFile: () => require.resolve('sql.js/dist/sql-wasm.wasm') });
   if (fs.existsSync(dbPath)) {
     db = new SQL.Database(fs.readFileSync(dbPath));
   } else {
