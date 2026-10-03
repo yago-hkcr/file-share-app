@@ -146,6 +146,7 @@ function migrateDatabase() {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.use(cookieSession({
   name: 'fileshare_session',
   keys: [process.env.SESSION_SECRET || 'fileshare-local-development-secret'],
