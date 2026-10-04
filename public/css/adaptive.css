@@ -70,3 +70,43 @@ pre, code, table { max-width: 100%; }
 }
 /* Toque: alvos de 42px e sem efeitos de mouse */
 @media (hover: none) { .btn, .nav-item, .modal-close { min-height: 42px; } .room-card, .stat-card, .sala-file-card { will-change: auto; } #cursor, .cursor { display: none !important; } }
+
+/* Regras finais para componentes com muitos controles e conteúdo comprido. */
+.flex, .grid, .card-row, .file-row, .sala-file-card, .room-actions, .room-actions-bar,
+.room-link-bar, .form-row, .form-group, .modal-content, .modal-body, .tab-content,
+.settings-grid, .user-row, .member-row, .notif-item { min-width: 0; max-width: 100%; }
+.file-row-name, .file-name, .sala-file-info h4, .room-link, .room-link a,
+input, select, textarea { min-width: 0; }
+
+@media (max-width: 800px) {
+  /* A lista de arquivos pode ter vários botões; deixe cada ação quebrar linha. */
+  .file-row { flex-wrap: wrap; gap: 8px; }
+  .file-row > .file-main { flex: 1 1 calc(100% - 48px); }
+  .file-row > .btn, .file-row > a.btn, .file-row > button { flex: 0 1 auto; }
+  .room-actions-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+  .room-actions-bar > * { min-width: 0; max-width: 100%; }
+  .form-row { flex-wrap: wrap; }
+  .form-row > * { min-width: 0; }
+  .sala-file-meta { flex-wrap: wrap; gap: 6px 12px; }
+  .modal-content { width: min(100%, 720px); }
+}
+@media (max-width: 480px) {
+  /* Cards de arquivo empilham metadados e ações para preservar a área tocável. */
+  .file-row > .text-muted { flex: 1 1 100%; }
+  .file-row > .btn, .file-row > a.btn, .file-row > button { min-height: 42px; }
+  .room-link-bar { gap: 8px; padding-left: 14px; padding-right: 14px; }
+  .room-link-bar a { min-width: 0; }
+  .toast { min-width: 0; width: 100%; }
+  .modal-content { max-height: 94vh; max-height: 94dvh; }
+  .modal-body { max-height: none; }
+  .form-row { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 360px) {
+  .main-content, .dashboard-content, .sala-container { padding-left: 10px; padding-right: 10px; }
+  .card, .room-card, .auth-card { padding-left: 14px; padding-right: 14px; }
+  .file-row > .btn, .file-row > a.btn, .file-row > button { flex: 1 1 42px; }
+}
+@supports not (height: 100dvh) {
+  body { min-height: 100vh; }
+  .modal-content, .rename-box, .slide-panel-content { max-height: calc(100vh - 20px); }
+}
