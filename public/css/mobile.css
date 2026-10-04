@@ -1,0 +1,25 @@
+/* Ajustes de celular: todos os botões visíveis, sem sair da tela e com alvo de toque >= 42px */
+@media (max-width: 800px) {
+  .modal-header { flex-wrap: wrap; gap: 8px; }
+  #roomModal .modal-header { flex-direction: column; align-items: stretch; }
+  #roomModal .modal-header h3 { width: 100%; overflow-wrap: anywhere; }
+  .room-head-btns, .room-tools { display: flex !important; flex-wrap: wrap; gap: 6px; width: 100%; justify-content: flex-start; }
+  .room-head-btns .btn, .room-tools .btn { flex: 1 1 auto; min-height: 42px; justify-content: center; white-space: nowrap; }
+  .modal-close, .slide-panel-header button { min-width: 42px; min-height: 42px; display: inline-grid; place-items: center; font-size: 28px; line-height: 1; }
+  .room-link-bar a, .sala-back, .auth-footer a { display: inline-flex; align-items: center; min-height: 42px; padding-top: 6px; padding-bottom: 6px; overflow-wrap: anywhere; }
+  .room-link-bar { flex-wrap: wrap; }
+  .soc-row .btn, .soc-bar .btn, .soc-add .btn { min-height: 42px; }
+  .soc-row { flex-wrap: wrap; }
+  .soc-row .grow { flex: 1 1 140px; white-space: normal; overflow-wrap: anywhere; }
+  .soc-bar > *, .soc-add > * { flex: 1 1 100%; }
+  .social-sheet .modal-content, .modal-content { overflow-x: hidden; }
+  .intro-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .intro-actions .btn { flex: 1 1 calc(50% - 8px); }
+  .room-actions .btn, .room-actions a.btn { min-height: 44px; }
+  .header-right .btn, .header-right a.btn { min-height: 42px; min-width: 42px; justify-content: center; }
+  .nav-item { white-space: nowrap; }
+}
+@media (max-width: 380px) {
+  .intro-actions .btn { flex: 1 1 100%; }
+  .header-right { gap: 4px; }
+}
