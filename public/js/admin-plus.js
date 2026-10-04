@@ -181,17 +181,21 @@
   }
 
   // ---------- arquivos ----------
-  let F = [], sel = new Set(), fT, fSig = '';
+  let F = [], sel = new Set(), fT, fSig = '', fRequest = 0;
   async function loadFiles() {
-    try { F = await api('/api/admin/files?q=' + encodeURIComponent($('afQ').value)); } catch (e) { return; }
-    const fs = JSON.stringify(F.map(f => [f.id, f.original_name, f.size])); sel = new Set([...sel].filter(id => F.some(f => f.id === id)));
+    const query = $('afQ').value.trim(), request = ++fRequest;
+    let result;
+    try { result = await api('/api/admin/files?q=' + encodeURIComponent(query)); } catch (e) { return; }
+    if (request !== fRequest || query !== $('afQ').value.trim()) return;
+    F = result;
+    const fs = JSON.stringify(F.map(f => [f.id, f.original_name, f.size, f.room, f.uploader, f.uploaded_at])); sel = new Set([...sel].filter(id => F.some(f => f.id === id)));
     if (fs === fSig) return; fSig = fs; drawFiles();
   }
   function drawFiles() {
     $('afN').textContent = sel.size; $('afDel').disabled = !sel.size;
     $('afList').innerHTML = F.length ? F.map(f => '<div class="ap-row"><input type="checkbox" class="ap-sel" data-id="' + f.id + '"' + (sel.has(f.id) ? ' checked' : '') + '><div class="grow"><b>' + E(f.original_name) + '</b><div class="ap-meta"><span>' + E(f.uploader || '—') + admTag(f.uploader_role) + '</span><span><i class="fas fa-door-open"></i> ' + E(f.room || '—') + '</span><span>' + (window.fileKind ? E(window.fileKind(f.original_name, f.mime_type)) : '') + '</span><span>' + when(f.uploaded_at) + '</span></div></div><b>' + size(f.size) + '</b><a class="btn btn-sm btn-green" href="/download/' + f.id + '"><i class="fas fa-download"></i></a></div>').join('') : '<div class="empty-state"><i class="fas fa-inbox"></i><p>Nenhum arquivo</p></div>';
   }
-  $('afQ').oninput = () => { fSig = ''; clearTimeout(fT); fT = setTimeout(loadFiles, 300); };
+  $('afQ').oninput = () => { fRequest++; fSig = ''; clearTimeout(fT); fT = setTimeout(loadFiles, 300); };
   $('afList').onchange = e => { const c = e.target.closest('.ap-sel'); if (!c) return; c.checked ? sel.add(c.dataset.id) : sel.delete(c.dataset.id); drawFiles(); };
   $('afAll').onclick = () => { if (sel.size === F.length) sel.clear(); else F.forEach(f => sel.add(f.id)); drawFiles(); };
   $('afDel').onclick = () => ask('Excluir ' + sel.size + ' arquivo(s) definitivamente?', async () => { try { const r = await post('/api/admin/files/bulk-delete', { ids: [...sel] }); toast(r.deleted + ' arquivo(s) excluído(s)'); sel.clear(); loadFiles(); } catch (e) { toast(e.message, 'error'); } });
@@ -278,7 +282,7 @@
     if (id === 'tab-stats') overview();
     else if (id === 'tab-chat') chatInit();
     else if (id === 'tab-log') loadLog();
-    else if (id === 'tab-files') loadFiles();
+    else if (id === 'tab-files' && document.activeElement !== $('afQ')) loadFiles();
     else if (id === 'tab-comms' || id === 'tab-system') loadComms();
     else if (id === 'tab-rooms') fillRoomSel();
     liveMembers();
