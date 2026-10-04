@@ -32,13 +32,7 @@ async function initDatabase() {
   let persistentData;
   if (postgresEnabled) {
     await ensurePostgres();
-    let rows;
-    try {
-      rows = await sql`SELECT encode(data, 'hex') AS data_hex FROM fileshare_state WHERE id = 1`;
-    } catch (error) {
-      console.error('Postgres state read failed:', String(error), JSON.stringify(error));
-      throw error;
-    }
+    const rows = await sql`SELECT encode(data, 'hex') AS data_hex FROM fileshare_state WHERE id = 1`;
     if (rows[0]?.data_hex) persistentData = Buffer.from(rows[0].data_hex, 'hex');
   }
   if (persistentData) {
@@ -161,11 +155,7 @@ function ensurePostgres() {
     postgresInitPromise = Promise.all([
       sql`CREATE TABLE IF NOT EXISTS fileshare_state (id INTEGER PRIMARY KEY, data BYTEA NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
       sql`CREATE TABLE IF NOT EXISTS fileshare_files (stored_name TEXT PRIMARY KEY, data BYTEA NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`
-    ]).catch(error => {
-      console.error('Postgres schema setup failed:', String(error), JSON.stringify(error));
-      postgresInitPromise = null;
-      throw error;
-    });
+    ]);
   }
   return postgresInitPromise;
 }
