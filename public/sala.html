@@ -80,13 +80,15 @@
       return div.innerHTML;
     }
 
-    async function loadRoom() {
+    let lastSig = '';
+    async function loadRoom(isPoll = false) {
       const slug = window.location.pathname.split('/sala/')[1];
       if (!slug) return;
 
       try {
         const res = await fetch(`/api/sala/${slug}`);
         if (!res.ok) {
+          if (isPoll) return;
           document.getElementById('roomContent').innerHTML = `
             <div class="sala-error">
               <i class="fas fa-exclamation-circle"></i>
@@ -97,6 +99,9 @@
         }
 
         const room = await res.json();
+        const sig = JSON.stringify(room);
+        if (isPoll && sig === lastSig) return;
+        lastSig = sig;
         document.title = `FileShare - ${room.name}`;
 
         let filesHtml = '';
@@ -142,6 +147,7 @@
           ${filesHtml}
         `;
       } catch (err) {
+        if (isPoll) return;
         document.getElementById('roomContent').innerHTML = `
           <div class="sala-error">
             <i class="fas fa-wifi-slash"></i>
@@ -152,6 +158,7 @@
     }
 
     loadRoom();
+    setInterval(() => { if (!document.hidden) loadRoom(true); }, 2000);
   </script>
 </body>
 </html>

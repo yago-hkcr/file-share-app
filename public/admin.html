@@ -124,6 +124,7 @@
 
   <script src="/js/upload.js"></script>
   <script>
+    let lastUsersSig = '', lastRoomsSig = '', lastNotifsSig = '', uploading = 0;
     function showToast(msg, type='success') {
       const c = document.getElementById('toastContainer');
       const t = document.createElement('div');
@@ -154,21 +155,24 @@
     // Stats
     async function loadStats() {
       const res = await fetch('/api/admin/stats');
+      if (res.status === 401) { window.location.href = '/'; return; }
       const s = await res.json();
+      if (!res.ok) return;
       document.getElementById('statUsers').textContent = s.totalUsers;
       document.getElementById('statPending').textContent = s.pendingUsers;
       document.getElementById('statRooms').textContent = s.totalRooms;
       document.getElementById('statFiles').textContent = s.totalFiles;
-      if (s.pendingUsers > 0) {
-        const b = document.getElementById('pendingBadge');
-        b.textContent = s.pendingUsers; b.style.display = 'inline';
-      }
+      const pb = document.getElementById('pendingBadge');
+      if (s.pendingUsers > 0) { pb.textContent = s.pendingUsers; pb.style.display = 'inline'; }
+      else pb.style.display = 'none';
     }
 
     // Users
     async function loadUsers() {
       const res = await fetch('/api/admin/users');
       const users = await res.json();
+      if (!Array.isArray(users)) return;
+      const sig = JSON.stringify(users); if (sig === lastUsersSig) return; lastUsersSig = sig;
       const c = document.getElementById('usersList');
       if (!users.length) { c.innerHTML='<div class="empty-state"><i class="fas fa-users"></i><p>Nenhum usuário</p></div>'; return; }
       c.innerHTML = users.map(u => {
@@ -197,6 +201,8 @@
     async function loadRooms() {
       const res = await fetch('/api/rooms');
       const rooms = await res.json();
+      if (!Array.isArray(rooms)) return;
+      const sig = JSON.stringify(rooms); if (sig === lastRoomsSig) return; lastRoomsSig = sig;
       const c = document.getElementById('roomsList');
       if (!rooms.length) { c.innerHTML='<div class="empty-state"><i class="fas fa-door-open"></i><p>Nenhuma sala criada</p></div>'; return; }
       c.innerHTML = rooms.map(r => `
@@ -242,12 +248,13 @@
     async function uploadFiles(roomId, files) {
       if(!files.length) return;
       showToast('Enviando...','info');
+      uploading++;
       try {
         await uploadToRoom(roomId, files, text => { if (!/%$/.test(text)) showToast(text,'info'); });
         showToast('Arquivos enviados!'); loadRooms();
       } catch (error) {
         showToast(error.message || 'Erro ao enviar arquivos', 'error');
-      }
+      } finally { uploading--; }
     }
 
     // Members modal
@@ -305,20 +312,34 @@
 
     // Notifications
     async function loadNotifCount() {
-      const res = await fetch('/api/me'); const data = await res.json();
+      const res = await fetch('/api/me');
+      if (res.status === 401) { window.location.href = '/'; return; }
+      const data = await res.json();
       const b = document.getElementById('notifBadge');
-      if(data.unread_notifications > 0) { b.textContent=data.unread_notifications; b.style.display='inline'; }
-      else b.style.display='none';
+      if (data.unread_notifications > 0) { b.textContent = data.unread_notifications; b.style.display = 'inline'; }
+      else b.style.display = 'none';
     }
-    async function showNotifs() {
-      const res = await fetch('/api/notifications'); const notifs = await res.json();
+    async function renderNotifs() {
+      const res = await fetch('/api/notifications');
+      const notifs = await res.json();
+      if (!Array.isArray(notifs)) return;
+      const sig = JSON.stringify(notifs); if (sig === lastNotifsSig) return; lastNotifsSig = sig;
       document.getElementById('notifList').innerHTML = notifs.length ?
         notifs.map(n=>`<div class="notif-item ${n.read?'':'notif-unread'}"><div class="notif-title">${esc(n.title)}</div><div class="notif-msg">${esc(n.message)}</div><div class="text-muted">${fmtDate(n.created_at)}</div></div>`).join('') :
         '<p class="text-muted" style="padding:20px;text-align:center;">Nenhuma notificação</p>';
-      document.getElementById('notifPanel').style.display='flex';
     }
-    function hideNotifs() { document.getElementById('notifPanel').style.display='none'; }
-    async function markAllRead() { await fetch('/api/notifications/read',{method:'POST'}); loadNotifCount(); hideNotifs(); showToast('Notificações lidas','info'); }
+    async function showNotifs() {
+      lastNotifsSig = '';
+      document.getElementById('notifPanel').style.display = 'flex';
+      try { await renderNotifs(); } catch (e) { showToast('Não foi possível carregar as notificações', 'error'); }
+    }
+    function hideNotifs() { document.getElementById('notifPanel').style.display = 'none'; }
+    async function markAllRead() {
+      await fetch('/api/notifications/read', { method: 'POST' });
+      lastNotifsSig = '';
+      await Promise.all([loadNotifCount(), renderNotifs()]);
+      showToast('Notificações lidas', 'info');
+    }
 
     // Modals & misc
     function confirmAction(text, fn) {
@@ -337,7 +358,25 @@
 
     // Init
     loadStats(); loadNotifCount();
-    setInterval(loadNotifCount, 30000);
+
+    // Atualização automática a cada 2 s (sem recarregar a página, para não perder o que está aberto)
+    let refreshing = false;
+    async function autoRefresh() {
+      if (document.hidden || refreshing) return;
+      refreshing = true;
+      try {
+        const tasks = [loadNotifCount(), loadStats()];
+        const active = document.querySelector('.tab-content.active');
+        const id = active ? active.id : '';
+        if (id === 'tab-users') tasks.push(loadUsers());
+        if (id === 'tab-rooms' && uploading === 0) tasks.push(loadRooms());
+        if (document.getElementById('notifPanel').style.display !== 'none') tasks.push(renderNotifs());
+        await Promise.all(tasks);
+      } catch (e) { /* tenta de novo no próximo ciclo */ }
+      finally { refreshing = false; }
+    }
+    setInterval(autoRefresh, 2000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
   </script>
 </body>
 </html>

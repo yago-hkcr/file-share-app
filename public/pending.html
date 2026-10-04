@@ -38,6 +38,7 @@
           msg.className = 'alert alert-success';
           msg.innerHTML = '<i class="fas fa-check-circle"></i> Sua conta foi aprovada! Redirecionando...';
           msg.style.display = 'block';
+          clearInterval(statusTimer);
           setTimeout(() => window.location.href = '/dashboard', 1500);
         } else {
           msg.className = 'alert alert-warning';
@@ -50,6 +51,8 @@
         msg.style.display = 'block';
       }
     }
+    let statusTimer = setInterval(() => { if (!document.hidden) checkStatus(); }, 2000);
+    checkStatus();
     async function logout() {
       await fetch('/api/logout', { method: 'POST' });
       window.location.href = '/';
