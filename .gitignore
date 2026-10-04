@@ -8,3 +8,6 @@ uploads/*
 .vercel/
 .DS_Store
 npm-debug.log*
+.agents/
+.claude/
+skills-lock.json
