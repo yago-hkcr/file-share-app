@@ -275,17 +275,27 @@
       if (sig === memSig) return; memSig = sig; origMembers(memRoom);
     } catch (e) {}
   }
-  // ---------- atualização automática (2s, invisível) ----------
-  setInterval(() => {
-    if (document.hidden) return;
-    const a = document.querySelector('.tab-content.active'); const id = a ? a.id : '';
-    if (id === 'tab-stats') overview();
-    else if (id === 'tab-chat') chatInit();
-    else if (id === 'tab-log') loadLog();
-    else if (id === 'tab-files' && document.activeElement !== $('afQ')) loadFiles();
-    else if (id === 'tab-comms' || id === 'tab-system') loadComms();
-    else if (id === 'tab-rooms') fillRoomSel();
-    liveMembers();
-  }, 2000);
+  // ---------- atualização automática de todos os painéis (2s, sem recarregar a página) ----------
+  let refreshingAll = false;
+  async function refreshAllPanels() {
+    if (document.hidden || refreshingAll) return;
+    refreshingAll = true;
+    try {
+      await Promise.allSettled([
+        overview(),
+        loadUsersPlus(false),
+        document.activeElement !== $('afQ') ? loadFiles() : Promise.resolve(),
+        chatInit(),
+        loadLog(),
+        loadComms(),
+        fillRoomSel(),
+        liveMembers()
+      ]);
+    } finally {
+      refreshingAll = false;
+    }
+  }
+  setInterval(refreshAllPanels, 2000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshAllPanels(); });
   overview();
 })();
