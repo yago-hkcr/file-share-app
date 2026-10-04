@@ -88,6 +88,36 @@
     });
   };
 
+
+  // ---- Arrastar e soltar arquivos ----
+  const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') >= 0;
+  // Evita que o navegador abra o arquivo (e saia da página) se ele for solto fora da área certa
+  window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('drop', e => { if (hasFiles(e)) e.preventDefault(); });
+
+  // root: elemento que contém as áreas; selector: quais elementos aceitam soltar; onDrop(elemento, arquivos)
+  window.enableDrop = function (root, selector, onDrop) {
+    let current = null;
+    const clear = () => { if (current) { current.classList.remove('drag-over'); current = null; } };
+    root.addEventListener('dragover', e => {
+      if (!hasFiles(e)) return;
+      const t = e.target.closest ? e.target.closest(selector) : null;
+      if (!t) { clear(); return; }
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      if (current !== t) { clear(); current = t; t.classList.add('drag-over'); }
+    });
+    root.addEventListener('dragleave', e => { if (current && !current.contains(e.relatedTarget)) clear(); });
+    root.addEventListener('drop', e => {
+      if (!hasFiles(e)) return;
+      const t = e.target.closest ? e.target.closest(selector) : null;
+      clear();
+      if (!t) return;
+      e.preventDefault();
+      onDrop(t, Array.from(e.dataTransfer.files));
+    });
+  };
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addThemeButton);
   else addThemeButton();
 })();

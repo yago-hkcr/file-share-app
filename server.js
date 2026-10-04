@@ -314,7 +314,7 @@ app.post('/api/logout', (req, res) => { req.session = null; res.json({ success: 
 app.get('/api/me', requireAuth, wrap(async (req, res) => {
   const user = await one('SELECT id, username, email, role, status, avatar_color, created_at FROM users WHERE id = $1', [req.user.id]);
   const unread = await one('SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND "read" = 0', [req.user.id]);
-  res.json({ ...user, unread_notifications: num(unread && unread.count) });
+  res.json({ ...user, unread_notifications: num(unread && unread.count), max_upload_bytes: blobEnabled() ? MAX_DIRECT_BYTES : MAX_FILE_BYTES });
 }));
 
 // =================== ADMIN: USUÁRIOS ===================
