@@ -59,14 +59,17 @@
     $('frList').innerHTML = FR.length ? FR.map(f => '<div class="soc-row"><span class="grow" style="white-space:normal">' + E(f.requester) + ' → ' + E(f.addressee) + ' <span class="badge ' + (f.status === 'accepted' ? 'badge-green' : 'badge-yellow') + '">' + (f.status === 'accepted' ? 'Amigos' : 'Pendente') + '</span><br><span class="soc-meta">' + when(f.created_at) + '</span></span>' +
       (f.status !== 'accepted' ? '<button class="btn btn-primary btn-sm" data-fa="accept" data-id="' + f.id + '">Forçar aceite</button>' : '') + '<button class="btn btn-outline btn-danger btn-sm" data-fa="del" data-id="' + f.id + '">Remover</button></div>').join('') : '<p class="text-muted">Nenhuma amizade encontrada.</p>';
   }
+  let refreshing = false;
   async function refresh() {
-    if (document.hidden || !tab.classList.contains('active')) return;
+    if (document.hidden || refreshing) return;
+    refreshing = true;
     try {
       const [pr, fr] = await Promise.all([call('/api/admin/private-rooms'), call('/api/admin/friendships?q=' + encodeURIComponent($('frSearch').value.trim()))]);
       const s1 = JSON.stringify(pr), s2 = JSON.stringify(fr);
       if (s1 !== sig.pr) { sig.pr = s1; PR = pr; paintRooms(); }
       if (s2 !== sig.fr) { sig.fr = s2; FR = fr; paintFriends(); }
     } catch (e) { /* tenta de novo */ }
+    finally { refreshing = false; }
   }
   setInterval(refresh, 2000);
   $('prSearch').addEventListener('input', paintRooms); $('prOwner').addEventListener('change', paintRooms);

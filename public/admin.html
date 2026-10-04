@@ -394,10 +394,9 @@
       refreshing = true;
       try {
         const tasks = [loadNotifCount(), loadStats()];
-        const active = document.querySelector('.tab-content.active');
-        const id = active ? active.id : '';
-        if (id === 'tab-users') tasks.push(loadUsers());
-        if (id === 'tab-rooms' && uploading === 0) tasks.push(loadRooms());
+        // Atualiza todas as listas em segundo plano, preservando a tela e os filtros.
+        tasks.push(loadUsers());
+        if (uploading === 0) tasks.push(loadRooms());
         if (document.getElementById('notifPanel').style.display !== 'none') tasks.push(renderNotifs());
         await Promise.all(tasks);
       } catch (e) { /* tenta de novo no próximo ciclo */ }
