@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="/css/fx.css">
   <link rel="stylesheet" href="/css/adaptive.css">
   <script src="/js/fx.js" defer></script>
+  <link rel="stylesheet" href="/css/preview.css">
 </head>
 <body class="sala-page">
   <div class="sala-container">
@@ -136,6 +137,7 @@
                     </div>
                   </div>
                   <div class="sala-file-actions">
+                    <button class="btn btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${escapeHtml(file.original_name)}" data-mime="${escapeHtml(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button>
                     ${file.can_edit ? `<button class="btn btn-outline" title="Renomear" data-name="${escapeHtml(file.original_name)}" onclick="renameFile('${file.id}', this.dataset.name, () => { lastSig=''; loadRoom(); })"><i class="fas fa-pen"></i></button>` : ''}
                     <a href="/download/${file.id}" class="btn btn-green btn-download">
                       <i class="fas fa-download"></i> Baixar
@@ -179,6 +181,7 @@
     setInterval(() => { if (!document.hidden) loadRoom(true); }, 2000);
   </script>
   <script src="/js/cursor.js"></script>
+  <script src="/js/preview.js"></script>
   <script src="/js/announce.js"></script>
 </body>
 </html>
