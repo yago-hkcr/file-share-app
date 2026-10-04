@@ -150,6 +150,13 @@ async function createTables() {
     )`)
   ]);
   await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
+  await q(`CREATE TABLE IF NOT EXISTS auth_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TEXT,
+    expires_at TEXT NOT NULL,
+    user_agent TEXT
+  )`);
 }
 
 async function initDatabase() {
@@ -185,12 +192,55 @@ app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public'
 app.use(cookieSession({
   name: 'fileshare_session',
   keys: [process.env.SESSION_SECRET || 'fileshare-local-development-secret'],
-  maxAge: 7 * 24 * 60 * 60 * 1000,
+  maxAge: 30 * 24 * 60 * 60 * 1000,
   httpOnly: true,
   secure: IS_VERCEL,
   sameSite: 'lax'
 }));
 app.use(wrap(async (req, res, next) => { await ensureDatabase(); next(); }));
+
+// ===== Login persistente ("lembrar de mim") =====
+// Além do cookie de sessão, guardamos um token longo (1 ano) no navegador; só o hash dele fica no banco.
+const crypto = require('crypto');
+const REMEMBER_COOKIE = 'fs_remember';
+const REMEMBER_DAYS = 365;
+const hashToken = t => crypto.createHash('sha256').update(String(t)).digest('hex');
+function readCookie(req, name) {
+  const raw = req.headers.cookie || '';
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) { try { return decodeURIComponent(part.slice(i + 1).trim()); } catch (e) { return ''; } }
+  }
+  return '';
+}
+function remCookieOpts(maxAgeMs) {
+  return { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
+}
+async function issueRememberToken(req, res, userId) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const exp = new Date(Date.now() + REMEMBER_DAYS * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+  await q('INSERT INTO auth_tokens (token_hash, user_id, created_at, expires_at, user_agent) VALUES ($1,$2,$3,$4,$5)', [hashToken(token), userId, ts(), exp, String(req.headers['user-agent'] || '').slice(0, 200)]);
+  res.cookie(REMEMBER_COOKIE, token, remCookieOpts(REMEMBER_DAYS * 86400000));
+}
+app.use(wrap(async (req, res, next) => {
+  if (req.method === 'GET' && /\.(css|js|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(req.path)) return next();
+  if (req.session && req.session.userId) {
+    req.session.nowInMinutes = Math.floor(Date.now() / 60000); // renova o cookie de sessão a cada visita
+    return next();
+  }
+  const token = readCookie(req, REMEMBER_COOKIE);
+  if (token && /^[a-f0-9]{64}$/.test(token)) {
+    try {
+      const row = await one('SELECT a.user_id, a.expires_at, u.username, u.role, u.status FROM auth_tokens a JOIN users u ON u.id = a.user_id WHERE a.token_hash = $1', [hashToken(token)]);
+      if (row && row.expires_at > ts() && row.status !== 'rejected') {
+        req.session.userId = row.user_id; req.session.username = row.username; req.session.role = row.role; req.session.status = row.status;
+      } else if (!row || row.expires_at <= ts()) {
+        res.clearCookie(REMEMBER_COOKIE, { path: '/' });
+      }
+    } catch (e) { console.error('remember:', e && e.message); }
+  }
+  next();
+}));
 
 // Salas temporárias: apaga a sala, arquivos e mensagens quando o tempo acaba
 let lastPurge = 0;
@@ -325,10 +375,17 @@ app.post('/api/login', wrap(async (req, res) => {
   req.session.username = user.username;
   req.session.role = user.role;
   req.session.status = user.status;
+  try { await issueRememberToken(req, res, user.id); } catch (e) { console.error('issue token:', e && e.message); }
   res.json({ success: true, role: user.role, status: user.status });
 }));
 
-app.post('/api/logout', (req, res) => { req.session = null; res.json({ success: true }); });
+app.post('/api/logout', wrap(async (req, res) => {
+  const token = readCookie(req, REMEMBER_COOKIE);
+  if (token) { try { await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]); } catch (e) {} }
+  res.clearCookie(REMEMBER_COOKIE, { path: '/' });
+  req.session = null;
+  res.json({ success: true });
+}));
 
 app.get('/api/me', requireAuth, wrap(async (req, res) => {
   const user = await one('SELECT id, username, email, role, status, avatar_color, created_at FROM users WHERE id = $1', [req.user.id]);
@@ -697,6 +754,8 @@ app.post('/api/change-password', requireAuth, wrap(async (req, res) => {
   if (!bcrypt.compareSync(String(currentPassword || ''), user.password_hash)) return res.status(400).json({ error: 'Senha atual incorreta' });
   if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ error: 'Mínimo 4 caracteres' });
   await q('UPDATE users SET password_hash = $1 WHERE id = $2', [bcrypt.hashSync(String(newPassword), 10), user.id]);
+  // Trocar a senha encerra o login persistente em todos os aparelhos; este aparelho recebe um token novo
+  try { await q('DELETE FROM auth_tokens WHERE user_id = $1', [user.id]); await issueRememberToken(req, res, user.id); } catch (e) { console.error('revoke tokens:', e && e.message); }
   res.json({ success: true });
 }));
 
