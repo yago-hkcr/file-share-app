@@ -1,0 +1,80 @@
+/* ===== FX: animações leves (só transform/opacity, sem blur animado). Desligam com "reduzir movimento". ===== */
+:root { --fx-rgb: 255,107,74; }
+html[data-theme="dark"] { --fx-rgb: 168,85,247; }
+body.auth-page { --fx-rgb: var(--cy-rgb, 168,85,247); }
+
+/* Fundo vivo: rede de partículas (canvas) + 2 orbes de luz à deriva */
+#fxCanvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+.fx-orb { position: fixed; z-index: -1; width: 62vmax; height: 62vmax; border-radius: 50%; pointer-events: none; opacity: .2;
+  background: radial-gradient(circle, rgba(var(--fx-rgb),.55) 0%, rgba(var(--fx-rgb),0) 62%); will-change: transform; }
+.fx-orb.a { top: -28vmax; left: -22vmax; animation: fxDriftA 26s ease-in-out infinite alternate; }
+.fx-orb.b { bottom: -30vmax; right: -24vmax; opacity: .16; animation: fxDriftB 32s ease-in-out infinite alternate; }
+@keyframes fxDriftA { to { transform: translate3d(34vmax, 22vmax, 0) scale(1.25); } }
+@keyframes fxDriftB { to { transform: translate3d(-30vmax, -18vmax, 0) scale(1.2); } }
+
+/* Entrada da página */
+.fx-boot .header { animation: fxDrop .7s cubic-bezier(.2,.9,.3,1) both; }
+.fx-boot .dashboard-intro, .fx-boot .sidebar { animation: fxUp .65s cubic-bezier(.2,.9,.3,1) .12s both; }
+body.auth-page .auth-card { animation: fxPop .85s cubic-bezier(.2,1.15,.3,1) both; }
+body.auth-page .auth-header > * { animation: fxUp .6s cubic-bezier(.2,.9,.3,1) both; }
+body.auth-page .auth-header > :nth-child(2) { animation-delay: .12s; }
+body.auth-page .auth-header > :nth-child(3) { animation-delay: .24s; }
+body.auth-page .form-group { animation: fxUp .55s cubic-bezier(.2,.9,.3,1) both; }
+body.auth-page .form-group:nth-of-type(1) { animation-delay: .3s; }
+body.auth-page .form-group:nth-of-type(2) { animation-delay: .4s; }
+body.auth-page .form-group:nth-of-type(3) { animation-delay: .5s; }
+body.auth-page .form-group:nth-of-type(n+4) { animation-delay: .58s; }
+@keyframes fxUp { from { opacity: 0; transform: translate3d(0, 22px, 0); } to { opacity: 1; transform: none; } }
+@keyframes fxDrop { from { opacity: 0; transform: translate3d(0, -100%, 0); } to { opacity: 1; transform: none; } }
+@keyframes fxPop { from { opacity: 0; transform: scale(.86) translate3d(0, 24px, 0); } to { opacity: 1; transform: none; } }
+
+/* Janelas, avisos e chat */
+.modal-content, .rename-box { animation: fxModal .38s cubic-bezier(.2,1.15,.3,1) both; }
+.modal-overlay, .rename-overlay { animation: fxFade .3s ease both; }
+.toast.show { animation: fxToast .55s cubic-bezier(.2,1.3,.3,1) both; }
+.chat-list .msg:last-child { animation: fxMsg .42s cubic-bezier(.2,1.2,.3,1) both; }
+.chat-list .msg.me:last-child { animation-name: fxMsgMe; }
+@keyframes fxModal { from { opacity: 0; transform: translate3d(0, 34px, 0) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes fxFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fxToast { from { opacity: 0; transform: translate3d(60px, 0, 0) scale(.9); } to { opacity: 1; transform: none; } }
+@keyframes fxMsg { from { opacity: 0; transform: translate3d(-18px, 10px, 0) scale(.95); } to { opacity: 1; transform: none; } }
+@keyframes fxMsgMe { from { opacity: 0; transform: translate3d(18px, 10px, 0) scale(.95); } to { opacity: 1; transform: none; } }
+
+/* Peças que mexem sozinhas */
+.header-logo, .auth-icon, .pending-icon { animation: fxBeat 3.2s ease-in-out infinite; }
+.auth-icon i, .pending-icon i { animation: fxFloat 4s ease-in-out infinite; }
+.dz-icon, .empty-state > i { animation: fxFloat 2.6s ease-in-out infinite; }
+.stat-icon { animation: fxFloat 4.5s ease-in-out infinite; }
+.stat-card:nth-child(2) .stat-icon { animation-delay: -1s; } .stat-card:nth-child(3) .stat-icon { animation-delay: -2s; } .stat-card:nth-child(4) .stat-icon { animation-delay: -3s; }
+.pending-icon i { animation: fxSpin 6s linear infinite; }
+@keyframes fxBeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+@keyframes fxFloat { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(0, -6px, 0); } }
+@keyframes fxSpin { to { transform: rotate(360deg); } }
+.dz-bar { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.3) 0 10px, transparent 10px 20px); background-size: 28px 28px; animation: fxStripes .7s linear infinite; }
+@keyframes fxStripes { to { background-position: 28px 0; } }
+.countdown.urgent { animation: fxBlink .9s ease-in-out infinite; }
+@keyframes fxBlink { 50% { opacity: .45; } }
+
+/* Botões: reflexo que passa de tempos em tempos, brilho no hover, clique elástico e ondinha */
+.btn { position: relative; overflow: hidden; transition: transform .15s ease, box-shadow .25s ease, filter .25s ease; }
+.btn:active { transform: scale(.95); }
+body.app-page .btn-primary:not(:disabled)::after, body.app-page .btn-green:not(:disabled)::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 45%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.45), transparent); transform: translate3d(-130%, 0, 0) skewX(-20deg); animation: fxShine 5.5s ease-in-out 1.2s infinite; }
+@keyframes fxShine { 0%, 62% { transform: translate3d(-130%, 0, 0) skewX(-20deg); } 100% { transform: translate3d(330%, 0, 0) skewX(-20deg); } }
+.btn:not(:disabled):hover { filter: brightness(1.08); }
+.fx-ripple { position: absolute; border-radius: 50%; pointer-events: none; background: rgba(255,255,255,.5); transform: scale(0); animation: fxRipple .6s ease-out forwards; }
+@keyframes fxRipple { to { transform: scale(1); opacity: 0; } }
+
+/* Cartões com inclinação 3D (JS) */
+.room-card, .stat-card, .sala-file-card { transition: transform .18s ease-out, box-shadow .3s ease; will-change: transform; }
+.fx-tilt { box-shadow: 0 18px 40px rgba(var(--fx-rgb), .22), 0 0 0 1px rgba(var(--fx-rgb), .45) !important; transition: transform .06s linear, box-shadow .3s ease; }
+.file-row, .nav-item { transition: transform .18s ease, background-color .2s ease; }
+.file-row:hover { transform: translate3d(4px, 0, 0); }
+.nav-item:hover { transform: translate3d(5px, 0, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .001ms !important; }
+  #fxCanvas, .fx-orb { display: none; }
+}
+html.fx-lite .fx-orb { display: none; }
+@media (max-width: 700px) { .fx-orb { opacity: .14; } }
