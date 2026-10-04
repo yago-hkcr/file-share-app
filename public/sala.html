@@ -8,6 +8,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .sala-header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .sala-back { display:inline-flex; align-items:center; gap:8px; padding:8px 13px; border-radius:10px; background:#fff; color:var(--gray-700); box-shadow:var(--shadow); font-size:13px; font-weight:600; }
+    .sala-back:hover { color:var(--primary); text-decoration:none; transform:translateY(-1px); }
+    @media (max-width:600px) { .sala-container { padding:14px; } .sala-header { margin-bottom:16px; } .sala-logo { font-size:17px; } .sala-back { padding:7px 10px; } .sala-info { padding:20px 14px; } .sala-info h1 { font-size:21px; overflow-wrap:anywhere; } .sala-file-card { align-items:stretch; } }
+  </style>
 </head>
 <body class="sala-page">
   <div class="sala-container">
@@ -15,6 +21,7 @@
       <div class="sala-logo">
         <i class="fas fa-share-alt"></i> FileShare
       </div>
+      <a class="sala-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Voltar</a>
     </div>
 
     <div id="roomContent" class="sala-content">
