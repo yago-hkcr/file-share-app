@@ -1396,3 +1396,35 @@ body.app-page::after, body.sala-page::after { content: ''; position: fixed; inse
 @keyframes cyLine { to { background-position: -200% 0; } }
 @keyframes cyFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @media (prefers-reduced-motion: reduce) { .header::after, .dz-icon, .drop-veil i { animation: none !important; } }
+
+
+/* ===== Novidades: confirmação de envio, ADM, verde, tipo/tempo ===== */
+.btn-green { background: linear-gradient(135deg,#16a34a,#22c55e); color: #fff !important; border: 1px solid #15803d; box-shadow: 0 4px 14px rgba(34,197,94,.35); }
+.btn-green:hover { background: linear-gradient(135deg,#15803d,#16a34a); text-decoration: none; transform: translateY(-1px); }
+.btn-download.btn-green { background: linear-gradient(135deg,#16a34a,#22c55e); }
+.adm-badge { display: inline-block; padding: 1px 6px; margin-left: 4px; border-radius: 4px; font: 800 9.5px/1.4 var(--mono, monospace); letter-spacing: .08em; color: #231a00; background: #fbbf24; box-shadow: 0 0 8px rgba(251,191,36,.7); vertical-align: middle; }
+.uploader-tag.is-admin { color: #92400e; background: rgba(251,191,36,.18); border-color: rgba(245,158,11,.7); }
+.uploader-tag.is-admin .uploader-dot { background: #f59e0b; color: #231a00; }
+.msg-meta.is-admin b { color: #d97706; font-weight: 700; text-shadow: 0 0 8px rgba(251,191,36,.55); }
+.msg-avatar.is-admin { box-shadow: 0 0 0 2px #fbbf24; }
+html[data-theme="dark"] .uploader-tag.is-admin { color: #fde68a; background: rgba(251,191,36,.16); border-color: rgba(251,191,36,.7); }
+html[data-theme="dark"] .msg-meta.is-admin b { color: #fbbf24; }
+.chat-link { color: #2563eb; text-decoration: underline; word-break: break-all; }
+html[data-theme="dark"] .chat-link { color: #7dd3fc; }
+.file-meta-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; margin-top: 3px; }
+.kind-badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600; background: rgba(139,92,246,.12); color: #6d28d9; border: 1px solid rgba(139,92,246,.3); }
+html[data-theme="dark"] .kind-badge { color: #ddd0ff; }
+.time-ago { color: var(--muted, #6b7280); white-space: nowrap; }
+.intro-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.duration-pick { display: flex; gap: 8px; }
+.duration-pick button { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border, #d1d5db); background: transparent; color: inherit; font-weight: 700; cursor: pointer; }
+.duration-pick button.active { background: #22c55e; border-color: #16a34a; color: #fff; }
+.confirm-box { max-width: 560px; width: calc(100% - 24px); }
+.confirm-list { display: flex; flex-direction: column; gap: 10px; max-height: 52vh; overflow: auto; margin: 10px 0 14px; }
+.confirm-item { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 12px; border: 1px solid var(--border, rgba(128,128,128,.3)); }
+.confirm-thumb { width: 84px; height: 84px; flex: none; object-fit: cover; border-radius: 10px; background: rgba(128,128,128,.15); }
+.confirm-icon { display: grid; place-items: center; align-content: center; gap: 4px; font-size: 26px; color: #8b5cf6; }
+.confirm-icon span { font-size: 11px; font-weight: 700; }
+.confirm-info { flex: 1; min-width: 0; }
+.confirm-info small { display: block; margin-top: 4px; opacity: .7; }
+.confirm-modal { z-index: 10000; }

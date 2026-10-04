@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FileShare - Sala</title>
@@ -117,16 +119,16 @@
                     <i class="fas ${getFileIcon(file.mime_type)}"></i>
                   </div>
                   <div class="sala-file-info">
-                    ${uploaderTag(file.uploader)}
+                    ${uploaderTag(file.uploader, file.uploader_role)}
                     <h4>${escapeHtml(file.original_name)}</h4>
                     <div class="sala-file-meta">
                       <span><i class="fas fa-weight-hanging"></i> ${formatSize(file.size)}</span>
-                      <span><i class="fas fa-clock"></i> ${formatDate(file.uploaded_at)}</span>
+                      ${kindBadge(file.original_name, file.mime_type)}<span>${timeAgo(file.uploaded_at)}</span>
                     </div>
                   </div>
                   <div class="sala-file-actions">
                     ${file.can_edit ? `<button class="btn btn-outline" title="Renomear" data-name="${escapeHtml(file.original_name)}" onclick="renameFile('${file.id}', this.dataset.name, () => { lastSig=''; loadRoom(); })"><i class="fas fa-pen"></i></button>` : ''}
-                    <a href="/download/${file.id}" class="btn btn-primary btn-download">
+                    <a href="/download/${file.id}" class="btn btn-green btn-download">
                       <i class="fas fa-download"></i> Baixar
                     </a>
                   </div>

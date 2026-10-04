@@ -60,9 +60,58 @@
     return 'Não enviado: ' + names + more + ' (limite de ' + window.limitLabel() + ' por arquivo; pastas e arquivos vazios não valem)';
   };
 
+  // Tela de confirmação antes de enviar: renomear, remover e ver prévia de imagens.
+  // Devolve a lista final de File (renomeados) ou null se cancelou.
+  window.confirmUpload = function (files) {
+    return new Promise(resolve => {
+      const items = files.map(f => {
+        const dot = f.name.lastIndexOf('.');
+        const ext = dot > 0 && f.name.length - dot <= 8 ? f.name.slice(dot) : '';
+        return { file: f, ext, base: ext ? f.name.slice(0, dot) : f.name, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : null };
+      });
+      const e2 = t => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+      const wrap = document.createElement('div');
+      wrap.className = 'rename-modal confirm-modal';
+      document.body.appendChild(wrap);
+      const finish = val => { items.forEach(i => i.url && URL.revokeObjectURL(i.url)); document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(val); };
+      const onKey = ev => { if (ev.key === 'Escape') { ev.stopPropagation(); finish(null); } };
+      document.addEventListener('keydown', onKey, true);
+      function render() {
+        wrap.innerHTML =
+          '<div class="rename-overlay"></div><form class="rename-box confirm-box">' +
+          '<h3><i class="fas fa-paper-plane"></i> Confirmar envio</h3>' +
+          '<div class="confirm-list">' + items.map((it, i) =>
+            '<div class="confirm-item">' +
+              (it.url ? '<img class="confirm-thumb" src="' + it.url + '" alt="prévia">' : '<div class="confirm-thumb confirm-icon"><i class="fas fa-file"></i><span>' + e2((it.ext || '').slice(1).toUpperCase() || 'ARQ') + '</span></div>') +
+              '<div class="confirm-info"><div class="rename-field"><input type="text" data-i="' + i + '" maxlength="150" required autocomplete="off" value="' + e2(it.base).replace(/"/g, '&quot;') + '">' +
+              (it.ext ? '<span class="rename-ext">' + e2(it.ext) + '</span>' : '') + '</div>' +
+              '<small>' + e2(window.fileKind ? window.fileKind(it.file.name, it.file.type) : '') + ' · ' + mbLabel(it.file.size) + '</small></div>' +
+              '<button type="button" class="btn btn-sm btn-outline confirm-del" data-del="' + i + '" title="Remover"><i class="fas fa-xmark"></i></button>' +
+            '</div>').join('') + '</div>' +
+          '<div class="rename-actions"><button type="button" class="btn btn-outline rename-cancel">Cancelar</button>' +
+          '<button type="submit" class="btn btn-green">Enviar ' + items.length + (items.length === 1 ? ' arquivo' : ' arquivos') + '</button></div></form>';
+        wrap.querySelector('.rename-overlay').onclick = () => finish(null);
+        wrap.querySelector('.rename-cancel').onclick = () => finish(null);
+        wrap.querySelectorAll('input[data-i]').forEach(inp => inp.oninput = () => { items[inp.dataset.i].base = inp.value; });
+        wrap.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const it = items.splice(Number(b.dataset.del), 1)[0]; if (it.url) URL.revokeObjectURL(it.url); if (!items.length) finish(null); else render(); });
+        wrap.querySelector('form').onsubmit = ev => {
+          ev.preventDefault();
+          finish(items.map(it => {
+            const name = (it.base.replace(/[\u0000-\u001f\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || 'arquivo') + it.ext;
+            return name === it.file.name ? it.file : new File([it.file], name, { type: it.file.type, lastModified: it.file.lastModified });
+          }));
+        };
+        const first = wrap.querySelector('input[data-i]'); if (first) { first.focus(); first.select(); }
+      }
+      render();
+    });
+  };
+
   // Devolve { sent, skipped }
   window.uploadToRoom = async function (roomId, fileList, onStatus) {
-    const all = Array.from(fileList); // copia já: o <input> pode ser limpo logo depois
+    let all = Array.from(fileList); // copia já: o <input> pode ser limpo logo depois
+    all = await window.confirmUpload(all);
+    if (!all) return { sent: 0, skipped: [], cancelled: true };
     const say = onStatus || function () {};
     await limitReady;
     const files = [], skipped = [];

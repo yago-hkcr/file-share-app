@@ -149,6 +149,7 @@ async function createTables() {
       created_at TEXT
     )`)
   ]);
+  await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
 }
 
 async function initDatabase() {
@@ -180,7 +181,7 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
-app.get('/favicon.ico', (req, res) => res.status(204).end());
+app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon-48.png')));
 app.use(cookieSession({
   name: 'fileshare_session',
   keys: [process.env.SESSION_SECRET || 'fileshare-local-development-secret'],
@@ -190,6 +191,24 @@ app.use(cookieSession({
   sameSite: 'lax'
 }));
 app.use(wrap(async (req, res, next) => { await ensureDatabase(); next(); }));
+
+// Salas temporárias: apaga a sala, arquivos e mensagens quando o tempo acaba
+let lastPurge = 0;
+async function purgeExpired() {
+  if (Date.now() - lastPurge < 3000) return;
+  lastPurge = Date.now();
+  const old = await q('SELECT id FROM rooms WHERE expires_at IS NOT NULL AND expires_at <= $1', [ts()]);
+  for (const r of old) {
+    const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [r.id]);
+    try { await deleteBlobs(roomFiles.map(f => f.stored_name)); } catch (e) { console.error('purge blobs:', e && e.message); }
+    await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [r.id]);
+    await q('DELETE FROM files WHERE room_id = $1', [r.id]);
+    await q('DELETE FROM room_members WHERE room_id = $1', [r.id]);
+    await q('DELETE FROM messages WHERE room_id = $1', [r.id]);
+    await q('DELETE FROM rooms WHERE id = $1', [r.id]);
+  }
+}
+app.use(wrap(async (req, res, next) => { if (req.path.startsWith('/api/') || req.path.startsWith('/sala/')) { try { await purgeExpired(); } catch (e) { console.error('purge:', e && e.message); } } next(); }));
 
 // Arquivos ficam no próprio Postgres. Na Vercel o corpo da requisição é limitado a ~4,5 MB.
 const MAX_FILE_BYTES = IS_VERCEL ? 4 * 1024 * 1024 : 50 * 1024 * 1024;
@@ -349,23 +368,35 @@ app.delete('/api/admin/users/:id', asAdmin, wrap(async (req, res) => {
 }));
 
 // =================== SALAS ===================
-app.post('/api/rooms', asAdmin, wrap(async (req, res) => {
-  const name = String((req.body && req.body.name) || '').trim();
+app.post('/api/rooms', asMember, wrap(async (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 60);
   if (!name) return res.status(400).json({ error: 'Nome obrigatório' });
-  const description = String(req.body.description || '');
-  const isPublic = req.body.is_public === true || req.body.is_public === 'true' || req.body.is_public === 1 || req.body.is_public === 'on' ? 1 : 0;
+  const admin = isAdmin(req.user);
+  let description = String((req.body && req.body.description) || '').slice(0, 300);
+  let isPublic = req.body.is_public === true || req.body.is_public === 'true' || req.body.is_public === 1 || req.body.is_public === 'on' ? 1 : 0;
+  let expiresAt = null;
+  const minutes = Number(req.body.duration_minutes) || 0;
+  if (!admin) {
+    // Usuário comum: só sala pública e temporária (5, 10 ou 30 min)
+    if (![5, 10, 30].includes(minutes)) return res.status(400).json({ error: 'Escolha 5, 10 ou 30 minutos' });
+    const active = num((await one('SELECT COUNT(*) AS c FROM rooms WHERE created_by = $1 AND expires_at IS NOT NULL AND expires_at > $2', [req.user.id, ts()])).c);
+    if (active >= 3) return res.status(429).json({ error: 'Você já tem 3 salas temporárias ativas' });
+    isPublic = 1;
+  }
+  if (minutes && [5, 10, 30].includes(minutes)) expiresAt = new Date(Date.now() + minutes * 60000).toISOString().slice(0, 19).replace('T', ' ');
   const id = uuidv4();
   let slug = await generateSlug(name);
   for (let attempt = 0; ; attempt++) {
     try {
-      await q('INSERT INTO rooms (id, name, description, slug, is_public, max_members, created_by, created_at) VALUES ($1,$2,$3,$4,$5,50,$6,$7)',
-        [id, name, description, slug, isPublic, req.user.id, ts()]);
+      await q('INSERT INTO rooms (id, name, description, slug, is_public, max_members, created_by, created_at, expires_at) VALUES ($1,$2,$3,$4,$5,50,$6,$7,$8)',
+        [id, name, description, slug, isPublic, req.user.id, ts(), expiresAt]);
       break;
     } catch (e) {
       if (isUnique(e) && attempt < 3) { slug = slug.replace(/-[a-z0-9]+$/, '') + '-' + Math.random().toString(36).slice(2, 7); continue; }
       throw e;
     }
   }
+  if (!admin) await q('INSERT INTO room_members (id, room_id, user_id, joined_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [uuidv4(), id, req.user.id, ts()]);
   res.json(await one('SELECT * FROM rooms WHERE id = $1', [id]));
 }));
 
@@ -375,7 +406,7 @@ async function loadRooms(user) {
   const params = isAdmin(user) ? [] : [user.id];
   const [rooms, files, members] = await Promise.all([
     q(`SELECT * FROM rooms WHERE ${cond} ORDER BY created_at DESC`, params),
-    q(`SELECT f.id, f.room_id, f.uploaded_by, f.original_name, f.size, f.mime_type, f.uploaded_at, u.username AS uploader
+    q(`SELECT f.id, f.room_id, f.uploaded_by, f.original_name, f.size, f.mime_type, f.uploaded_at, u.username AS uploader, u.role AS uploader_role
        FROM files f LEFT JOIN users u ON f.uploaded_by = u.id
        WHERE f.room_id IN (SELECT id FROM rooms WHERE ${cond}) ORDER BY f.uploaded_at DESC`, params),
     q(`SELECT rm.room_id, u.id, u.username, u.avatar_color, rm.role, rm.joined_at
@@ -383,7 +414,7 @@ async function loadRooms(user) {
        WHERE rm.room_id IN (SELECT id FROM rooms WHERE ${cond})`, params)
   ]);
   return rooms.map(room => {
-    const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(user) || f.uploaded_by === user.id }));
+    const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(user), can_delete: isAdmin(user) || f.uploaded_by === user.id || room.created_by === user.id }));
     const roomMembers = members.filter(m => m.room_id === room.id).map(({ room_id, ...m }) => m);
     return {
       ...room,
@@ -560,9 +591,9 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
 }));
 
 app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
-  const file = await one('SELECT id, uploaded_by, stored_name FROM files WHERE id = $1', [req.params.id]);
+  const file = await one('SELECT f.id, f.uploaded_by, f.stored_name, r.created_by AS room_owner FROM files f LEFT JOIN rooms r ON r.id = f.room_id WHERE f.id = $1', [req.params.id]);
   if (!file) return res.status(404).json({ error: 'Arquivo não encontrado' });
-  if (!isAdmin(req.user) && file.uploaded_by !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
+  if (!isAdmin(req.user) && file.uploaded_by !== req.user.id && file.room_owner !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
   await deleteBlobs([file.stored_name]);
   await q('DELETE FROM file_blobs WHERE file_id = $1', [file.id]);
   await q('DELETE FROM files WHERE id = $1', [file.id]);
@@ -573,7 +604,7 @@ app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
 app.patch('/api/files/:id', requireAuth, wrap(async (req, res) => {
   const file = await one('SELECT id, uploaded_by, original_name FROM files WHERE id = $1', [req.params.id]);
   if (!file) return res.status(404).json({ error: 'Arquivo não encontrado' });
-  if (!isAdmin(req.user) && file.uploaded_by !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
+  if (!isAdmin(req.user)) return res.status(403).json({ error: 'Sem permissão' });
   const name = String((req.body && req.body.name) || '').replace(/[\u0000-\u001f\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150);
   if (!name) return res.status(400).json({ error: 'Digite um nome para o arquivo' });
   await q('UPDATE files SET original_name = $1 WHERE id = $2', [name, file.id]);
@@ -610,19 +641,19 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
 // =================== MENSAGENS ===================
 app.get('/api/rooms/:id/messages', requireAuth, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Sem permissão' });
-  const msgs = await q(`SELECT m.*, u.username, u.avatar_color FROM messages m
+  const msgs = await q(`SELECT m.*, u.username, u.avatar_color, u.role FROM messages m
     JOIN users u ON m.user_id = u.id WHERE m.room_id = $1 ORDER BY m.created_at DESC LIMIT 200`, [req.params.id]);
   res.json(msgs.reverse());
 }));
 
 app.post('/api/rooms/:id/messages', asMember, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Entre na sala para enviar mensagens' });
-  const content = String((req.body && req.body.content) || '').trim();
+  const content = String((req.body && req.body.content) || '').trim().slice(0, 1000);
   if (!content) return res.status(400).json({ error: 'Mensagem vazia' });
   const id = uuidv4();
   await q('INSERT INTO messages (id, room_id, user_id, content, created_at) VALUES ($1,$2,$3,$4,$5)',
     [id, req.params.id, req.user.id, content, ts()]);
-  res.json(await one('SELECT m.*, u.username, u.avatar_color FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id = $1', [id]));
+  res.json(await one('SELECT m.*, u.username, u.avatar_color, u.role FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id = $1', [id]));
 }));
 
 // =================== NOTIFICAÇÕES ===================
@@ -640,10 +671,10 @@ app.get('/api/sala/:slug', asMember, wrap(async (req, res) => {
   const room = await one('SELECT * FROM rooms WHERE slug = $1', [req.params.slug]);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
   if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala para acessar seus arquivos' });
-  const files = await q(`SELECT f.id, f.original_name, f.size, f.mime_type, f.uploaded_at, f.uploaded_by, u.username AS uploader
+  const files = await q(`SELECT f.id, f.original_name, f.size, f.mime_type, f.uploaded_at, f.uploaded_by, u.username AS uploader, u.role AS uploader_role
     FROM files f LEFT JOIN users u ON f.uploaded_by = u.id WHERE f.room_id = $1 ORDER BY f.uploaded_at DESC`, [room.id]);
   const count = await one('SELECT COUNT(*) AS c FROM room_members WHERE room_id = $1', [room.id]);
-  res.json({ ...room, files: files.map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(req.user) || f.uploaded_by === req.user.id })), memberCount: num(count.c) });
+  res.json({ ...room, files: files.map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(req.user), can_delete: isAdmin(req.user) || f.uploaded_by === req.user.id || room.created_by === req.user.id })), memberCount: num(count.c) });
 }));
 
 // =================== ESTATÍSTICAS / SENHA ===================
