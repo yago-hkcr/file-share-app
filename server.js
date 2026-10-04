@@ -560,6 +560,12 @@ app.post('/api/change-password', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+app.use((error, req, res, next) => {
+  console.error('Request failed:', error?.stack || JSON.stringify(error));
+  if (res.headersSent) return next(error);
+  res.status(500).json({ error: 'Erro interno do servidor' });
+});
+
 if (require.main === module) {
   ensureDatabase().then(() => {
     app.listen(PORT, () => {
