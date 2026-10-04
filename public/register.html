@@ -5,17 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FileShare - Criar Conta</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@600;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/common.js"></script>
 </head>
 <body class="auth-page">
+  <canvas id="cyberRain" aria-hidden="true"></canvas>
+  <div class="cy-grid" aria-hidden="true"></div>
+  <div class="cy-scan" aria-hidden="true"></div>
   <div class="auth-container">
     <div class="auth-card">
       <div class="auth-header">
-        <div class="auth-icon" style="background: linear-gradient(135deg, #22c55e, #16a34a);"><i class="fas fa-user-plus"></i></div>
-        <h1>Criar Conta</h1>
-        <p>Solicite acesso ao FileShare</p>
+        <div class="auth-icon"><i class="fas fa-share-alt"></i></div>
+        <h1 class="glitch" data-text="CRIAR CONTA">CRIAR CONTA</h1>
+        <p class="cy-status"><span id="cyType" data-text="> solicitar acesso ao sistema"></span><span class="cy-caret"></span></p>
       </div>
       <form id="registerForm">
         <div class="form-group">
@@ -36,13 +40,14 @@
         </div>
         <div id="errorMsg" class="alert alert-error" style="display:none;"></div>
         <div id="successMsg" class="alert alert-success" style="display:none;"></div>
-        <button type="submit" class="btn btn-success btn-full"><i class="fas fa-user-plus"></i> Criar Conta</button>
+        <button type="submit" class="btn btn-success btn-full"><i class="fas fa-user-plus"></i> CRIAR CONTA</button>
       </form>
       <div class="auth-footer">
         <p>Já tem conta? <a href="/">Entrar</a></p>
       </div>
     </div>
   </div>
+  <script src="/js/cyber.js"></script>
   <script>
     document.getElementById('registerForm').addEventListener('submit', async (e) => {
       e.preventDefault();

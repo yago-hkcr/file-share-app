@@ -5,22 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FileShare - Aguardando Aprovação</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@600;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/common.js"></script>
 </head>
 <body class="auth-page">
+  <canvas id="cyberRain" aria-hidden="true"></canvas>
+  <div class="cy-grid" aria-hidden="true"></div>
+  <div class="cy-scan" aria-hidden="true"></div>
   <div class="auth-container">
     <div class="auth-card" style="text-align:center;">
-      <div class="pending-icon">
-        <i class="fas fa-hourglass-half"></i>
-      </div>
-      <h1 style="margin-bottom:12px;">Aguardando Aprovação</h1>
-      <p style="color:#6b7280;margin-bottom:24px;line-height:1.7;">
+      <div class="pending-icon"><i class="fas fa-hourglass-half"></i></div>
+      <h1 class="glitch" data-text="AGUARDANDO" style="font-size:24px;margin:14px 0 14px;">AGUARDANDO</h1>
+      <p class="cy-lead">
         Sua conta foi criada com sucesso!<br>
-        O administrador precisa aprovar seu acesso antes que você possa usar o sistema.<br>
-        Você receberá acesso assim que for aprovado.
+        O administrador precisa aprovar seu acesso antes que você possa usar o sistema.
       </p>
+      <p class="cy-status" style="margin:0 0 20px;"><span id="cyType" data-text="> verificando aprovação a cada 2s"></span><span class="cy-caret"></span></p>
       <div style="display:flex;gap:12px;justify-content:center;">
         <button class="btn btn-outline" onclick="checkStatus()"><i class="fas fa-sync-alt"></i> Verificar Status</button>
         <button class="btn btn-danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
@@ -28,6 +30,7 @@
       <div id="statusMsg" class="alert" style="display:none;margin-top:16px;"></div>
     </div>
   </div>
+  <script src="/js/cyber.js"></script>
   <script>
     async function checkStatus() {
       const msg = document.getElementById('statusMsg');

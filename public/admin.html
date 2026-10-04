@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/common.js"></script>
 </head>
 <body class="app-page">
   <header class="header">
@@ -233,10 +234,13 @@
           ${r.files.length?`<div class="room-files-list">${r.files.map(f=>`
             <div class="file-row">
               <i class="fas ${fileIcon(f.mime_type)}" style="color:var(--primary)"></i>
-              <span class="file-row-name">${esc(f.original_name)}</span>
+              <div class="file-main">
+                ${uploaderTag(f.uploader)}
+                <span class="file-row-name">${esc(f.original_name)}</span>
+              </div>
               <span class="text-muted">${fmtSize(f.size)}</span>
-              <span class="text-muted">${f.uploader||''}</span>
-              <a href="/download/${f.id}" class="btn btn-sm btn-outline"><i class="fas fa-download"></i></a>
+              <button class="btn btn-sm btn-outline" title="Renomear" data-name="${esc(f.original_name)}" onclick="renameFile('${f.id}', this.dataset.name, () => { lastRoomsSig=''; loadRooms(); })"><i class="fas fa-pen"></i></button>
+              <a href="/download/${f.id}" class="btn btn-sm btn-outline" title="Baixar"><i class="fas fa-download"></i></a>
               <button class="btn btn-sm btn-danger" onclick="deleteFile('${f.id}')"><i class="fas fa-trash"></i></button>
             </div>`).join('')}</div>`:'<p class="text-muted" style="padding:12px 16px;">Nenhum arquivo</p>'}
         </div>

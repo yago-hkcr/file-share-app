@@ -8,9 +8,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/common.js"></script>
   <style>
     .sala-header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
-    .sala-back { display:inline-flex; align-items:center; gap:8px; padding:8px 13px; border-radius:10px; background:#fff; color:var(--gray-700); box-shadow:var(--shadow); font-size:13px; font-weight:600; }
+    .sala-back { display:inline-flex; align-items:center; gap:8px; padding:8px 13px; border-radius:10px; background:var(--surface); color:var(--gray-700); box-shadow:var(--shadow); font-size:13px; font-weight:600; }
     .sala-back:hover { color:var(--primary); text-decoration:none; transform:translateY(-1px); }
     @media (max-width:600px) { .sala-container { padding:14px; } .sala-header { margin-bottom:16px; } .sala-logo { font-size:17px; } .sala-back { padding:7px 10px; } .sala-info { padding:20px 14px; } .sala-info h1 { font-size:21px; overflow-wrap:anywhere; } .sala-file-card { align-items:stretch; } }
   </style>
@@ -18,8 +19,10 @@
 <body class="sala-page">
   <div class="sala-container">
     <div class="sala-header">
-      <div class="sala-logo">
-        <i class="fas fa-share-alt"></i> FileShare
+      <div class="sala-left">
+        <div class="sala-logo">
+          <i class="fas fa-share-alt"></i> FileShare
+        </div>
       </div>
       <a class="sala-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Voltar</a>
     </div>
@@ -114,15 +117,19 @@
                     <i class="fas ${getFileIcon(file.mime_type)}"></i>
                   </div>
                   <div class="sala-file-info">
+                    ${uploaderTag(file.uploader)}
                     <h4>${escapeHtml(file.original_name)}</h4>
                     <div class="sala-file-meta">
                       <span><i class="fas fa-weight-hanging"></i> ${formatSize(file.size)}</span>
                       <span><i class="fas fa-clock"></i> ${formatDate(file.uploaded_at)}</span>
                     </div>
                   </div>
-                  <a href="/download/${file.id}" class="btn btn-primary btn-download">
-                    <i class="fas fa-download"></i> Baixar
-                  </a>
+                  <div class="sala-file-actions">
+                    ${file.can_edit ? `<button class="btn btn-outline" title="Renomear" data-name="${escapeHtml(file.original_name)}" onclick="renameFile('${file.id}', this.dataset.name, () => { lastSig=''; loadRoom(); })"><i class="fas fa-pen"></i></button>` : ''}
+                    <a href="/download/${file.id}" class="btn btn-primary btn-download">
+                      <i class="fas fa-download"></i> Baixar
+                    </a>
+                  </div>
                 </div>
               `).join('')}
             </div>`;

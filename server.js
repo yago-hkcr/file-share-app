@@ -383,7 +383,7 @@ async function loadRooms(user) {
        WHERE rm.room_id IN (SELECT id FROM rooms WHERE ${cond})`, params)
   ]);
   return rooms.map(room => {
-    const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size) }));
+    const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(user) || f.uploaded_by === user.id }));
     const roomMembers = members.filter(m => m.room_id === room.id).map(({ room_id, ...m }) => m);
     return {
       ...room,
@@ -569,6 +569,17 @@ app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
   res.json({ success: true });
 }));
 
+// Renomear arquivo (só o nome exibido/baixado; o arquivo guardado não muda). Admin ou quem enviou.
+app.patch('/api/files/:id', requireAuth, wrap(async (req, res) => {
+  const file = await one('SELECT id, uploaded_by, original_name FROM files WHERE id = $1', [req.params.id]);
+  if (!file) return res.status(404).json({ error: 'Arquivo não encontrado' });
+  if (!isAdmin(req.user) && file.uploaded_by !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
+  const name = String((req.body && req.body.name) || '').replace(/[\u0000-\u001f\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150);
+  if (!name) return res.status(400).json({ error: 'Digite um nome para o arquivo' });
+  await q('UPDATE files SET original_name = $1 WHERE id = $2', [name, file.id]);
+  res.json({ success: true, id: file.id, original_name: name });
+}));
+
 app.get('/download/:fileId', asMember, wrap(async (req, res) => {
   const file = await one('SELECT id, room_id, original_name, mime_type, stored_name FROM files WHERE id = $1', [req.params.fileId]);
   if (!file) return res.status(404).send('Arquivo não encontrado');
@@ -629,9 +640,10 @@ app.get('/api/sala/:slug', asMember, wrap(async (req, res) => {
   const room = await one('SELECT * FROM rooms WHERE slug = $1', [req.params.slug]);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
   if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala para acessar seus arquivos' });
-  const files = await q('SELECT id, original_name, size, mime_type, uploaded_at FROM files WHERE room_id = $1 ORDER BY uploaded_at DESC', [room.id]);
+  const files = await q(`SELECT f.id, f.original_name, f.size, f.mime_type, f.uploaded_at, f.uploaded_by, u.username AS uploader
+    FROM files f LEFT JOIN users u ON f.uploaded_by = u.id WHERE f.room_id = $1 ORDER BY f.uploaded_at DESC`, [room.id]);
   const count = await one('SELECT COUNT(*) AS c FROM room_members WHERE room_id = $1', [room.id]);
-  res.json({ ...room, files: files.map(f => ({ ...f, size: num(f.size) })), memberCount: num(count.c) });
+  res.json({ ...room, files: files.map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(req.user) || f.uploaded_by === req.user.id })), memberCount: num(count.c) });
 }));
 
 // =================== ESTATÍSTICAS / SENHA ===================

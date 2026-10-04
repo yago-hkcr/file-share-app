@@ -5,35 +5,40 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FileShare - Entrar</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@600;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/common.js"></script>
 </head>
 <body class="auth-page">
+  <canvas id="cyberRain" aria-hidden="true"></canvas>
+  <div class="cy-grid" aria-hidden="true"></div>
+  <div class="cy-scan" aria-hidden="true"></div>
   <div class="auth-container">
     <div class="auth-card">
       <div class="auth-header">
         <div class="auth-icon"><i class="fas fa-share-alt"></i></div>
-        <h1>FileShare</h1>
-        <p>Compartilhe arquivos com o mundo</p>
+        <h1 class="glitch" data-text="FILESHARE">FILESHARE</h1>
+        <p class="cy-status"><span id="cyType" data-text="> conexão segura estabelecida"></span><span class="cy-caret"></span></p>
       </div>
       <form id="loginForm">
         <div class="form-group">
           <label><i class="fas fa-user"></i> Usuário ou Email</label>
-          <input type="text" id="username" placeholder="Seu usuário ou email" required>
+          <input type="text" id="username" placeholder="usuário ou email" autocomplete="username" required>
         </div>
         <div class="form-group">
           <label><i class="fas fa-lock"></i> Senha</label>
-          <input type="password" id="password" placeholder="Sua senha" required>
+          <input type="password" id="password" placeholder="sua senha" autocomplete="current-password" required>
         </div>
         <div id="errorMsg" class="alert alert-error" style="display:none;"></div>
-        <button type="submit" class="btn btn-primary btn-full"><i class="fas fa-sign-in-alt"></i> Entrar</button>
+        <button type="submit" class="btn btn-primary btn-full"><i class="fas fa-sign-in-alt"></i> ENTRAR</button>
       </form>
       <div class="auth-footer">
         <p>Não tem conta? <a href="/register">Criar conta</a></p>
       </div>
     </div>
   </div>
+  <script src="/js/cyber.js"></script>
   <script>
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
