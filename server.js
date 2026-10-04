@@ -940,6 +940,22 @@ app.post('/api/admin/settings', asAdmin, wrap(async (req, res) => {
   await logAct(req, 'configuracoes_alteradas', (b.registration_mode ? 'cadastro: ' + b.registration_mode + ' ' : '') + (typeof b.announcement === 'string' ? '| aviso atualizado' : ''));
   res.json({ success: true });
 }));
+// Pulso do site (a cada 2s): versão publicada, sessão, aviso global e novas notificações
+const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || '';
+app.get('/api/live', wrap(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const out = { v: BUILD_ID, auth: false };
+  if (req.session && req.session.userId) {
+    const u = await one('SELECT id, username, role, status, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
+    if (u && u.status !== 'banned' && !(u.force_logout_at && Number(req.session.at || 0) <= Number(u.force_logout_at))) {
+      out.auth = true; out.role = u.role; out.status = u.status;
+      out.ann = { text: await getSetting('announcement', ''), type: await getSetting('announcement_type', 'info') };
+      out.unread = num((await one('SELECT COUNT(*) AS c FROM notifications WHERE user_id = $1 AND "read" = 0', [u.id])).c);
+      out.latest = await q('SELECT id, title, message, type FROM notifications WHERE user_id = $1 AND "read" = 0 ORDER BY created_at DESC LIMIT 3', [u.id]);
+    }
+  }
+  res.json(out);
+}));
 app.get('/api/announcement', requireAuth, wrap(async (req, res) => {
   res.json({ text: await getSetting('announcement', ''), type: await getSetting('announcement_type', 'info') });
 }));

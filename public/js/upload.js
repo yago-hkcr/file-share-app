@@ -108,7 +108,7 @@
   };
 
   // Devolve { sent, skipped }
-  window.uploadToRoom = async function (roomId, fileList, onStatus) {
+  const _uploadInner = async function (roomId, fileList, onStatus) {
     let all = Array.from(fileList); // copia já: o <input> pode ser limpo logo depois
     all = await window.confirmUpload(all);
     if (!all) return { sent: 0, skipped: [], cancelled: true };
@@ -140,5 +140,11 @@
       sent++;
     }
     return { sent, skipped };
+  };
+  window.__fsBusy = 0;
+  window.uploadToRoom = async function (roomId, fileList, onStatus) {
+    window.__fsBusy++;
+    try { return await _uploadInner(roomId, fileList, onStatus); }
+    finally { window.__fsBusy = Math.max(0, window.__fsBusy - 1); }
   };
 })();

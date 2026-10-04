@@ -74,7 +74,7 @@
   $('tab-system').innerHTML = '<h2><i class="fas fa-gear"></i> Sistema</h2><div class="ap-grid"><div class="ap-card"><h4>Novos cadastros</h4><div class="ap-form"><select id="syReg"><option value="approval">Exigir aprovação do ADM</option><option value="auto">Aprovar automaticamente</option><option value="closed">Fechar cadastros</option></select><button class="btn btn-green" id="sySave"><i class="fas fa-floppy-disk"></i> Salvar</button></div></div><div class="ap-card"><h4>Backup</h4><p class="text-muted" style="font-size:13px;margin-bottom:10px">Baixa usuários (sem senhas), salas, lista de arquivos e atividade em JSON.</p><a class="btn btn-green" href="/api/admin/export"><i class="fas fa-download"></i> Exportar dados</a></div></div>';
 
   // ---------- showTab ----------
-  const LOAD = { stats: () => { window.loadStats && window.loadStats(); overview(); }, users: () => loadUsersPlus(true), rooms: () => window.loadRooms && window.loadRooms(), files: () => loadFiles(), chat: () => chatInit(), log: () => loadLog(), comms: loadComms, system: loadComms };
+  const LOAD = { stats: () => { window.loadStats && window.loadStats(); overview(); }, users: () => loadUsersPlus(true), rooms: () => window.loadRooms && window.loadRooms(), files: () => loadFiles(), chat: () => { crSig = ''; chatSig = ''; chatInit(); }, log: () => loadLog(), comms: loadComms, system: loadComms };
   window.showTab = function (name) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -84,9 +84,10 @@
   };
 
   // ---------- visão geral ----------
-  const ov = document.createElement('div'); ov.id = 'ovBox'; $('statsGrid').after(ov);
+  let oSig = ''; const ov = document.createElement('div'); ov.id = 'ovBox'; $('statsGrid').after(ov);
   async function overview() {
     let o; try { o = await api('/api/admin/overview'); } catch (e) { return; }
+    const os = JSON.stringify(o); if (os === oSig) return; oSig = os;
     const max = Math.max(1, ...o.days.map(d => d.n));
     const days = []; for (let i = 6; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10); const f = o.days.find(x => x.d === d); days.push({ d, n: f ? f.n : 0 }); }
     const kpi = (ic, col, v, l) => '<div class="stat-card"><div class="stat-icon" style="background:' + col + '"><i class="fas ' + ic + '"></i></div><div><div class="stat-value">' + v + '</div><div class="stat-label">' + l + '</div></div></div>';
@@ -177,30 +178,32 @@
   }
 
   // ---------- arquivos ----------
-  let F = [], sel = new Set(), fT;
+  let F = [], sel = new Set(), fT, fSig = '';
   async function loadFiles() {
     try { F = await api('/api/admin/files?q=' + encodeURIComponent($('afQ').value)); } catch (e) { return; }
-    sel = new Set([...sel].filter(id => F.some(f => f.id === id))); drawFiles();
+    const fs = JSON.stringify(F.map(f => [f.id, f.original_name, f.size])); sel = new Set([...sel].filter(id => F.some(f => f.id === id)));
+    if (fs === fSig) return; fSig = fs; drawFiles();
   }
   function drawFiles() {
     $('afN').textContent = sel.size; $('afDel').disabled = !sel.size;
     $('afList').innerHTML = F.length ? F.map(f => '<div class="ap-row"><input type="checkbox" class="ap-sel" data-id="' + f.id + '"' + (sel.has(f.id) ? ' checked' : '') + '><div class="grow"><b>' + E(f.original_name) + '</b><div class="ap-meta"><span>' + E(f.uploader || '—') + admTag(f.uploader_role) + '</span><span><i class="fas fa-door-open"></i> ' + E(f.room || '—') + '</span><span>' + (window.fileKind ? E(window.fileKind(f.original_name, f.mime_type)) : '') + '</span><span>' + when(f.uploaded_at) + '</span></div></div><b>' + size(f.size) + '</b><a class="btn btn-sm btn-green" href="/download/' + f.id + '"><i class="fas fa-download"></i></a></div>').join('') : '<div class="empty-state"><i class="fas fa-inbox"></i><p>Nenhum arquivo</p></div>';
   }
-  $('afQ').oninput = () => { clearTimeout(fT); fT = setTimeout(loadFiles, 300); };
+  $('afQ').oninput = () => { fSig = ''; clearTimeout(fT); fT = setTimeout(loadFiles, 300); };
   $('afList').onchange = e => { const c = e.target.closest('.ap-sel'); if (!c) return; c.checked ? sel.add(c.dataset.id) : sel.delete(c.dataset.id); drawFiles(); };
   $('afAll').onclick = () => { if (sel.size === F.length) sel.clear(); else F.forEach(f => sel.add(f.id)); drawFiles(); };
   $('afDel').onclick = () => ask('Excluir ' + sel.size + ' arquivo(s) definitivamente?', async () => { try { const r = await post('/api/admin/files/bulk-delete', { ids: [...sel] }); toast(r.deleted + ' arquivo(s) excluído(s)'); sel.clear(); loadFiles(); } catch (e) { toast(e.message, 'error'); } });
 
   // ---------- monitor de chat ----------
-  let chatRoom = '', chatSig = '';
-  async function chatInit() {
+  let chatRoom = '', chatSig = '', crSig = '';
+  async function chatInit(first) {
     try {
       const rooms = await api('/api/admin/rooms-lite');
       const cur = $('acRoom').value;
+      const rs2 = JSON.stringify(rooms.map(r => [r.id, r.name, r.msgs])); if (rs2 !== crSig) { crSig = rs2;
       $('acRoom').innerHTML = rooms.length ? rooms.map(r => '<option value="' + r.id + '">' + E(r.name) + ' (' + (Number(r.msgs) || 0) + ')</option>').join('') : '<option value="">Sem salas</option>';
-      if (cur && rooms.some(r => r.id === cur)) $('acRoom').value = cur;
+      if (cur && rooms.some(r => r.id === cur)) $('acRoom').value = cur; }
     } catch (e) { return; }
-    chatLoad(true);
+    chatLoad(false);
   }
   async function chatLoad(force) {
     chatRoom = $('acRoom').value; if (!chatRoom) { $('acList').innerHTML = '<p class="text-muted">Nenhuma sala.</p>'; return; }
@@ -215,18 +218,19 @@
   $('acClear').onclick = () => { if (!$('acRoom').value) return; ask('Apagar TODAS as mensagens desta sala?', async () => { try { await post('/api/admin/rooms/' + $('acRoom').value + '/clear-chat'); toast('Chat limpo'); chatLoad(true); } catch (e) { toast(e.message, 'error'); } }); };
 
   // ---------- atividade ----------
-  let LG = [], lT;
+  let LG = [], lT, lSig = '';
   async function loadLog() {
     try { LG = await api('/api/admin/log?action=' + encodeURIComponent($('alA').value) + '&q=' + encodeURIComponent($('alQ').value)); } catch (e) { return; }
+    const ls = JSON.stringify(LG.map(a => [a.created_at, a.action, a.detail, a.username])); if (ls === lSig) return; lSig = ls;
     $('alList').innerHTML = LG.length ? LG.map(a => '<div class="ap-row" style="flex-wrap:wrap">' + actBadge(a.action) + '<span class="grow" style="white-space:normal">' + E(a.username || '—') + admTag(a.role) + ' <span class="text-muted">' + E(a.detail) + '</span></span><span class="text-muted" style="font-size:12px">' + E(a.ip || '') + ' · ' + when(a.created_at) + '</span></div>').join('') : '<div class="empty-state"><i class="fas fa-clock-rotate-left"></i><p>Sem registros</p></div>';
   }
-  $('alQ').oninput = () => { clearTimeout(lT); lT = setTimeout(loadLog, 300); };
-  $('alA').onchange = loadLog;
+  $('alQ').oninput = () => { lSig = ''; clearTimeout(lT); lT = setTimeout(loadLog, 300); };
+  $('alA').onchange = () => { lSig = ''; loadLog(); };
   $('alCsv').onclick = () => csv('atividade.csv', [['data', 'usuario', 'acao', 'detalhe', 'ip', 'dispositivo']].concat(LG.map(a => [a.created_at, a.username, a.action, a.detail, a.ip, a.user_agent])));
 
   // ---------- comunicados / sistema ----------
   async function loadComms() {
-    try { const s = await api('/api/admin/settings'); if (document.activeElement !== $('anT')) $('anT').value = s.announcement; $('anY').value = s.announcement_type; $('syReg').value = s.registration_mode; } catch (e) {}
+    try { const s = await api('/api/admin/settings'); const fo = document.activeElement; if (fo !== $('anT')) $('anT').value = s.announcement; if (fo !== $('anY')) $('anY').value = s.announcement_type; if (fo !== $('syReg')) $('syReg').value = s.registration_mode; } catch (e) {}
   }
   $('bcSend').onclick = () => { const t = $('bcT').value.trim(), m = $('bcM').value.trim(); if (!t || !m) return toast('Preencha título e mensagem', 'error'); ask('Enviar este comunicado para TODOS os usuários?', async () => { try { const r = await post('/api/admin/broadcast', { title: t, message: m, type: $('bcY').value }); toast('Enviado para ' + r.sent + ' usuários'); $('bcT').value = ''; $('bcM').value = ''; } catch (e) { toast(e.message, 'error'); } }); };
   $('anSave').onclick = async () => { try { await post('/api/admin/settings', { announcement: $('anT').value, announcement_type: $('anY').value }); toast('Aviso publicado'); } catch (e) { toast(e.message, 'error'); } };
@@ -239,7 +243,7 @@
   const rTools = document.createElement('div'); rTools.className = 'ap-tools';
   rTools.innerHTML = '<span class="text-muted" style="font-size:13px">Atalhos de sala:</span><select id="arRoom" style="min-width:180px"></select><button class="btn btn-sm btn-outline" data-r="pub"><i class="fas fa-globe"></i> Pública</button><button class="btn btn-sm btn-outline" data-r="priv"><i class="fas fa-lock"></i> Privada</button><button class="btn btn-sm btn-outline" data-r="x10">+10 min</button><button class="btn btn-sm btn-outline" data-r="x60">+1 h</button><button class="btn btn-sm btn-outline" data-r="perm"><i class="fas fa-infinity"></i> Permanente</button>';
   roomsTab.querySelector('h2').after(rTools);
-  async function fillRoomSel() { try { const rs = await api('/api/admin/rooms-lite'); const c = $('arRoom').value; $('arRoom').innerHTML = rs.map(r => '<option value="' + r.id + '">' + E(r.name) + (r.expires_at ? ' ⏳' : '') + '</option>').join(''); if (c) $('arRoom').value = c; } catch (e) {} }
+  let rsSig = ''; async function fillRoomSel() { try { const rs = await api('/api/admin/rooms-lite'); const html = rs.map(r => '<option value="' + r.id + '">' + E(r.name) + (r.expires_at ? ' ⏳' : '') + '</option>').join(''); if (html === rsSig) return; rsSig = html; const c = $('arRoom').value; $('arRoom').innerHTML = html; if (c) $('arRoom').value = c; } catch (e) {} }
   rTools.onclick = async e => {
     const b = e.target.closest('[data-r]'); const id = $('arRoom').value; if (!b || !id) return;
     try {
@@ -250,13 +254,31 @@
   };
   const origShow = window.showTab; window.showTab = function (n) { origShow(n); if (n === 'rooms') fillRoomSel(); };
 
-  // ---------- atualização automática ----------
+  // ---------- membros da sala: ao vivo ----------
+  let memRoom = null, memSig = '';
+  const origMembers = window.showMembers;
+  if (origMembers) window.showMembers = function (id) { memRoom = id; memSig = ''; return origMembers(id); };
+  async function liveMembers() {
+    const m = $('membersModal'); if (!m || m.style.display === 'none' || !memRoom) return;
+    try {
+      const [rooms, users] = await Promise.all([api('/api/rooms'), api('/api/admin/users-plus')]);
+      const room = rooms.find(r => r.id === memRoom);
+      if (!room) { m.style.display = 'none'; memRoom = null; toast('Esta sala não existe mais', 'warning'); return; }
+      const sig = JSON.stringify([room.members.map(x => x.id).sort(), users.filter(u => u.status === 'approved' && u.role !== 'admin').map(u => u.id).sort()]);
+      if (sig === memSig) return; memSig = sig; origMembers(memRoom);
+    } catch (e) {}
+  }
+  // ---------- atualização automática (2s, invisível) ----------
   setInterval(() => {
     if (document.hidden) return;
     const a = document.querySelector('.tab-content.active'); const id = a ? a.id : '';
     if (id === 'tab-stats') overview();
-    else if (id === 'tab-chat') chatLoad(false);
-    else if (id === 'tab-log' && !$('alQ').value) loadLog();
-  }, 4000);
+    else if (id === 'tab-chat') chatInit();
+    else if (id === 'tab-log') loadLog();
+    else if (id === 'tab-files') loadFiles();
+    else if (id === 'tab-comms' || id === 'tab-system') loadComms();
+    else if (id === 'tab-rooms') fillRoomSel();
+    liveMembers();
+  }, 2000);
   overview();
 })();
