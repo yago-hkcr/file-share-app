@@ -1428,3 +1428,48 @@ html[data-theme="dark"] .kind-badge { color: #ddd0ff; }
 .confirm-info { flex: 1; min-width: 0; }
 .confirm-info small { display: block; margin-top: 4px; opacity: .7; }
 .confirm-modal { z-index: 10000; }
+
+
+/* ===== Rolagem corrigida nos modais ===== */
+.modal { padding: 12px; overflow: hidden; }
+.modal-content { display: flex; flex-direction: column; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow: hidden; }
+.modal-content > .modal-header, .modal-content > .modal-footer { flex: 0 0 auto; }
+.modal-content > .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; max-height: none; }
+.modal-header { position: sticky; top: 0; z-index: 3; gap: 10px; }
+.modal-header h3 { min-width: 0; overflow-wrap: anywhere; margin-right: auto; }
+.room-head-btns { display: flex; align-items: center; gap: 8px; flex: none; }
+.chat-list { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
+.file-list { max-height: none; }
+html, body { overflow-x: hidden; }
+body.app-page, body.sala-page { overflow-y: auto; }
+@media (max-width: 600px) { .modal-content { max-height: 94dvh; } .modal-body { max-height: none !important; } }
+
+/* ===== Cursor bolha cyber ===== */
+html.has-bubble, html.has-bubble * { cursor: none !important; }
+.cy-bubble, .cy-dot { position: fixed; left: 0; top: 0; z-index: 2147483647; pointer-events: none; opacity: 0; transition: opacity .2s ease; will-change: transform; }
+html.bubble-on .cy-bubble, html.bubble-on .cy-dot { opacity: 1; }
+.cy-bubble { --bc: 255,107,74; --bc2: 255,179,107; }
+html[data-theme="dark"] .cy-bubble { --bc: 168,85,247; --bc2: 109,123,255; }
+.cy-b-ring { position: absolute; left: -17px; top: -17px; width: 34px; height: 34px; border-radius: 50%;
+  border: 1.5px solid rgba(var(--bc), .9);
+  background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.55), rgba(var(--bc2), .16) 38%, rgba(var(--bc), .06) 70%);
+  box-shadow: 0 0 14px rgba(var(--bc), .55), inset 0 0 12px rgba(var(--bc2), .35);
+  animation: cyWobble 3.2s ease-in-out infinite, cyPulse 2s ease-in-out infinite;
+  transition: width .22s ease, height .22s ease, left .22s ease, top .22s ease, background .2s ease, border-radius .2s ease; }
+.cy-b-shine { position: absolute; left: -8px; top: -9px; width: 8px; height: 5px; border-radius: 50%; background: rgba(255,255,255,.8); filter: blur(.6px); transform: rotate(-30deg); transition: opacity .2s ease; }
+.cy-bubble.is-link .cy-b-ring { width: 52px; height: 52px; left: -26px; top: -26px; background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.4), rgba(var(--bc2), .3) 45%, rgba(var(--bc), .14) 75%); box-shadow: 0 0 22px rgba(var(--bc), .8), inset 0 0 16px rgba(var(--bc2), .5); }
+.cy-bubble.is-link .cy-b-shine { left: -14px; top: -16px; }
+.cy-bubble.is-text .cy-b-ring { width: 4px; height: 26px; left: -2px; top: -13px; border-radius: 3px; animation: none; background: rgba(var(--bc), .9); }
+.cy-bubble.is-text .cy-b-shine { opacity: 0; }
+.cy-bubble.is-down .cy-b-ring { width: 22px; height: 22px; left: -11px; top: -11px; }
+.cy-dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #fff; box-shadow: 0 0 8px 2px rgba(255,107,74,.9); }
+html[data-theme="dark"] .cy-dot { box-shadow: 0 0 8px 2px rgba(168,85,247,.95); }
+.cy-trail { position: fixed; z-index: 2147483646; pointer-events: none; border-radius: 50%; transform: translate(-50%,-50%); border: 1px solid rgba(255,107,74,.8); background: rgba(255,179,107,.18); box-shadow: 0 0 8px rgba(255,107,74,.6); animation: cyRise .8s ease-out forwards; }
+html[data-theme="dark"] .cy-trail { border-color: rgba(168,85,247,.85); background: rgba(109,123,255,.18); box-shadow: 0 0 8px rgba(168,85,247,.7); }
+.cy-ripple { position: fixed; z-index: 2147483646; pointer-events: none; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%,-50%); border: 2px solid rgba(255,107,74,.9); animation: cyRipple .65s ease-out forwards; }
+html[data-theme="dark"] .cy-ripple { border-color: rgba(168,85,247,.95); }
+@keyframes cyWobble { 0%,100% { border-radius: 50% 50% 50% 50%; } 25% { border-radius: 56% 44% 52% 48%; } 50% { border-radius: 46% 54% 44% 56%; } 75% { border-radius: 52% 48% 56% 44%; } }
+@keyframes cyPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+@keyframes cyRise { to { transform: translate(-50%, -34px) scale(.3); opacity: 0; } }
+@keyframes cyRipple { to { width: 70px; height: 70px; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cy-b-ring { animation: none; } }
