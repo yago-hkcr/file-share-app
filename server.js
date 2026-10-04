@@ -1,518 +1,560 @@
 const express = require('express');
 const cookieSession = require('cookie-session');
 const multer = require('multer');
-const initSqlJs = require('sql.js');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const { neon } = require('@neondatabase/serverless');
 const path = require('path');
 const fs = require('fs');
 
-const app = express();
-const PORT = 3000;
-app.set('trust proxy', 1);
+const IS_VERCEL = Boolean(process.env.VERCEL);
 
-const uploadsDir = process.env.VERCEL ? path.join('/tmp', 'uploads') : path.join(__dirname, 'uploads');
-const dataDir = process.env.VERCEL ? path.join('/tmp', 'data') : path.join(__dirname, 'data');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+// ---------------------------------------------------------------------------
+// Variáveis de ambiente (localmente lê o .env.local; na Vercel já vêm prontas)
+// ---------------------------------------------------------------------------
+if (!IS_VERCEL) {
+  for (const file of ['.env.local', '.env']) {
+    const p = path.join(__dirname, file);
+    if (!fs.existsSync(p)) continue;
+    for (const line of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2');
+    }
+  }
+}
 
-const dbPath = process.env.VERCEL ? path.join('/tmp', 'database.sqlite') : path.join(dataDir, 'database.sqlite');
-let db;
-let dbInitPromise;
+function cleanUrl(value) {
+  if (!value) return '';
+  let url = String(value).trim().replace(/^(["'])(.*)\1$/, '$2');
+  try {
+    const u = new URL(url);
+    u.searchParams.delete('channel_binding'); // o driver HTTP não usa
+    return u.toString();
+  } catch (e) {
+    return url;
+  }
+}
+
+const DATABASE_URL = cleanUrl(process.env.DATABASE_URL || process.env.POSTGRES_URL);
+if (!DATABASE_URL) {
+  console.error('❌ DATABASE_URL não definida. Configure a integração Neon na Vercel (ou o .env.local).');
+}
+const sql = DATABASE_URL ? neon(DATABASE_URL) : null;
+
+// ---------------------------------------------------------------------------
+// Helpers de banco (Postgres/Neon). Cada consulta é uma chamada HTTP sem estado,
+// então todas as instâncias serverless enxergam exatamente os mesmos dados.
+// ---------------------------------------------------------------------------
+async function q(text, params = []) {
+  if (!sql) throw new Error('Banco de dados não configurado (DATABASE_URL ausente)');
+  return sql.query(text, params);
+}
+async function one(text, params = []) {
+  const rows = await q(text, params);
+  return rows[0] || null;
+}
+const num = v => Number(v) || 0;
+const ts = () => new Date().toISOString().slice(0, 19).replace('T', ' '); // UTC "YYYY-MM-DD HH:MM:SS"
+const isUnique = e => e && (e.code === '23505' || /unique|duplicate/i.test(String(e.message)));
+
+let initPromise = null;
+function ensureDatabase() {
+  if (!initPromise) {
+    initPromise = initDatabase().catch(err => {
+      initPromise = null; // não guarda falha: a próxima requisição tenta de novo
+      throw err;
+    });
+  }
+  return initPromise;
+}
+
+async function createTables() {
+  await Promise.all([
+    q(`CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT DEFAULT 'user',
+      status TEXT DEFAULT 'pending',
+      avatar_color TEXT DEFAULT '#4f46e5',
+      created_at TEXT
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS rooms (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      slug TEXT UNIQUE NOT NULL,
+      is_public INTEGER DEFAULT 0,
+      max_members INTEGER DEFAULT 50,
+      created_by TEXT,
+      created_at TEXT
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS room_members (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT DEFAULT 'member',
+      joined_at TEXT,
+      UNIQUE(room_id, user_id)
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS files (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      uploaded_by TEXT,
+      original_name TEXT NOT NULL,
+      stored_name TEXT NOT NULL,
+      size BIGINT NOT NULL,
+      mime_type TEXT DEFAULT 'application/octet-stream',
+      uploaded_at TEXT
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS file_blobs (
+      file_id TEXT PRIMARY KEY,
+      data BYTEA NOT NULL
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      type TEXT DEFAULT 'info',
+      "read" INTEGER DEFAULT 0,
+      created_at TEXT
+    )`)
+  ]);
+}
 
 async function initDatabase() {
-  if (db) return;
-  const SQL = await initSqlJs({ locateFile: () => require.resolve('sql.js/dist/sql-wasm.wasm') });
-  if (fs.existsSync(dbPath)) {
-    db = new SQL.Database(fs.readFileSync(dbPath));
-  } else {
-    db = new SQL.Database();
+  try {
+    await createTables();
+  } catch (e) {
+    // Duas cold starts criando tabelas ao mesmo tempo podem colidir no catálogo do Postgres
+    await new Promise(r => setTimeout(r, 300));
+    await createTables();
   }
-
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    role TEXT DEFAULT 'user',
-    status TEXT DEFAULT 'pending',
-    avatar_color TEXT DEFAULT '#4f46e5',
-    created_at TEXT DEFAULT (datetime('now'))
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS rooms (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    slug TEXT UNIQUE NOT NULL,
-    is_public INTEGER DEFAULT 0,
-    max_members INTEGER DEFAULT 50,
-    created_by TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS room_members (
-    id TEXT PRIMARY KEY,
-    room_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    role TEXT DEFAULT 'member',
-    joined_at TEXT DEFAULT (datetime('now')),
-    UNIQUE(room_id, user_id)
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS files (
-    id TEXT PRIMARY KEY,
-    room_id TEXT NOT NULL,
-    uploaded_by TEXT,
-    original_name TEXT NOT NULL,
-    stored_name TEXT NOT NULL,
-    size INTEGER NOT NULL,
-    mime_type TEXT DEFAULT 'application/octet-stream',
-    uploaded_at TEXT DEFAULT (datetime('now'))
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    room_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    content TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now'))
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS notifications (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    message TEXT NOT NULL,
-    type TEXT DEFAULT 'info',
-    read INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now'))
-  )`);
-
-  migrateDatabase();
-
-  // Seed admin
-  const admin = queryOne("SELECT id FROM users WHERE role = 'admin'");
+  const admin = await one("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
   if (!admin) {
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-    const hash = bcrypt.hashSync(adminPassword, 10);
-    const adminId = uuidv4();
-    runSql('INSERT INTO users (id, username, email, password_hash, role, status, avatar_color) VALUES (?,?,?,?,?,?,?)',
-      [adminId, 'admin', 'admin@fileshare.com', hash, 'admin', 'approved', '#ef4444']);
+    const hash = bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10);
+    await q(`INSERT INTO users (id, username, email, password_hash, role, status, avatar_color, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
+      [uuidv4(), 'admin', 'admin@fileshare.com', hash, 'admin', 'approved', '#ef4444', ts()]);
     console.log('✅ Admin criado');
   }
-  saveDb();
 }
 
-function ensureDatabase() {
-  if (!dbInitPromise) dbInitPromise = initDatabase();
-  return dbInitPromise;
-}
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+const app = express();
+app.set('trust proxy', 1);
 
-function saveDb() {
-  fs.writeFileSync(dbPath, Buffer.from(db.export()));
-}
+const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-function queryAll(sql, params = []) {
-  const stmt = db.prepare(sql);
-  if (params.length) stmt.bind(params);
-  const results = [];
-  while (stmt.step()) results.push(stmt.getAsObject());
-  stmt.free();
-  return results;
-}
-
-function queryOne(sql, params = []) {
-  const rows = queryAll(sql, params);
-  return rows.length > 0 ? rows[0] : null;
-}
-
-function runSql(sql, params = []) {
-  db.run(sql, params);
-  saveDb();
-}
-
-function ensureColumn(table, column, definition) {
-  const columns = queryAll(`PRAGMA table_info(${table})`);
-  if (!columns.some(item => item.name === column)) {
-    db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
-}
-
-function migrateDatabase() {
-  ensureColumn('rooms', 'is_public', 'INTEGER DEFAULT 1');
-  ensureColumn('rooms', 'max_members', 'INTEGER DEFAULT 50');
-  ensureColumn('rooms', 'created_by', 'TEXT');
-  ensureColumn('files', 'uploaded_by', 'TEXT');
-  saveDb();
-}
-
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.use(cookieSession({
   name: 'fileshare_session',
   keys: [process.env.SESSION_SECRET || 'fileshare-local-development-secret'],
   maxAge: 7 * 24 * 60 * 60 * 1000,
   httpOnly: true,
-  secure: Boolean(process.env.VERCEL),
+  secure: IS_VERCEL,
   sameSite: 'lax'
 }));
-app.use((req, res, next) => {
-  ensureDatabase().then(next).catch(next);
-});
+app.use(wrap(async (req, res, next) => { await ensureDatabase(); next(); }));
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => cb(null, uuidv4() + path.extname(file.originalname))
-});
-const upload = multer({ storage, limits: { fileSize: 200 * 1024 * 1024 } });
+// Arquivos ficam no próprio Postgres. Na Vercel o corpo da requisição é limitado a ~4,5 MB.
+const MAX_FILE_BYTES = IS_VERCEL ? 4 * 1024 * 1024 : 50 * 1024 * 1024;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES, files: 20 } });
 
-// Auth helpers
-function requireAuth(req, res, next) {
-  if (req.session && req.session.userId && queryOne('SELECT id FROM users WHERE id = ?', [req.session.userId])) return next();
-  res.status(401).json({ error: 'Não autorizado' });
-}
-function requireAdmin(req, res, next) {
-  if (req.session && req.session.role === 'admin') return next();
-  res.status(403).json({ error: 'Acesso restrito ao administrador' });
-}
+// ---------------------------------------------------------------------------
+// Autenticação (sempre confere o usuário no banco — nada depende só do cookie)
+// ---------------------------------------------------------------------------
+const requireAuth = wrap(async (req, res, next) => {
+  if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
+  const user = await one('SELECT id, username, role, status FROM users WHERE id = $1', [req.session.userId]);
+  if (!user) { req.session = null; return res.status(401).json({ error: 'Não autorizado' }); }
+  req.user = user;
+  next();
+});
+const isAdmin = u => u.role === 'admin';
+const isApproved = u => u.status === 'approved' || u.role === 'admin';
 function requireApproved(req, res, next) {
-  const user = req.session && req.session.userId ? queryOne('SELECT role, status FROM users WHERE id = ?', [req.session.userId]) : null;
-  if (user) {
-    req.session.role = user.role;
-    req.session.status = user.status;
-  }
-  if (user && (user.status === 'approved' || user.role === 'admin')) return next();
+  if (isApproved(req.user)) return next();
   res.status(403).json({ error: 'Conta aguardando aprovação' });
 }
+function requireAdmin(req, res, next) {
+  if (isAdmin(req.user)) return next();
+  res.status(403).json({ error: 'Acesso restrito ao administrador' });
+}
+const asAdmin = [requireAuth, requireAdmin];
+const asMember = [requireAuth, requireApproved];
 
-function generateSlug(name) {
+async function isRoomMember(roomId, userId) {
+  return !!(await one('SELECT id FROM room_members WHERE room_id = $1 AND user_id = $2', [roomId, userId]));
+}
+async function canUseRoom(user, roomId) {
+  return isAdmin(user) || isRoomMember(roomId, user.id);
+}
+
+async function generateSlug(name) {
   let slug = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  if (!slug) slug = 'sala-' + Date.now().toString(36);
-  if (queryOne('SELECT id FROM rooms WHERE slug = ?', [slug])) slug += '-' + Date.now().toString(36);
+  if (!slug) slug = 'sala';
+  if (await one('SELECT id FROM rooms WHERE slug = $1', [slug])) slug += '-' + Date.now().toString(36);
   return slug;
 }
 
-function roomForRequest(roomId, userId) {
-  const room = queryOne('SELECT * FROM rooms WHERE id = ?', [roomId]);
-  if (!room) return null;
-  if (room.is_public || queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [roomId, userId])) return room;
-  return null;
+function notify(userId, title, message, type) {
+  return q('INSERT INTO notifications (id, user_id, title, message, type, "read", created_at) VALUES ($1,$2,$3,$4,$5,0,$6)',
+    [uuidv4(), userId, title, message, type, ts()]);
 }
 
-// =================== PAGE ROUTES ===================
-app.get('/', (req, res) => {
+// =================== PÁGINAS ===================
+const page = name => path.join(__dirname, 'public', name);
+
+app.get('/', wrap(async (req, res) => {
   if (req.session && req.session.userId) {
-    return res.redirect(req.session.role === 'admin' ? '/admin' : '/dashboard');
+    const user = await one('SELECT role FROM users WHERE id = $1', [req.session.userId]);
+    if (user) return res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
+    req.session = null;
   }
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-app.get('/register', (req, res) => res.sendFile(path.join(__dirname, 'public', 'register.html')));
-app.get('/admin', (req, res) => {
-  if (!req.session || req.session.role !== 'admin') return res.redirect('/');
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
-app.get('/dashboard', (req, res) => {
+  res.sendFile(page('index.html'));
+}));
+app.get('/register', (req, res) => res.sendFile(page('register.html')));
+app.get('/admin', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
-  const user = queryOne('SELECT role, status FROM users WHERE id = ?', [req.session.userId]);
+  const user = await one('SELECT role FROM users WHERE id = $1', [req.session.userId]);
+  if (!user || user.role !== 'admin') return res.redirect('/');
+  res.sendFile(page('admin.html'));
+}));
+app.get('/dashboard', wrap(async (req, res) => {
+  if (!req.session || !req.session.userId) return res.redirect('/');
+  const user = await one('SELECT role, status FROM users WHERE id = $1', [req.session.userId]);
   if (!user) return res.redirect('/');
-  req.session.role = user.role;
-  req.session.status = user.status;
-  if (user.status !== 'approved' && user.role !== 'admin') {
-    return res.sendFile(path.join(__dirname, 'public', 'pending.html'));
-  }
-  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
-});
-app.get('/sala/:slug', (req, res) => {
+  if (!isApproved(user)) return res.sendFile(page('pending.html'));
+  res.sendFile(page('dashboard.html'));
+}));
+app.get('/sala/:slug', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
-  const room = queryOne('SELECT * FROM rooms WHERE slug = ?', [req.params.slug]);
+  const user = await one('SELECT id, role, status FROM users WHERE id = $1', [req.session.userId]);
+  if (!user || !isApproved(user)) return res.redirect('/dashboard');
+  const room = await one('SELECT id FROM rooms WHERE slug = $1', [req.params.slug]);
   if (!room) return res.status(404).send('Sala não encontrada');
-  const user = queryOne('SELECT role, status FROM users WHERE id = ?', [req.session.userId]);
-  if (!user || (user.status !== 'approved' && user.role !== 'admin')) return res.redirect('/dashboard');
-  const isMember = req.session && (req.session.role === 'admin' || queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [room.id, req.session.userId]));
-  if (user.role !== 'admin' && !isMember) return res.status(403).send('Entre na sala para acessar seus arquivos');
-  res.sendFile(path.join(__dirname, 'public', 'sala.html'));
-});
+  if (!(await canUseRoom(user, room.id))) return res.status(403).send('Entre na sala para acessar seus arquivos');
+  res.sendFile(page('sala.html'));
+}));
 
 // =================== AUTH API ===================
-app.post('/api/register', (req, res) => {
+app.post('/api/register', wrap(async (req, res) => {
   const username = String(req.body.username || '').trim();
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   if (!username || !email || !password) return res.status(400).json({ error: 'Preencha todos os campos' });
   if (password.length < 4) return res.status(400).json({ error: 'Senha mínima: 4 caracteres' });
-  if (queryOne('SELECT id FROM users WHERE username = ?', [username]))
-    return res.status(400).json({ error: 'Usuário já existe' });
-  if (queryOne('SELECT id FROM users WHERE email = ?', [email]))
-    return res.status(400).json({ error: 'Email já cadastrado' });
+  if (await one('SELECT id FROM users WHERE username = $1', [username])) return res.status(400).json({ error: 'Usuário já existe' });
+  if (await one('SELECT id FROM users WHERE email = $1', [email])) return res.status(400).json({ error: 'Email já cadastrado' });
 
-  const colors = ['#4f46e5','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#f97316'];
-  const id = uuidv4();
-  const hash = bcrypt.hashSync(password, 10);
-  const color = colors[Math.floor(Math.random() * colors.length)];
-  runSql('INSERT INTO users (id, username, email, password_hash, avatar_color) VALUES (?,?,?,?,?)',
-    [id, username, email, hash, color]);
-
-  // Notify admin
-  const admins = queryAll("SELECT id FROM users WHERE role = 'admin'");
-  admins.forEach(a => {
-    runSql('INSERT INTO notifications (id, user_id, title, message, type) VALUES (?,?,?,?,?)',
-      [uuidv4(), a.id, 'Novo cadastro', `${username} solicitou acesso ao sistema.`, 'warning']);
-  });
-
+  const colors = ['#4f46e5', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+  try {
+    await q('INSERT INTO users (id, username, email, password_hash, avatar_color, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+      [uuidv4(), username, email, bcrypt.hashSync(password, 10), colors[Math.floor(Math.random() * colors.length)], ts()]);
+  } catch (e) {
+    if (isUnique(e)) return res.status(400).json({ error: 'Usuário ou email já cadastrado' });
+    throw e;
+  }
+  const admins = await q("SELECT id FROM users WHERE role = 'admin'");
+  await Promise.all(admins.map(a => notify(a.id, 'Novo cadastro', `${username} solicitou acesso ao sistema.`, 'warning')));
   res.json({ success: true, message: 'Conta criada! Aguarde aprovação do administrador.' });
-});
+}));
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', wrap(async (req, res) => {
   const identifier = String(req.body.username || '').trim();
   const password = String(req.body.password || '');
-  const user = queryOne('SELECT * FROM users WHERE username = ? OR email = ?', [identifier, identifier.toLowerCase()]);
-  if (!user || !bcrypt.compareSync(password, user.password_hash))
-    return res.status(401).json({ error: 'Credenciais inválidas' });
-  if (user.status === 'rejected')
-    return res.status(403).json({ error: 'Sua conta foi rejeitada pelo administrador' });
-
+  const user = await one('SELECT * FROM users WHERE username = $1 OR email = $2', [identifier, identifier.toLowerCase()]);
+  if (!user || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'Credenciais inválidas' });
+  if (user.status === 'rejected') return res.status(403).json({ error: 'Sua conta foi rejeitada pelo administrador' });
   req.session.userId = user.id;
   req.session.username = user.username;
   req.session.role = user.role;
   req.session.status = user.status;
   res.json({ success: true, role: user.role, status: user.status });
-});
+}));
 
 app.post('/api/logout', (req, res) => { req.session = null; res.json({ success: true }); });
 
-app.get('/api/me', requireAuth, (req, res) => {
-  const user = queryOne('SELECT id, username, email, role, status, avatar_color, created_at FROM users WHERE id = ?', [req.session.userId]);
-  const unreadNotifs = queryAll('SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read = 0', [req.session.userId]);
-  res.json({ ...user, unread_notifications: unreadNotifs[0]?.count || 0 });
-});
+app.get('/api/me', requireAuth, wrap(async (req, res) => {
+  const user = await one('SELECT id, username, email, role, status, avatar_color, created_at FROM users WHERE id = $1', [req.user.id]);
+  const unread = await one('SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND "read" = 0', [req.user.id]);
+  res.json({ ...user, unread_notifications: num(unread && unread.count) });
+}));
 
-// =================== ADMIN: USER MANAGEMENT ===================
-app.get('/api/admin/users', requireAdmin, (req, res) => {
-  const users = queryAll("SELECT id, username, email, role, status, avatar_color, created_at FROM users ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, created_at DESC");
-  res.json(users);
-});
+// =================== ADMIN: USUÁRIOS ===================
+app.get('/api/admin/users', asAdmin, wrap(async (req, res) => {
+  res.json(await q(`SELECT id, username, email, role, status, avatar_color, created_at FROM users
+    ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, created_at DESC`));
+}));
 
-app.post('/api/admin/users/:id/approve', requireAdmin, (req, res) => {
-  const user = queryOne('SELECT * FROM users WHERE id = ?', [req.params.id]);
+app.post('/api/admin/users/:id/approve', asAdmin, wrap(async (req, res) => {
+  const user = await one('SELECT id FROM users WHERE id = $1', [req.params.id]);
   if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-  runSql("UPDATE users SET status = 'approved' WHERE id = ?", [user.id]);
-  runSql('INSERT INTO notifications (id, user_id, title, message, type) VALUES (?,?,?,?,?)',
-    [uuidv4(), user.id, 'Conta aprovada!', 'Sua conta foi aprovada pelo administrador. Bem-vindo ao FileShare!', 'success']);
+  await q("UPDATE users SET status = 'approved' WHERE id = $1", [user.id]);
+  await notify(user.id, 'Conta aprovada!', 'Sua conta foi aprovada pelo administrador. Bem-vindo ao FileShare!', 'success');
   res.json({ success: true });
-});
+}));
 
-app.post('/api/admin/users/:id/reject', requireAdmin, (req, res) => {
-  const user = queryOne('SELECT * FROM users WHERE id = ?', [req.params.id]);
+app.post('/api/admin/users/:id/reject', asAdmin, wrap(async (req, res) => {
+  const user = await one('SELECT id FROM users WHERE id = $1', [req.params.id]);
   if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-  runSql("UPDATE users SET status = 'rejected' WHERE id = ?", [user.id]);
-  runSql('INSERT INTO notifications (id, user_id, title, message, type) VALUES (?,?,?,?,?)',
-    [uuidv4(), user.id, 'Conta rejeitada', 'Sua solicitação de acesso foi negada.', 'error']);
+  await q("UPDATE users SET status = 'rejected' WHERE id = $1", [user.id]);
+  await notify(user.id, 'Conta rejeitada', 'Sua solicitação de acesso foi negada.', 'error');
   res.json({ success: true });
-});
+}));
 
-app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
-  if (req.params.id === req.session.userId) return res.status(400).json({ error: 'Não pode excluir a si mesmo' });
-  runSql('DELETE FROM room_members WHERE user_id = ?', [req.params.id]);
-  runSql('DELETE FROM notifications WHERE user_id = ?', [req.params.id]);
-  runSql('DELETE FROM messages WHERE user_id = ?', [req.params.id]);
-  runSql('DELETE FROM users WHERE id = ?', [req.params.id]);
+app.delete('/api/admin/users/:id', asAdmin, wrap(async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'Não pode excluir a si mesmo' });
+  await q('DELETE FROM room_members WHERE user_id = $1', [req.params.id]);
+  await q('DELETE FROM notifications WHERE user_id = $1', [req.params.id]);
+  await q('DELETE FROM messages WHERE user_id = $1', [req.params.id]);
+  await q('DELETE FROM users WHERE id = $1', [req.params.id]);
   res.json({ success: true });
-});
+}));
 
-// =================== ROOMS ===================
-app.post('/api/rooms', requireAdmin, (req, res) => {
-  const { name, description, is_public } = req.body;
-  if (!name || !name.trim()) return res.status(400).json({ error: 'Nome obrigatório' });
+// =================== SALAS ===================
+app.post('/api/rooms', asAdmin, wrap(async (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim();
+  if (!name) return res.status(400).json({ error: 'Nome obrigatório' });
+  const description = String(req.body.description || '');
+  const isPublic = req.body.is_public === true || req.body.is_public === 'true' || req.body.is_public === 1 || req.body.is_public === 'on' ? 1 : 0;
   const id = uuidv4();
-  const slug = generateSlug(name.trim());
-  runSql('INSERT INTO rooms (id, name, description, slug, is_public, created_by) VALUES (?,?,?,?,?,?)',
-    [id, name.trim(), description || '', slug, is_public ? 1 : 0, req.session.userId]);
-  res.json(queryOne('SELECT * FROM rooms WHERE id = ?', [id]));
-});
-
-app.get('/api/rooms', requireAuth, requireApproved, (req, res) => {
-  let rooms;
-  if (req.session.role === 'admin') {
-    rooms = queryAll('SELECT * FROM rooms ORDER BY created_at DESC');
-  } else {
-    rooms = queryAll(`SELECT r.* FROM rooms r
-      LEFT JOIN room_members rm ON r.id = rm.room_id AND rm.user_id = ?
-      WHERE r.is_public = 1 OR rm.user_id IS NOT NULL
-      ORDER BY r.created_at DESC`, [req.session.userId]);
+  let slug = await generateSlug(name);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await q('INSERT INTO rooms (id, name, description, slug, is_public, max_members, created_by, created_at) VALUES ($1,$2,$3,$4,$5,50,$6,$7)',
+        [id, name, description, slug, isPublic, req.user.id, ts()]);
+      break;
+    } catch (e) {
+      if (isUnique(e) && attempt < 3) { slug = slug.replace(/-[a-z0-9]+$/, '') + '-' + Math.random().toString(36).slice(2, 7); continue; }
+      throw e;
+    }
   }
-  const result = rooms.map(room => {
-    const files = queryAll('SELECT f.*, u.username as uploader FROM files f LEFT JOIN users u ON f.uploaded_by = u.id WHERE f.room_id = ? ORDER BY f.uploaded_at DESC', [room.id]);
-    const members = queryAll(`SELECT u.id, u.username, u.avatar_color, rm.role, rm.joined_at
-      FROM room_members rm JOIN users u ON rm.user_id = u.id WHERE rm.room_id = ?`, [room.id]);
-    const memberCount = members.length;
-    const isMember = req.session.role === 'admin' || members.some(m => m.id === req.session.userId);
-    return { ...room, files, members, fileCount: files.length, memberCount, isMember };
+  res.json(await one('SELECT * FROM rooms WHERE id = $1', [id]));
+}));
+
+// Lista salas visíveis para o usuário com arquivos e membros, em 3 consultas no total
+async function loadRooms(user) {
+  const cond = isAdmin(user) ? '1=1' : '(is_public = 1 OR id IN (SELECT room_id FROM room_members WHERE user_id = $1))';
+  const params = isAdmin(user) ? [] : [user.id];
+  const [rooms, files, members] = await Promise.all([
+    q(`SELECT * FROM rooms WHERE ${cond} ORDER BY created_at DESC`, params),
+    q(`SELECT f.id, f.room_id, f.uploaded_by, f.original_name, f.size, f.mime_type, f.uploaded_at, u.username AS uploader
+       FROM files f LEFT JOIN users u ON f.uploaded_by = u.id
+       WHERE f.room_id IN (SELECT id FROM rooms WHERE ${cond}) ORDER BY f.uploaded_at DESC`, params),
+    q(`SELECT rm.room_id, u.id, u.username, u.avatar_color, rm.role, rm.joined_at
+       FROM room_members rm JOIN users u ON rm.user_id = u.id
+       WHERE rm.room_id IN (SELECT id FROM rooms WHERE ${cond})`, params)
+  ]);
+  return rooms.map(room => {
+    const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size) }));
+    const roomMembers = members.filter(m => m.room_id === room.id).map(({ room_id, ...m }) => m);
+    return {
+      ...room,
+      files: roomFiles,
+      members: roomMembers,
+      fileCount: roomFiles.length,
+      memberCount: roomMembers.length,
+      isMember: isAdmin(user) || roomMembers.some(m => m.id === user.id)
+    };
   });
-  res.json(result);
-});
+}
 
-app.get('/api/rooms/browse', requireAuth, requireApproved, (req, res) => {
-  const allRooms = queryAll(`SELECT DISTINCT r.* FROM rooms r
-    LEFT JOIN room_members rm ON r.id = rm.room_id AND rm.user_id = ?
-    WHERE r.is_public = 1 OR rm.user_id IS NOT NULL ORDER BY r.created_at DESC`, [req.session.userId]);
-  const result = allRooms.map(room => {
-    const memberCount = queryAll('SELECT COUNT(*) as c FROM room_members WHERE room_id = ?', [room.id])[0]?.c || 0;
-    const isMember = !!queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [room.id, req.session.userId]);
-    const fileCount = queryAll('SELECT COUNT(*) as c FROM files WHERE room_id = ?', [room.id])[0]?.c || 0;
-    return { ...room, memberCount, isMember, fileCount };
+app.get('/api/rooms', asMember, wrap(async (req, res) => {
+  res.json(await loadRooms(req.user));
+}));
+
+app.get('/api/rooms/browse', asMember, wrap(async (req, res) => {
+  const rooms = await loadRooms(req.user);
+  res.json(rooms.map(r => ({ ...r, isMember: r.members.some(m => m.id === req.user.id) })));
+}));
+
+app.post('/api/rooms/:id/join', asMember, wrap(async (req, res) => {
+  const room = await one('SELECT * FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  if (!room.is_public && !isAdmin(req.user)) return res.status(403).json({ error: 'Esta sala é privada' });
+  if (await isRoomMember(room.id, req.user.id)) return res.status(400).json({ error: 'Já é membro desta sala' });
+  const count = num((await one('SELECT COUNT(*) AS c FROM room_members WHERE room_id = $1', [room.id])).c);
+  if (count >= num(room.max_members)) return res.status(409).json({ error: 'Esta sala atingiu o limite de membros' });
+  await q('INSERT INTO room_members (id, room_id, user_id, joined_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+    [uuidv4(), room.id, req.user.id, ts()]);
+  res.json({ success: true });
+}));
+
+app.post('/api/rooms/:id/leave', requireAuth, wrap(async (req, res) => {
+  await q('DELETE FROM room_members WHERE room_id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  res.json({ success: true });
+}));
+
+app.delete('/api/rooms/:id', asAdmin, wrap(async (req, res) => {
+  const id = req.params.id;
+  await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [id]);
+  await q('DELETE FROM files WHERE room_id = $1', [id]);
+  await q('DELETE FROM room_members WHERE room_id = $1', [id]);
+  await q('DELETE FROM messages WHERE room_id = $1', [id]);
+  await q('DELETE FROM rooms WHERE id = $1', [id]);
+  res.json({ success: true });
+}));
+
+// =================== MEMBROS (admin) ===================
+app.post('/api/rooms/:id/members', asAdmin, wrap(async (req, res) => {
+  const userId = req.body && req.body.userId;
+  if (!userId) return res.status(400).json({ error: 'Usuário obrigatório' });
+  if (!(await one('SELECT id FROM rooms WHERE id = $1', [req.params.id]))) return res.status(404).json({ error: 'Sala não encontrada' });
+  if (!(await one('SELECT id FROM users WHERE id = $1', [userId]))) return res.status(404).json({ error: 'Usuário não encontrado' });
+  if (await isRoomMember(req.params.id, userId)) return res.status(400).json({ error: 'Já é membro' });
+  await q('INSERT INTO room_members (id, room_id, user_id, joined_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+    [uuidv4(), req.params.id, userId, ts()]);
+  res.json({ success: true });
+}));
+
+app.delete('/api/rooms/:roomId/members/:userId', asAdmin, wrap(async (req, res) => {
+  await q('DELETE FROM room_members WHERE room_id = $1 AND user_id = $2', [req.params.roomId, req.params.userId]);
+  res.json({ success: true });
+}));
+
+// =================== ARQUIVOS ===================
+app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
+  upload.array('files', 20)(req, res, err => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: `Arquivo grande demais (máximo ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB por arquivo)` });
+    }
+    return res.status(400).json({ error: 'Falha no envio: ' + err.message });
   });
-  res.json(result);
-});
-
-app.post('/api/rooms/:id/join', requireAuth, requireApproved, (req, res) => {
-  const room = queryOne('SELECT * FROM rooms WHERE id = ?', [req.params.id]);
+}, wrap(async (req, res) => {
+  const room = await one('SELECT id FROM rooms WHERE id = $1', [req.params.id]);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
-  const existing = queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [room.id, req.session.userId]);
-  if (existing) return res.status(400).json({ error: 'Já é membro desta sala' });
-  const memberCount = queryOne('SELECT COUNT(*) as count FROM room_members WHERE room_id = ?', [room.id]).count;
-  if (memberCount >= room.max_members) return res.status(409).json({ error: 'Esta sala atingiu o limite de membros' });
-  runSql('INSERT INTO room_members (id, room_id, user_id) VALUES (?,?,?)', [uuidv4(), room.id, req.session.userId]);
-  res.json({ success: true });
-});
-
-app.post('/api/rooms/:id/leave', requireAuth, (req, res) => {
-  runSql('DELETE FROM room_members WHERE room_id = ? AND user_id = ?', [req.params.id, req.session.userId]);
-  res.json({ success: true });
-});
-
-app.delete('/api/rooms/:id', requireAdmin, async (req, res) => {
-  const files = queryAll('SELECT * FROM files WHERE room_id = ?', [req.params.id]);
-  for (const file of files) {
-    try { fs.unlinkSync(path.join(uploadsDir, file.stored_name)); } catch(e){}
-  }
-  runSql('DELETE FROM files WHERE room_id = ?', [req.params.id]);
-  runSql('DELETE FROM room_members WHERE room_id = ?', [req.params.id]);
-  runSql('DELETE FROM messages WHERE room_id = ?', [req.params.id]);
-  runSql('DELETE FROM rooms WHERE id = ?', [req.params.id]);
-  res.json({ success: true });
-});
-
-// =================== ROOM MEMBERS (admin) ===================
-app.post('/api/rooms/:id/members', requireAdmin, (req, res) => {
-  const { userId } = req.body;
-  const existing = queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [req.params.id, userId]);
-  if (existing) return res.status(400).json({ error: 'Já é membro' });
-  runSql('INSERT INTO room_members (id, room_id, user_id) VALUES (?,?,?)', [uuidv4(), req.params.id, userId]);
-  res.json({ success: true });
-});
-
-app.delete('/api/rooms/:roomId/members/:userId', requireAdmin, (req, res) => {
-  runSql('DELETE FROM room_members WHERE room_id = ? AND user_id = ?', [req.params.roomId, req.params.userId]);
-  res.json({ success: true });
-});
-
-// =================== FILES ===================
-app.post('/api/rooms/:id/files', requireAuth, requireApproved, upload.array('files', 20), async (req, res) => {
-  const room = queryOne('SELECT * FROM rooms WHERE id = ?', [req.params.id]);
-  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
-  const isAdmin = req.session.role === 'admin';
-  const isMember = !!queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [room.id, req.session.userId]);
-  if (!isAdmin && !isMember) return res.status(403).json({ error: 'Entre na sala antes de enviar arquivos' });
+  if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala antes de enviar arquivos' });
+  if (!req.files || !req.files.length) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
 
   const inserted = [];
   for (const file of req.files) {
-    const fid = uuidv4();
-    runSql('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type) VALUES (?,?,?,?,?,?,?)',
-      [fid, room.id, req.session.userId, file.originalname, file.filename, file.size, file.mimetype]);
-    inserted.push({ id: fid, original_name: file.originalname, size: file.size, mime_type: file.mimetype });
+    const id = uuidv4();
+    const name = Buffer.from(file.originalname, 'latin1').toString('utf8'); // corrige acentos vindos do multipart
+    await q("INSERT INTO file_blobs (file_id, data) VALUES ($1, decode($2, 'hex'))", [id, file.buffer.toString('hex')]);
+    await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [id, room.id, req.user.id, name, id, file.size, file.mimetype || 'application/octet-stream', ts()]);
+    inserted.push({ id, original_name: name, size: file.size, mime_type: file.mimetype });
   }
   res.json(inserted);
-});
+}));
 
-app.delete('/api/files/:id', requireAuth, async (req, res) => {
-  const file = queryOne('SELECT * FROM files WHERE id = ?', [req.params.id]);
+app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
+  const file = await one('SELECT id, uploaded_by FROM files WHERE id = $1', [req.params.id]);
   if (!file) return res.status(404).json({ error: 'Arquivo não encontrado' });
-  if (req.session.role !== 'admin' && file.uploaded_by !== req.session.userId)
-    return res.status(403).json({ error: 'Sem permissão' });
-  try { fs.unlinkSync(path.join(uploadsDir, file.stored_name)); } catch(e){}
-  runSql('DELETE FROM files WHERE id = ?', [file.id]);
+  if (!isAdmin(req.user) && file.uploaded_by !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
+  await q('DELETE FROM file_blobs WHERE file_id = $1', [file.id]);
+  await q('DELETE FROM files WHERE id = $1', [file.id]);
   res.json({ success: true });
-});
+}));
 
-app.get('/download/:fileId', requireAuth, requireApproved, async (req, res) => {
-  const file = queryOne('SELECT * FROM files WHERE id = ?', [req.params.fileId]);
+app.get('/download/:fileId', asMember, wrap(async (req, res) => {
+  const file = await one('SELECT id, room_id, original_name, mime_type FROM files WHERE id = $1', [req.params.fileId]);
   if (!file) return res.status(404).send('Arquivo não encontrado');
-  const room = queryOne('SELECT * FROM rooms WHERE id = ?', [file.room_id]);
-  const isMember = req.session.role === 'admin' || !!queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [file.room_id, req.session.userId]);
-  if (!room || !isMember) return res.status(403).send('Sem permissão para baixar este arquivo');
-  const fp = path.join(uploadsDir, file.stored_name);
-  if (!fs.existsSync(fp)) return res.status(404).send('Arquivo não encontrado');
-  res.download(fp, file.original_name);
-});
+  if (!(await canUseRoom(req.user, file.room_id))) return res.status(403).send('Sem permissão para baixar este arquivo');
+  const blob = await one("SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1", [file.id]);
+  if (!blob) return res.status(404).send('Arquivo não encontrado');
+  const ascii = file.original_name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  res.set('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.original_name)}`);
+  res.type(file.mime_type || 'application/octet-stream');
+  res.send(Buffer.from(blob.data, 'base64'));
+}));
 
-// =================== MESSAGES (chat in room) ===================
-app.get('/api/rooms/:id/messages', requireAuth, (req, res) => {
-  if (!roomForRequest(req.params.id, req.session.userId) && req.session.role !== 'admin') return res.status(403).json({ error: 'Sem permissão' });
-  const msgs = queryAll(`SELECT m.*, u.username, u.avatar_color FROM messages m
-    JOIN users u ON m.user_id = u.id WHERE m.room_id = ? ORDER BY m.created_at ASC LIMIT 200`, [req.params.id]);
-  res.json(msgs);
-});
+// =================== MENSAGENS ===================
+app.get('/api/rooms/:id/messages', requireAuth, wrap(async (req, res) => {
+  if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Sem permissão' });
+  const msgs = await q(`SELECT m.*, u.username, u.avatar_color FROM messages m
+    JOIN users u ON m.user_id = u.id WHERE m.room_id = $1 ORDER BY m.created_at DESC LIMIT 200`, [req.params.id]);
+  res.json(msgs.reverse());
+}));
 
-app.post('/api/rooms/:id/messages', requireAuth, requireApproved, (req, res) => {
-  if (!roomForRequest(req.params.id, req.session.userId) && req.session.role !== 'admin') return res.status(403).json({ error: 'Entre na sala para enviar mensagens' });
-  const { content } = req.body;
-  if (!content || !content.trim()) return res.status(400).json({ error: 'Mensagem vazia' });
+app.post('/api/rooms/:id/messages', asMember, wrap(async (req, res) => {
+  if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Entre na sala para enviar mensagens' });
+  const content = String((req.body && req.body.content) || '').trim();
+  if (!content) return res.status(400).json({ error: 'Mensagem vazia' });
   const id = uuidv4();
-  runSql('INSERT INTO messages (id, room_id, user_id, content) VALUES (?,?,?,?)',
-    [id, req.params.id, req.session.userId, content.trim()]);
-  const msg = queryOne(`SELECT m.*, u.username, u.avatar_color FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id = ?`, [id]);
-  res.json(msg);
-});
+  await q('INSERT INTO messages (id, room_id, user_id, content, created_at) VALUES ($1,$2,$3,$4,$5)',
+    [id, req.params.id, req.user.id, content, ts()]);
+  res.json(await one('SELECT m.*, u.username, u.avatar_color FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id = $1', [id]));
+}));
 
-// =================== NOTIFICATIONS ===================
-app.get('/api/notifications', requireAuth, (req, res) => {
-  const notifs = queryAll('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50', [req.session.userId]);
-  res.json(notifs);
-});
+// =================== NOTIFICAÇÕES ===================
+app.get('/api/notifications', requireAuth, wrap(async (req, res) => {
+  res.json(await q('SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50', [req.user.id]));
+}));
 
-app.post('/api/notifications/read', requireAuth, (req, res) => {
-  runSql('UPDATE notifications SET read = 1 WHERE user_id = ?', [req.session.userId]);
+app.post('/api/notifications/read', requireAuth, wrap(async (req, res) => {
+  await q('UPDATE notifications SET "read" = 1 WHERE user_id = $1', [req.user.id]);
   res.json({ success: true });
-});
+}));
 
-// =================== PUBLIC ROOM ===================
-app.get('/api/sala/:slug', requireAuth, requireApproved, (req, res) => {
-  const room = queryOne('SELECT * FROM rooms WHERE slug = ?', [req.params.slug]);
+// =================== SALA (por slug) ===================
+app.get('/api/sala/:slug', asMember, wrap(async (req, res) => {
+  const room = await one('SELECT * FROM rooms WHERE slug = $1', [req.params.slug]);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
-  if (req.session.role !== 'admin' && !queryOne('SELECT id FROM room_members WHERE room_id = ? AND user_id = ?', [room.id, req.session.userId])) return res.status(403).json({ error: 'Entre na sala para acessar seus arquivos' });
-  const files = queryAll('SELECT id, original_name, size, mime_type, uploaded_at FROM files WHERE room_id = ? ORDER BY uploaded_at DESC', [room.id]);
-  const memberCount = queryAll('SELECT COUNT(*) as c FROM room_members WHERE room_id = ?', [room.id])[0]?.c || 0;
-  res.json({ ...room, files, memberCount });
-});
+  if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala para acessar seus arquivos' });
+  const files = await q('SELECT id, original_name, size, mime_type, uploaded_at FROM files WHERE room_id = $1 ORDER BY uploaded_at DESC', [room.id]);
+  const count = await one('SELECT COUNT(*) AS c FROM room_members WHERE room_id = $1', [room.id]);
+  res.json({ ...room, files: files.map(f => ({ ...f, size: num(f.size) })), memberCount: num(count.c) });
+}));
 
-// =================== ADMIN STATS ===================
-app.get('/api/admin/stats', requireAdmin, (req, res) => {
-  const totalUsers = queryAll('SELECT COUNT(*) as c FROM users')[0]?.c || 0;
-  const pendingUsers = queryAll("SELECT COUNT(*) as c FROM users WHERE status = 'pending'")[0]?.c || 0;
-  const totalRooms = queryAll('SELECT COUNT(*) as c FROM rooms')[0]?.c || 0;
-  const totalFiles = queryAll('SELECT COUNT(*) as c FROM files')[0]?.c || 0;
-  const totalSize = queryAll('SELECT COALESCE(SUM(size),0) as s FROM files')[0]?.s || 0;
-  res.json({ totalUsers, pendingUsers, totalRooms, totalFiles, totalSize });
-});
+// =================== ESTATÍSTICAS / SENHA ===================
+app.get('/api/admin/stats', asAdmin, wrap(async (req, res) => {
+  const s = await one(`SELECT
+    (SELECT COUNT(*) FROM users) AS total_users,
+    (SELECT COUNT(*) FROM users WHERE status = 'pending') AS pending_users,
+    (SELECT COUNT(*) FROM rooms) AS total_rooms,
+    (SELECT COUNT(*) FROM files) AS total_files,
+    (SELECT COALESCE(SUM(size), 0) FROM files) AS total_size`);
+  res.json({
+    totalUsers: num(s.total_users), pendingUsers: num(s.pending_users),
+    totalRooms: num(s.total_rooms), totalFiles: num(s.total_files), totalSize: num(s.total_size)
+  });
+}));
 
-app.post('/api/change-password', requireAuth, (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  const user = queryOne('SELECT * FROM users WHERE id = ?', [req.session.userId]);
-  if (!bcrypt.compareSync(currentPassword, user.password_hash))
-    return res.status(400).json({ error: 'Senha atual incorreta' });
-  if (!newPassword || newPassword.length < 4)
-    return res.status(400).json({ error: 'Mínimo 4 caracteres' });
-  runSql('UPDATE users SET password_hash = ? WHERE id = ?', [bcrypt.hashSync(newPassword, 10), user.id]);
+app.post('/api/change-password', requireAuth, wrap(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  const user = await one('SELECT id, password_hash FROM users WHERE id = $1', [req.user.id]);
+  if (!bcrypt.compareSync(String(currentPassword || ''), user.password_hash)) return res.status(400).json({ error: 'Senha atual incorreta' });
+  if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ error: 'Mínimo 4 caracteres' });
+  await q('UPDATE users SET password_hash = $1 WHERE id = $2', [bcrypt.hashSync(String(newPassword), 10), user.id]);
   res.json({ success: true });
+}));
+
+// =================== ERROS ===================
+app.use((err, req, res, next) => {
+  console.error('Erro em', req.method, req.originalUrl, '-', err && err.stack || err);
+  if (res.headersSent) return next(err);
+  const message = 'Erro interno do servidor. Tente novamente.';
+  if (req.originalUrl.startsWith('/api/')) return res.status(500).json({ error: message });
+  res.status(500).send(message);
 });
 
 if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
   ensureDatabase().then(() => {
     app.listen(PORT, () => {
       console.log(`\n🚀 FileShare rodando em http://localhost:${PORT}`);
-      console.log(`🔐 Admin: admin / admin123\n`);
+      console.log('🔐 Admin: admin / admin123 (ou ADMIN_PASSWORD)\n');
     });
-  }).catch(err => { console.error('Erro:', err); process.exit(1); });
+  }).catch(err => { console.error('Erro ao iniciar:', err); process.exit(1); });
 } else {
   module.exports = app;
 }

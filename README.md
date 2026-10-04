@@ -6,16 +6,20 @@ Aplicacao web de compartilhamento de arquivos com contas aprovadas por administr
 
 ```powershell
 npm install
-node server.js
+node server.js   # le DATABASE_URL do .env.local
 ```
 
 Abra `http://localhost:3000`.
 
 Acesso inicial do administrador: `admin` / `admin123`. Altere a senha depois do primeiro acesso.
 
-## Deploy
+## Deploy (Vercel + Neon)
 
-O projeto inclui `vercel.json` e exporta o Express para execucao serverless. Em Vercel, o banco SQLite e os uploads usam `/tmp`, que e efemero. Para dados persistentes em producao, substitua o armazenamento local por um banco e storage gerenciados.
+Todos os dados (contas, salas, mensagens, arquivos) ficam no Postgres do Neon, acessado via `DATABASE_URL`
+(integracao Neon da Vercel). As tabelas sao criadas automaticamente no primeiro acesso.
+Como a Vercel nao tem disco persistente, os arquivos sao gravados no proprio Postgres; a Vercel limita o
+corpo de uma requisicao a ~4,5 MB, entao o limite de envio e de 4 MB por vez. Para arquivos maiores,
+use Vercel Blob com upload direto do navegador.
 
 ## Seguranca
 
