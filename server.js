@@ -150,6 +150,12 @@ async function createTables() {
     )`)
   ]);
   await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
+  for (const col of ['last_login', 'last_seen', 'last_ip', 'force_logout_at']) await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col} TEXT`);
+  await q(`CREATE TABLE IF NOT EXISTS activity_log (
+    id TEXT PRIMARY KEY, user_id TEXT, username TEXT, role TEXT, action TEXT NOT NULL, detail TEXT, ip TEXT, user_agent TEXT, created_at TEXT
+  )`);
+  await q('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log (created_at)');
+  await q('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
   await q(`CREATE TABLE IF NOT EXISTS auth_tokens (
     token_hash TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -232,7 +238,8 @@ app.use(wrap(async (req, res, next) => {
   if (token && /^[a-f0-9]{64}$/.test(token)) {
     try {
       const row = await one('SELECT a.user_id, a.expires_at, u.username, u.role, u.status FROM auth_tokens a JOIN users u ON u.id = a.user_id WHERE a.token_hash = $1', [hashToken(token)]);
-      if (row && row.expires_at > ts() && row.status !== 'rejected') {
+      if (row && row.expires_at > ts() && row.status !== 'rejected' && row.status !== 'banned') {
+        req.session.at = Date.now();
         req.session.userId = row.user_id; req.session.username = row.username; req.session.role = row.role; req.session.status = row.status;
       } else if (!row || row.expires_at <= ts()) {
         res.clearCookie(REMEMBER_COOKIE, { path: '/' });
@@ -269,8 +276,13 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX
 // ---------------------------------------------------------------------------
 const requireAuth = wrap(async (req, res, next) => {
   if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
-  const user = await one('SELECT id, username, role, status FROM users WHERE id = $1', [req.session.userId]);
+  const user = await one('SELECT id, username, role, status, last_seen, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
   if (!user) { req.session = null; return res.status(401).json({ error: 'Não autorizado' }); }
+  if (user.status === 'banned' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
+    req.session = null; res.clearCookie(REMEMBER_COOKIE, { path: '/' });
+    return res.status(401).json({ error: user.status === 'banned' ? 'Conta suspensa' : 'Sessão encerrada pelo administrador' });
+  }
+  if (!user.last_seen || user.last_seen < agoTs(45000)) { q('UPDATE users SET last_seen = $1 WHERE id = $2', [ts(), user.id]).catch(() => {}); }
   req.user = user;
   next();
 });
@@ -306,6 +318,68 @@ function notify(userId, title, message, type) {
   return q('INSERT INTO notifications (id, user_id, title, message, type, "read", created_at) VALUES ($1,$2,$3,$4,$5,0,$6)',
     [uuidv4(), userId, title, message, type, ts()]);
 }
+
+
+// =================== ADMIN+: log de atividade, configurações, segurança ===================
+const agoTs = ms => new Date(Date.now() - ms).toISOString().slice(0, 19).replace('T', ' ');
+const clientIp = req => String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim().slice(0, 64);
+async function logAct(req, action, detail, who) {
+  try {
+    const u = who || req.user || {};
+    await q('INSERT INTO activity_log (id, user_id, username, role, action, detail, ip, user_agent, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+      [uuidv4(), u.id || null, u.username || null, u.role || null, action, String(detail || '').slice(0, 300), clientIp(req), String(req.headers['user-agent'] || '').slice(0, 160), ts()]);
+    if (Math.random() < 0.02) await q('DELETE FROM activity_log WHERE created_at < $1', [agoTs(30 * 86400000)]);
+  } catch (e) { console.error('log:', e && e.message); }
+}
+const settingsCache = { at: 0, map: {} };
+async function getSetting(key, def) {
+  if (Date.now() - settingsCache.at > 8000) {
+    try { const rows = await q('SELECT key, value FROM settings'); settingsCache.map = Object.fromEntries(rows.map(r => [r.key, r.value])); settingsCache.at = Date.now(); } catch (e) {}
+  }
+  return settingsCache.map[key] !== undefined ? settingsCache.map[key] : def;
+}
+async function setSetting(key, value) {
+  await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, String(value)]);
+  settingsCache.at = 0;
+}
+// Anti força-bruta (memória do servidor; melhor esforço)
+const loginFails = new Map();
+function failKey(req, id) { return clientIp(req) + '|' + String(id).toLowerCase().slice(0, 60); }
+function tooManyFails(req, id) {
+  const r = loginFails.get(failKey(req, id));
+  return !!(r && r.n >= 8 && Date.now() - r.t < 10 * 60000);
+}
+function addFail(req, id) {
+  const k = failKey(req, id); const r = loginFails.get(k);
+  if (!r || Date.now() - r.t > 10 * 60000) loginFails.set(k, { n: 1, t: Date.now() }); else { r.n++; r.t = Date.now(); }
+}
+// Registra ações de usuários (uploads, salas, arquivos) antes de responder — seguro em serverless
+function classifyAct(req) {
+  const p = req.path, m = req.method;
+  let r;
+  if (m === 'POST' && p === '/api/rooms') return ['sala_criada', req.body && req.body.name];
+  if (m === 'DELETE' && (r = /^\/api\/rooms\/([^/]+)$/.exec(p))) return ['sala_excluida', r[1].slice(0, 8)];
+  if (m === 'POST' && /^\/api\/rooms\/[^/]+\/files$/.test(p)) return ['upload', (req.files || []).map(f => f.originalname).join(', ') || 'arquivo'];
+  if (m === 'POST' && /^\/api\/rooms\/[^/]+\/files\/register$/.test(p)) return ['upload', (req.body && (req.body.name || req.body.original_name)) || 'arquivo'];
+  if (m === 'DELETE' && /^\/api\/files\/[^/]+$/.test(p)) return ['arquivo_excluido', req.logDetail || p.split('/').pop().slice(0, 8)];
+  if (m === 'PATCH' && /^\/api\/files\/[^/]+$/.test(p)) return ['arquivo_renomeado', (req.body && req.body.name) || ''];
+  if (m === 'POST' && /^\/api\/rooms\/[^/]+\/join$/.test(p)) return ['entrou_sala', req.params && req.params.id];
+  if (m === 'POST' && /^\/api\/rooms\/[^/]+\/leave$/.test(p)) return ['saiu_sala', ''];
+  if (m === 'POST' && p === '/api/change-password') return ['senha_alterada', ''];
+  return null;
+}
+app.use((req, res, next) => {
+  if (req.method === 'GET' || !req.path.startsWith('/api/') || req.path.startsWith('/api/admin/')) return next();
+  const orig = res.json.bind(res);
+  res.json = function (body) {
+    if (res.statusCode < 400 && req.user) {
+      const a = classifyAct(req);
+      if (a) { logAct(req, a[0], a[1]).finally(() => orig(body)); return res; }
+    }
+    return orig(body);
+  };
+  next();
+});
 
 // =================== PÁGINAS ===================
 const page = name => path.join(__dirname, 'public', name);
@@ -348,29 +422,42 @@ app.post('/api/register', wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   if (!username || !email || !password) return res.status(400).json({ error: 'Preencha todos os campos' });
+  const regMode = await getSetting('registration_mode', 'approval');
+  if (regMode === 'closed') return res.status(403).json({ error: 'Os cadastros estão fechados no momento.' });
   if (password.length < 4) return res.status(400).json({ error: 'Senha mínima: 4 caracteres' });
   if (await one('SELECT id FROM users WHERE username = $1', [username])) return res.status(400).json({ error: 'Usuário já existe' });
   if (await one('SELECT id FROM users WHERE email = $1', [email])) return res.status(400).json({ error: 'Email já cadastrado' });
 
   const colors = ['#4f46e5', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
   try {
-    await q('INSERT INTO users (id, username, email, password_hash, avatar_color, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-      [uuidv4(), username, email, bcrypt.hashSync(password, 10), colors[Math.floor(Math.random() * colors.length)], ts()]);
+    await q('INSERT INTO users (id, username, email, password_hash, avatar_color, created_at, status) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [uuidv4(), username, email, bcrypt.hashSync(password, 10), colors[Math.floor(Math.random() * colors.length)], ts(), regMode === 'auto' ? 'approved' : 'pending']);
+    await logAct(req, 'cadastro', username, { username });
   } catch (e) {
     if (isUnique(e)) return res.status(400).json({ error: 'Usuário ou email já cadastrado' });
     throw e;
   }
   const admins = await q("SELECT id FROM users WHERE role = 'admin'");
   await Promise.all(admins.map(a => notify(a.id, 'Novo cadastro', `${username} solicitou acesso ao sistema.`, 'warning')));
-  res.json({ success: true, message: 'Conta criada! Aguarde aprovação do administrador.' });
+  res.json({ success: true, message: regMode === 'auto' ? 'Conta criada! Você já pode entrar.' : 'Conta criada! Aguarde aprovação do administrador.' });
 }));
 
 app.post('/api/login', wrap(async (req, res) => {
   const identifier = String(req.body.username || '').trim();
   const password = String(req.body.password || '');
   const user = await one('SELECT * FROM users WHERE username = $1 OR email = $2', [identifier, identifier.toLowerCase()]);
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'Credenciais inválidas' });
+  if (tooManyFails(req, identifier)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde 10 minutos.' });
+  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    addFail(req, identifier);
+    await logAct(req, 'login_falhou', identifier.slice(0, 60), { username: user ? user.username : null, id: user ? user.id : null, role: user ? user.role : null });
+    return res.status(401).json({ error: 'Credenciais inválidas' });
+  }
   if (user.status === 'rejected') return res.status(403).json({ error: 'Sua conta foi rejeitada pelo administrador' });
+  if (user.status === 'banned') { await logAct(req, 'login_bloqueado', 'conta suspensa', user); return res.status(403).json({ error: 'Sua conta está suspensa. Fale com o administrador.' }); }
+  loginFails.delete(failKey(req, identifier));
+  await q('UPDATE users SET last_login = $1, last_seen = $1, last_ip = $2 WHERE id = $3', [ts(), clientIp(req), user.id]);
+  await logAct(req, 'login', '', user);
+  req.session.at = Date.now();
   req.session.userId = user.id;
   req.session.username = user.username;
   req.session.role = user.role;
@@ -380,6 +467,7 @@ app.post('/api/login', wrap(async (req, res) => {
 }));
 
 app.post('/api/logout', wrap(async (req, res) => {
+  if (req.session && req.session.userId) { const lu = await one('SELECT id, username, role FROM users WHERE id = $1', [req.session.userId]); if (lu) await logAct(req, 'logout', '', lu); }
   const token = readCookie(req, REMEMBER_COOKIE);
   if (token) { try { await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]); } catch (e) {} }
   res.clearCookie(REMEMBER_COOKIE, { path: '/' });
@@ -400,23 +488,28 @@ app.get('/api/admin/users', asAdmin, wrap(async (req, res) => {
 }));
 
 app.post('/api/admin/users/:id/approve', asAdmin, wrap(async (req, res) => {
-  const user = await one('SELECT id FROM users WHERE id = $1', [req.params.id]);
+  const user = await one('SELECT id, username FROM users WHERE id = $1', [req.params.id]);
   if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
   await q("UPDATE users SET status = 'approved' WHERE id = $1", [user.id]);
+  await logAct(req, 'usuario_aprovado', user.username);
   await notify(user.id, 'Conta aprovada!', 'Sua conta foi aprovada pelo administrador. Bem-vindo ao FileShare!', 'success');
   res.json({ success: true });
 }));
 
 app.post('/api/admin/users/:id/reject', asAdmin, wrap(async (req, res) => {
-  const user = await one('SELECT id FROM users WHERE id = $1', [req.params.id]);
+  const user = await one('SELECT id, username FROM users WHERE id = $1', [req.params.id]);
   if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
   await q("UPDATE users SET status = 'rejected' WHERE id = $1", [user.id]);
+  await logAct(req, 'usuario_rejeitado', user.username);
   await notify(user.id, 'Conta rejeitada', 'Sua solicitação de acesso foi negada.', 'error');
   res.json({ success: true });
 }));
 
 app.delete('/api/admin/users/:id', asAdmin, wrap(async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Não pode excluir a si mesmo' });
+  const victim = await one('SELECT username FROM users WHERE id = $1', [req.params.id]);
+  await logAct(req, 'usuario_excluido', victim ? victim.username : req.params.id);
+  await q('DELETE FROM auth_tokens WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM room_members WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM notifications WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM messages WHERE user_id = $1', [req.params.id]);
@@ -735,6 +828,205 @@ app.get('/api/sala/:slug', asMember, wrap(async (req, res) => {
 }));
 
 // =================== ESTATÍSTICAS / SENHA ===================
+
+// =================== ADMIN+: painel avançado ===================
+const adminTarget = wrap(async (req, res, next) => {
+  const t = await one('SELECT id, username, role, status FROM users WHERE id = $1', [req.params.id]);
+  if (!t) return res.status(404).json({ error: 'Usuário não encontrado' });
+  req.target = t; next();
+});
+const forceLogout = async uid => {
+  await q('UPDATE users SET force_logout_at = $1 WHERE id = $2', [String(Date.now()), uid]);
+  await q('DELETE FROM auth_tokens WHERE user_id = $1', [uid]);
+};
+
+app.get('/api/admin/overview', asAdmin, wrap(async (req, res) => {
+  const d1 = agoTs(86400000), d7 = agoTs(7 * 86400000), online = agoTs(2 * 60000);
+  const c = await one(`SELECT
+    (SELECT COUNT(*) FROM users WHERE last_seen >= $1) AS online,
+    (SELECT COUNT(*) FROM users WHERE status = 'banned') AS banned,
+    (SELECT COUNT(*) FROM users WHERE created_at >= $2) AS new_users,
+    (SELECT COUNT(*) FROM messages) AS messages,
+    (SELECT COUNT(*) FROM files WHERE uploaded_at >= $3) AS uploads24,
+    (SELECT COUNT(*) FROM rooms WHERE expires_at IS NOT NULL AND expires_at > $4) AS temp_rooms,
+    (SELECT COUNT(*) FROM activity_log WHERE action = 'login_falhou' AND created_at >= $3) AS fails24`, [online, d7, d1, ts()]);
+  const days = await q('SELECT SUBSTR(uploaded_at, 1, 10) AS d, COUNT(*) AS n, COALESCE(SUM(size),0) AS bytes FROM files WHERE uploaded_at >= $1 GROUP BY 1 ORDER BY 1', [agoTs(7 * 86400000)]);
+  const top = await q(`SELECT u.username, u.role, COUNT(f.id) AS n, COALESCE(SUM(f.size),0) AS bytes FROM files f JOIN users u ON u.id = f.uploaded_by GROUP BY u.username, u.role ORDER BY bytes DESC LIMIT 5`);
+  const big = await q(`SELECT f.id, f.original_name, f.size, r.name AS room, u.username FROM files f LEFT JOIN rooms r ON r.id = f.room_id LEFT JOIN users u ON u.id = f.uploaded_by ORDER BY f.size DESC LIMIT 5`);
+  const onl = await q('SELECT username, role, avatar_color, last_seen FROM users WHERE last_seen >= $1 ORDER BY last_seen DESC LIMIT 20', [online]);
+  const recent = await q('SELECT username, role, action, detail, created_at FROM activity_log ORDER BY created_at DESC LIMIT 8');
+  res.json({
+    online: num(c.online), banned: num(c.banned), newUsers: num(c.new_users), messages: num(c.messages), uploads24: num(c.uploads24), tempRooms: num(c.temp_rooms), fails24: num(c.fails24),
+    days: days.map(x => ({ d: x.d, n: num(x.n), bytes: num(x.bytes) })),
+    top: top.map(x => ({ ...x, n: num(x.n), bytes: num(x.bytes) })), big: big.map(x => ({ ...x, size: num(x.size) })), onlineUsers: onl, recent
+  });
+}));
+
+app.get('/api/admin/users-plus', asAdmin, wrap(async (req, res) => {
+  const online = agoTs(2 * 60000);
+  const rows = await q(`SELECT u.id, u.username, u.email, u.role, u.status, u.avatar_color, u.created_at, u.last_login, u.last_seen, u.last_ip,
+    (SELECT COUNT(*) FROM files f WHERE f.uploaded_by = u.id) AS files,
+    (SELECT COALESCE(SUM(f.size),0) FROM files f WHERE f.uploaded_by = u.id) AS bytes,
+    (SELECT COUNT(*) FROM room_members m WHERE m.user_id = u.id) AS rooms,
+    (SELECT COUNT(*) FROM messages g WHERE g.user_id = u.id) AS msgs
+    FROM users u ORDER BY CASE u.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, u.created_at DESC`);
+  res.json(rows.map(r => ({ ...r, files: num(r.files), bytes: num(r.bytes), rooms: num(r.rooms), msgs: num(r.msgs), online: !!(r.last_seen && r.last_seen >= online) })));
+}));
+
+app.get('/api/admin/users/:id/detail', asAdmin, adminTarget, wrap(async (req, res) => {
+  const id = req.target.id;
+  const user = await one('SELECT id, username, email, role, status, avatar_color, created_at, last_login, last_seen, last_ip FROM users WHERE id = $1', [id]);
+  const files = await q('SELECT f.id, f.original_name, f.size, f.uploaded_at, r.name AS room FROM files f LEFT JOIN rooms r ON r.id = f.room_id WHERE f.uploaded_by = $1 ORDER BY f.uploaded_at DESC LIMIT 15', [id]);
+  const rooms = await q('SELECT r.id, r.name FROM room_members m JOIN rooms r ON r.id = m.room_id WHERE m.user_id = $1', [id]);
+  const sessions = await q('SELECT created_at, user_agent FROM auth_tokens WHERE user_id = $1 AND expires_at > $2 ORDER BY created_at DESC', [id, ts()]);
+  const activity = await q('SELECT action, detail, ip, created_at FROM activity_log WHERE user_id = $1 ORDER BY created_at DESC LIMIT 15', [id]);
+  res.json({ user, files: files.map(f => ({ ...f, size: num(f.size) })), rooms, sessions, activity });
+}));
+
+app.post('/api/admin/users/:id/role', asAdmin, adminTarget, wrap(async (req, res) => {
+  const role = req.body && req.body.role === 'admin' ? 'admin' : 'user';
+  if (req.target.id === req.user.id) return res.status(400).json({ error: 'Você não pode mudar o próprio cargo' });
+  await q("UPDATE users SET role = $1, status = CASE WHEN $1 = 'admin' THEN 'approved' ELSE status END WHERE id = $2", [role, req.target.id]);
+  await notify(req.target.id, role === 'admin' ? 'Você agora é ADM' : 'Cargo alterado', role === 'admin' ? 'Um administrador promoveu sua conta a ADM.' : 'Seu cargo foi alterado para usuário.', 'info');
+  await logAct(req, role === 'admin' ? 'promovido_adm' : 'rebaixado_usuario', req.target.username);
+  res.json({ success: true });
+}));
+app.post('/api/admin/users/:id/ban', asAdmin, adminTarget, wrap(async (req, res) => {
+  if (req.target.id === req.user.id || req.target.role === 'admin') return res.status(400).json({ error: 'Não é possível suspender um ADM' });
+  await q("UPDATE users SET status = 'banned' WHERE id = $1", [req.target.id]);
+  await forceLogout(req.target.id);
+  await logAct(req, 'usuario_suspenso', req.target.username);
+  res.json({ success: true });
+}));
+app.post('/api/admin/users/:id/unban', asAdmin, adminTarget, wrap(async (req, res) => {
+  await q("UPDATE users SET status = 'approved' WHERE id = $1", [req.target.id]);
+  await notify(req.target.id, 'Conta reativada', 'Sua conta foi reativada pelo administrador.', 'success');
+  await logAct(req, 'usuario_reativado', req.target.username);
+  res.json({ success: true });
+}));
+app.post('/api/admin/users/:id/logout', asAdmin, adminTarget, wrap(async (req, res) => {
+  await forceLogout(req.target.id);
+  await logAct(req, 'logout_forcado', req.target.username);
+  res.json({ success: true });
+}));
+app.post('/api/admin/users/:id/reset-password', asAdmin, adminTarget, wrap(async (req, res) => {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const temp = Array.from(crypto.randomBytes(10), b => chars[b % chars.length]).join('');
+  await q('UPDATE users SET password_hash = $1 WHERE id = $2', [bcrypt.hashSync(temp, 10), req.target.id]);
+  await forceLogout(req.target.id);
+  await logAct(req, 'senha_redefinida', req.target.username);
+  res.json({ success: true, password: temp });
+}));
+
+// Comunicados e configurações
+app.post('/api/admin/broadcast', asAdmin, wrap(async (req, res) => {
+  const title = String((req.body && req.body.title) || '').trim().slice(0, 80);
+  const message = String((req.body && req.body.message) || '').trim().slice(0, 500);
+  const type = ['info', 'success', 'warning', 'error'].includes(req.body && req.body.type) ? req.body.type : 'info';
+  if (!title || !message) return res.status(400).json({ error: 'Título e mensagem obrigatórios' });
+  const users = await q("SELECT id FROM users WHERE status = 'approved' OR role = 'admin'");
+  for (const u of users) await notify(u.id, title, message, type);
+  await logAct(req, 'comunicado_enviado', title + ' (' + users.length + ' usuários)');
+  res.json({ success: true, sent: users.length });
+}));
+app.get('/api/admin/settings', asAdmin, wrap(async (req, res) => {
+  res.json({ registration_mode: await getSetting('registration_mode', 'approval'), announcement: await getSetting('announcement', ''), announcement_type: await getSetting('announcement_type', 'info') });
+}));
+app.post('/api/admin/settings', asAdmin, wrap(async (req, res) => {
+  const b = req.body || {};
+  if (['approval', 'auto', 'closed'].includes(b.registration_mode)) await setSetting('registration_mode', b.registration_mode);
+  if (typeof b.announcement === 'string') await setSetting('announcement', b.announcement.trim().slice(0, 300));
+  if (['info', 'success', 'warning', 'error'].includes(b.announcement_type)) await setSetting('announcement_type', b.announcement_type);
+  await logAct(req, 'configuracoes_alteradas', (b.registration_mode ? 'cadastro: ' + b.registration_mode + ' ' : '') + (typeof b.announcement === 'string' ? '| aviso atualizado' : ''));
+  res.json({ success: true });
+}));
+app.get('/api/announcement', requireAuth, wrap(async (req, res) => {
+  res.json({ text: await getSetting('announcement', ''), type: await getSetting('announcement_type', 'info') });
+}));
+app.get('/api/public/registration', wrap(async (req, res) => { res.json({ mode: await getSetting('registration_mode', 'approval') }); }));
+
+// Central de arquivos
+app.get('/api/admin/files', asAdmin, wrap(async (req, res) => {
+  const search = '%' + String(req.query.q || '').trim().toLowerCase().replace(/[%_]/g, '') + '%';
+  const rows = await q(`SELECT f.id, f.original_name, f.mime_type, f.size, f.uploaded_at, f.room_id, r.name AS room, u.username AS uploader, u.role AS uploader_role
+    FROM files f LEFT JOIN rooms r ON r.id = f.room_id LEFT JOIN users u ON u.id = f.uploaded_by
+    WHERE LOWER(f.original_name) LIKE $1 OR LOWER(COALESCE(u.username,'')) LIKE $1 OR LOWER(COALESCE(r.name,'')) LIKE $1
+    ORDER BY f.uploaded_at DESC LIMIT 300`, [search]);
+  res.json(rows.map(f => ({ ...f, size: num(f.size) })));
+}));
+app.post('/api/admin/files/bulk-delete', asAdmin, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.filter(x => typeof x === 'string').slice(0, 200) : [];
+  let n = 0;
+  for (const id of ids) {
+    const f = await one('SELECT id, stored_name FROM files WHERE id = $1', [id]);
+    if (!f) continue;
+    try { await deleteBlobs([f.stored_name]); } catch (e) {}
+    await q('DELETE FROM file_blobs WHERE file_id = $1', [f.id]);
+    await q('DELETE FROM files WHERE id = $1', [f.id]);
+    n++;
+  }
+  await logAct(req, 'arquivos_excluidos_em_massa', n + ' arquivo(s)');
+  res.json({ success: true, deleted: n });
+}));
+
+// Salas: tempo, visibilidade, limpar chat, moderar mensagens
+app.post('/api/admin/rooms/:id/extend', asAdmin, wrap(async (req, res) => {
+  const room = await one('SELECT id, name, expires_at FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  const minutes = Number(req.body && req.body.minutes);
+  if (minutes === 0) { await q('UPDATE rooms SET expires_at = NULL WHERE id = $1', [room.id]); await logAct(req, 'sala_permanente', room.name); return res.json({ success: true }); }
+  if (!(minutes > 0 && minutes <= 10080)) return res.status(400).json({ error: 'Tempo inválido' });
+  const base = room.expires_at && room.expires_at > ts() ? new Date(room.expires_at.replace(' ', 'T') + 'Z').getTime() : Date.now();
+  await q('UPDATE rooms SET expires_at = $1 WHERE id = $2', [new Date(base + minutes * 60000).toISOString().slice(0, 19).replace('T', ' '), room.id]);
+  await logAct(req, 'sala_tempo_alterado', room.name + ' +' + minutes + ' min');
+  res.json({ success: true });
+}));
+app.post('/api/admin/rooms/:id/visibility', asAdmin, wrap(async (req, res) => {
+  const room = await one('SELECT id, name FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  const pub = req.body && req.body.is_public ? 1 : 0;
+  await q('UPDATE rooms SET is_public = $1 WHERE id = $2', [pub, room.id]);
+  await logAct(req, 'sala_visibilidade', room.name + ' → ' + (pub ? 'pública' : 'privada'));
+  res.json({ success: true });
+}));
+app.post('/api/admin/rooms/:id/clear-chat', asAdmin, wrap(async (req, res) => {
+  const room = await one('SELECT id, name FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  await q('DELETE FROM messages WHERE room_id = $1', [room.id]);
+  await logAct(req, 'chat_limpo', room.name);
+  res.json({ success: true });
+}));
+app.delete('/api/admin/messages/:id', asAdmin, wrap(async (req, res) => {
+  await q('DELETE FROM messages WHERE id = $1', [req.params.id]);
+  await logAct(req, 'mensagem_removida', req.params.id.slice(0, 8));
+  res.json({ success: true });
+}));
+app.get('/api/admin/rooms-lite', asAdmin, wrap(async (req, res) => {
+  res.json(await q('SELECT r.id, r.name, r.expires_at, (SELECT COUNT(*) FROM messages m WHERE m.room_id = r.id) AS msgs FROM rooms r ORDER BY r.created_at DESC'));
+}));
+
+// Atividade
+app.get('/api/admin/log', asAdmin, wrap(async (req, res) => {
+  const action = String(req.query.action || '');
+  const search = '%' + String(req.query.q || '').trim().toLowerCase().replace(/[%_]/g, '') + '%';
+  const rows = await q(`SELECT username, role, action, detail, ip, user_agent, created_at FROM activity_log
+    WHERE ($1 = '' OR action = $1) AND (LOWER(COALESCE(username,'')) LIKE $2 OR LOWER(COALESCE(detail,'')) LIKE $2 OR COALESCE(ip,'') LIKE $2)
+    ORDER BY created_at DESC LIMIT 300`, [action, search]);
+  res.json(rows);
+}));
+app.get('/api/admin/export', asAdmin, wrap(async (req, res) => {
+  const data = {
+    exported_at: ts(),
+    users: await q('SELECT id, username, email, role, status, created_at, last_login, last_seen FROM users'),
+    rooms: await q('SELECT id, name, slug, is_public, created_by, created_at, expires_at FROM rooms'),
+    files: await q('SELECT id, original_name, mime_type, size, room_id, uploaded_by, uploaded_at FROM files'),
+    activity: await q('SELECT username, action, detail, ip, created_at FROM activity_log ORDER BY created_at DESC LIMIT 2000')
+  };
+  await logAct(req, 'backup_exportado', '');
+  res.setHeader('Content-Disposition', 'attachment; filename="fileshare-backup-' + ts().slice(0, 10) + '.json"');
+  res.json(data);
+}));
+
 app.get('/api/admin/stats', asAdmin, wrap(async (req, res) => {
   const s = await one(`SELECT
     (SELECT COUNT(*) FROM users) AS total_users,
