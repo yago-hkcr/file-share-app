@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="/css/fx.css">
   <link rel="stylesheet" href="/css/adaptive.css">
   <script src="/js/fx.js" defer></script>
+  <link rel="stylesheet" href="/css/preview.css">
 </head>
 <body class="app-page">
   <header class="header">
@@ -256,6 +257,7 @@
               </div>
               <span class="text-muted">${fmtSize(f.size)}</span>
               <button class="btn btn-sm btn-outline" title="Renomear" data-name="${esc(f.original_name)}" onclick="renameFile('${f.id}', this.dataset.name, () => { lastRoomsSig=''; loadRooms(); })"><i class="fas fa-pen"></i></button>
+              <button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${f.id}" data-name="${esc(f.original_name)}" data-mime="${esc(f.mime_type || '')}" data-size="${f.size}"><i class="fas fa-eye"></i></button>
               <a href="/download/${f.id}" class="btn btn-sm btn-green" title="Baixar"><i class="fas fa-download"></i> Baixar</a>
               <button class="btn btn-sm btn-danger" onclick="deleteFile('${f.id}')"><i class="fas fa-trash"></i></button>
             </div>`).join('')}</div>`:'<p class="text-muted" style="padding:12px 16px;">Nenhum arquivo</p>'}
@@ -407,6 +409,7 @@
   <script src="/js/admin-social.js"></script>
   <script src="/js/cursor.js"></script>
   <script src="/js/admin-plus.js"></script>
+  <script src="/js/preview.js"></script>
   <script src="/js/announce.js"></script>
 </body>
 </html>
