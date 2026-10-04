@@ -1153,7 +1153,9 @@ app.post('/api/admin/rooms/:id/owner', asAdmin, wrap(async (req, res) => {
 app.post('/api/admin/rooms/:id/visibility', asAdmin, wrap(async (req, res) => {
   const room = await one('SELECT * FROM rooms WHERE id = $1', [req.params.id]);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
-  const mode = String((req.body && req.body.mode) || '');
+  const visibilityBody = req.body || {};
+  // Compatibilidade com os atalhos do painel ADM, que enviam is_public.
+  const mode = String(visibilityBody.mode || (typeof visibilityBody.is_public === 'boolean' ? (visibilityBody.is_public ? 'public' : 'private') : '')).toLowerCase().trim();
   if (mode === 'private') await q('UPDATE rooms SET is_public = 0, expires_at = NULL WHERE id = $1', [room.id]);
   else if (mode === 'public') await q('UPDATE rooms SET is_public = 1, expires_at = NULL WHERE id = $1', [room.id]);
   else if (mode === 'temporary') {
