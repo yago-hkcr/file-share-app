@@ -122,6 +122,7 @@
 
   <div id="toastContainer" class="toast-container"></div>
 
+  <script src="/js/upload.js"></script>
   <script>
     function showToast(msg, type='success') {
       const c = document.getElementById('toastContainer');
@@ -240,14 +241,13 @@
     async function deleteFile(id) { await fetch('/api/files/'+id,{method:'DELETE'}); showToast('Arquivo excluído'); loadRooms(); }
     async function uploadFiles(roomId, files) {
       if(!files.length) return;
-      if([...files].reduce((s,f)=>s+f.size,0) > 4*1024*1024) return showToast('Limite de 4 MB por envio. Envie menos/menores arquivos.','error');
       showToast('Enviando...','info');
-      const fd = new FormData();
-      for(const f of files) fd.append('files',f);
-      const res = await fetch('/api/rooms/'+roomId+'/files',{method:'POST',body:fd});
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return showToast(data.error || 'Erro ao enviar arquivos', 'error');
-      showToast('Arquivos enviados!'); loadRooms();
+      try {
+        await uploadToRoom(roomId, files, text => { if (!/%$/.test(text)) showToast(text,'info'); });
+        showToast('Arquivos enviados!'); loadRooms();
+      } catch (error) {
+        showToast(error.message || 'Erro ao enviar arquivos', 'error');
+      }
     }
 
     // Members modal

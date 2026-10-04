@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const { neon } = require('@neondatabase/serverless');
 const path = require('path');
 const fs = require('fs');
+const { Readable } = require('stream');
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
 
@@ -20,6 +21,25 @@ if (!IS_VERCEL) {
       const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
       if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2');
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vercel Blob (armazenamento privado dos arquivos). Na Vercel a autenticação é por OIDC
+// (BLOB_STORE_ID + VERCEL_OIDC_TOKEN, injetados automaticamente). Sem essas variáveis
+// (ex.: rodando local sem `vercel env pull`), cai no Postgres como antes.
+// ---------------------------------------------------------------------------
+const blobSdk = () => import('@vercel/blob');
+const blobEnabled = () => Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
+const isBlobPath = name => typeof name === 'string' && name.startsWith('rooms/');
+async function deleteBlobs(pathnames) {
+  const list = pathnames.filter(isBlobPath);
+  if (!list.length) return;
+  try {
+    const { del } = await blobSdk();
+    await del(list);
+  } catch (e) {
+    console.error('Falha ao apagar do Blob:', e && e.message);
   }
 }
 
@@ -404,6 +424,8 @@ app.post('/api/rooms/:id/leave', requireAuth, wrap(async (req, res) => {
 
 app.delete('/api/rooms/:id', asAdmin, wrap(async (req, res) => {
   const id = req.params.id;
+  const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [id]);
+  await deleteBlobs(roomFiles.map(f => f.stored_name));
   await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [id]);
   await q('DELETE FROM files WHERE room_id = $1', [id]);
   await q('DELETE FROM room_members WHERE room_id = $1', [id]);
@@ -448,32 +470,129 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
   for (const file of req.files) {
     const id = uuidv4();
     const name = Buffer.from(file.originalname, 'latin1').toString('utf8'); // corrige acentos vindos do multipart
-    await q("INSERT INTO file_blobs (file_id, data) VALUES ($1, decode($2, 'hex'))", [id, file.buffer.toString('hex')]);
+    let storedName = id; // legado: arquivo guardado no Postgres
+    if (blobEnabled()) {
+      const { put } = await blobSdk();
+      const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
+      storedName = `rooms/${room.id}/${id}-${safe}`;
+      await put(storedName, file.buffer, {
+        access: 'private',
+        contentType: file.mimetype || 'application/octet-stream',
+        addRandomSuffix: false
+      });
+    } else {
+      await q("INSERT INTO file_blobs (file_id, data) VALUES ($1, decode($2, 'hex'))", [id, file.buffer.toString('hex')]);
+    }
     await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [id, room.id, req.user.id, name, id, file.size, file.mimetype || 'application/octet-stream', ts()]);
+      [id, room.id, req.user.id, name, storedName, file.size, file.mimetype || 'application/octet-stream', ts()]);
     inserted.push({ id, original_name: name, size: file.size, mime_type: file.mimetype });
   }
   res.json(inserted);
 }));
 
+// ---------------------------------------------------------------------------
+// Upload direto do navegador para o Vercel Blob (contorna o limite de ~4,5 MB da Vercel).
+// 1) /upload-url: o servidor confere login/sala e devolve uma URL assinada de curta duração
+// 2) o navegador envia o arquivo direto ao Blob (PUT)
+// 3) /files/register: o servidor confere o envio e grava o arquivo no banco
+// ---------------------------------------------------------------------------
+const MAX_DIRECT_BYTES = 100 * 1024 * 1024;
+const BLOB_PATH_RE = /^rooms\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
+
+app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
+  if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
+  const room = await one('SELECT id FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala antes de enviar arquivos' });
+
+  const name = String((req.body && req.body.name) || '').trim();
+  const size = Number(req.body && req.body.size) || 0;
+  if (!name) return res.status(400).json({ error: 'Nome do arquivo obrigatório' });
+  if (size <= 0) return res.status(400).json({ error: 'Arquivo vazio' });
+  if (size > MAX_DIRECT_BYTES) return res.status(413).json({ error: `Arquivo grande demais (máximo ${Math.round(MAX_DIRECT_BYTES / 1024 / 1024)} MB)` });
+
+  const fileId = uuidv4();
+  const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
+  const pathname = `rooms/${room.id}/${fileId}-${safe}`;
+  const { issueSignedToken, presignUrl } = await blobSdk();
+  const validUntil = Date.now() + 15 * 60 * 1000;
+  const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_DIRECT_BYTES, validUntil });
+  const { presignedUrl } = await presignUrl(token, {
+    operation: 'put',
+    pathname,
+    access: 'private',
+    maximumSizeInBytes: MAX_DIRECT_BYTES,
+    addRandomSuffix: false,
+    allowOverwrite: false,
+    validUntil
+  });
+  res.json({ pathname, presignedUrl });
+}));
+
+app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
+  const pathname = String((req.body && req.body.pathname) || '');
+  const m = BLOB_PATH_RE.exec(pathname);
+  if (!m || m[1] !== req.params.id) return res.status(400).json({ error: 'Caminho de arquivo inválido' });
+  const room = await one('SELECT id FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala antes de enviar arquivos' });
+  if (await one('SELECT id FROM files WHERE stored_name = $1', [pathname])) return res.status(400).json({ error: 'Arquivo já registrado' });
+
+  let size = Number(req.body.size) || 0;
+  try {
+    const { head } = await blobSdk();
+    const info = await head(pathname);
+    if (info && Number(info.size)) size = Number(info.size);
+  } catch (e) {
+    if (e && e.name === 'BlobNotFoundError') return res.status(400).json({ error: 'O envio do arquivo não foi concluído' });
+    console.error('head do Blob falhou (usando o tamanho informado):', e && e.message);
+  }
+  if (size > MAX_DIRECT_BYTES) {
+    await deleteBlobs([pathname]);
+    return res.status(413).json({ error: 'Arquivo grande demais' });
+  }
+
+  const name = String(req.body.name || '').trim().slice(0, 255) || 'arquivo';
+  const mime = String(req.body.mime || '').slice(0, 100) || 'application/octet-stream';
+  await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+    [m[2], room.id, req.user.id, name, pathname, size, mime, ts()]);
+  res.json({ id: m[2], original_name: name, size });
+}));
+
 app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
-  const file = await one('SELECT id, uploaded_by FROM files WHERE id = $1', [req.params.id]);
+  const file = await one('SELECT id, uploaded_by, stored_name FROM files WHERE id = $1', [req.params.id]);
   if (!file) return res.status(404).json({ error: 'Arquivo não encontrado' });
   if (!isAdmin(req.user) && file.uploaded_by !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
+  await deleteBlobs([file.stored_name]);
   await q('DELETE FROM file_blobs WHERE file_id = $1', [file.id]);
   await q('DELETE FROM files WHERE id = $1', [file.id]);
   res.json({ success: true });
 }));
 
 app.get('/download/:fileId', asMember, wrap(async (req, res) => {
-  const file = await one('SELECT id, room_id, original_name, mime_type FROM files WHERE id = $1', [req.params.fileId]);
+  const file = await one('SELECT id, room_id, original_name, mime_type, stored_name FROM files WHERE id = $1', [req.params.fileId]);
   if (!file) return res.status(404).send('Arquivo não encontrado');
   if (!(await canUseRoom(req.user, file.room_id))) return res.status(403).send('Sem permissão para baixar este arquivo');
+  const ascii = file.original_name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  const headers = () => {
+    res.set('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.original_name)}`);
+    res.type(file.mime_type || 'application/octet-stream');
+  };
+
+  if (isBlobPath(file.stored_name)) {
+    const { get } = await blobSdk();
+    const result = await get(file.stored_name, { access: 'private' });
+    if (!result || !result.stream) return res.status(404).send('Arquivo não encontrado');
+    headers();
+    const stream = Readable.fromWeb(result.stream);
+    stream.on('error', err => { console.error('Erro no download:', err && err.message); res.destroy(err); });
+    return stream.pipe(res);
+  }
+
+  // Arquivos antigos, guardados no Postgres
   const blob = await one("SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1", [file.id]);
   if (!blob) return res.status(404).send('Arquivo não encontrado');
-  const ascii = file.original_name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
-  res.set('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.original_name)}`);
-  res.type(file.mime_type || 'application/octet-stream');
+  headers();
   res.send(Buffer.from(blob.data, 'base64'));
 }));
 

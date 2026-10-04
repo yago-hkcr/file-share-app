@@ -96,6 +96,7 @@
   </div>
   <div id="toastContainer" class="toast-container"></div>
 
+  <script src="/js/upload.js"></script>
   <script>
     const MAX_UPLOAD = 4 * 1024 * 1024; // limite de requisição da Vercel (~4,5 MB)
     let currentRoom = null;
@@ -111,7 +112,7 @@
     function closeRoom() { currentRoom = null; document.getElementById('roomModal').style.display = 'none'; }
     async function loadFiles() { const rooms = await api('/api/rooms'); const room = rooms.find(item => item.id === currentRoom); const list = document.getElementById('roomFiles'); list.innerHTML = room && room.files.length ? room.files.map(file => `<div class="file-row"><span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)} <small class="text-muted">(${formatSize(file.size)})</small></span><a class="btn btn-sm btn-outline" href="/download/${file.id}"><i class="fas fa-download"></i></a></div>`).join('') : '<div class="empty-state"><i class="fas fa-inbox"></i><p>Nenhum arquivo nesta sala.</p></div>'; }
     async function loadMessages() { const messages = await api(`/api/rooms/${currentRoom}/messages`); document.getElementById('chatList').innerHTML = messages.length ? messages.map(message => `<div class="chat-message"><strong>${esc(message.username)}</strong> ${esc(message.content)}</div>`).join('') : '<p class="text-muted">Ainda não há mensagens.</p>'; }
-    document.getElementById('uploadForm').addEventListener('submit', async event => { event.preventDefault(); const input = document.getElementById('fileInput'); if (!input.files.length) return; if ([...input.files].reduce((sum, file) => sum + file.size, 0) > MAX_UPLOAD) { toast('Limite de 4 MB por envio. Envie menos/menores arquivos.', 'error'); return; } const form = new FormData(); [...input.files].forEach(file => form.append('files', file)); try { await api(`/api/rooms/${currentRoom}/files`, { method:'POST', body:form }); input.value = ''; document.getElementById('uploadStatus').textContent = ' Enviado'; toast('Arquivos enviados'); loadFiles(); loadRooms(); } catch (error) { toast(error.message, 'error'); } });
+    document.getElementById('uploadForm').addEventListener('submit', async event => { event.preventDefault(); const input = document.getElementById('fileInput'); if (!input.files.length) return; const status = document.getElementById('uploadStatus'); try { await uploadToRoom(currentRoom, input.files, text => { status.textContent = ' ' + text; }); input.value = ''; status.textContent = ' Enviado'; toast('Arquivos enviados'); loadFiles(); loadRooms(); } catch (error) { status.textContent = ''; toast(error.message, 'error'); } });
     document.getElementById('fileInput').addEventListener('change', () => { if (document.getElementById('fileInput').files.length) document.getElementById('uploadForm').requestSubmit(); });
     document.getElementById('messageForm').addEventListener('submit', async event => { event.preventDefault(); const input = document.getElementById('messageInput'); try { await api(`/api/rooms/${currentRoom}/messages`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content:input.value}) }); input.value = ''; loadMessages(); } catch (error) { toast(error.message, 'error'); } });
     function showPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
