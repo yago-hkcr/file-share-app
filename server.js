@@ -18,8 +18,9 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const dbPath = process.env.VERCEL ? path.join('/tmp', 'database.sqlite') : path.join(dataDir, 'database.sqlite');
-const postgresEnabled = Boolean(process.env.VERCEL && process.env.POSTGRES_URL);
-const sql = postgresEnabled ? neon(process.env.POSTGRES_URL) : null;
+const postgresUrl = String(process.env.POSTGRES_URL || '').replace(/^['"]|['"]$/g, '');
+const postgresEnabled = Boolean(process.env.VERCEL && postgresUrl);
+const sql = postgresEnabled ? neon(postgresUrl) : null;
 let db;
 let dbInitPromise;
 let postgresInitPromise;
