@@ -806,6 +806,28 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
   res.send(Buffer.from(blob.data, 'base64'));
 }));
 
+// Visualização inline de arquivo (mesmas permissões do download).
+app.get('/preview/:fileId', asMember, wrap(async (req, res) => {
+  const file = await one('SELECT id, room_id, original_name, mime_type, stored_name FROM files WHERE id = $1', [req.params.fileId]);
+  if (!file) return res.status(404).send('Arquivo não encontrado');
+  if (!(await canUseRoom(req.user, file.room_id))) return res.status(403).send('Sem permissão para visualizar este arquivo');
+  const mime = file.mime_type || 'application/octet-stream';
+  const ascii = String(file.original_name || 'arquivo').replace(/[^a-zA-Z0-9._ -]/g, '_');
+  res.set('Content-Disposition', 'inline; filename="' + ascii + '"');
+  res.set('Cache-Control', 'private, no-store');
+  res.type(mime);
+  if (isBlobPath(file.stored_name)) {
+    const { get } = await blobSdk();
+    const result = await get(file.stored_name, { access: 'private' });
+    if (!result || !result.stream) return res.status(404).send('Arquivo não encontrado');
+    const stream = Readable.fromWeb(result.stream);
+    stream.on('error', err => { console.error('Erro na visualização:', err && err.message); if (!res.headersSent) res.status(500).end(); else res.destroy(err); });
+    return stream.pipe(res);
+  }
+  const blob = await one(`SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1`, [file.id]);
+  if (!blob) return res.status(404).send('Arquivo não encontrado');
+  res.send(Buffer.from(blob.data, 'base64'));
+}));
 // =================== MENSAGENS ===================
 app.get('/api/rooms/:id/messages', requireAuth, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Sem permissão' });
