@@ -1590,3 +1590,22 @@ img, video, canvas, svg { max-width: 100%; }
     width: auto;
   }
 }
+
+
+/* Corrige o badge vermelho do sino: ele fica parcialmente fora do botão e não pode ser recortado pelo efeito ripple. */
+.notif-btn { overflow: visible !important; isolation: isolate; }
+.notif-btn .notif-badge {
+  z-index: 5;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  width: max-content;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  line-height: 18px;
+}
