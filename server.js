@@ -31,8 +31,8 @@ async function initDatabase() {
   let persistentData;
   if (postgresEnabled) {
     await ensurePostgres();
-    const rows = await sql`SELECT encode(data, 'hex') AS data_hex FROM fileshare_state WHERE id = 1`;
-    if (rows[0]?.data_hex) persistentData = Buffer.from(rows[0].data_hex, 'hex');
+    const rows = await sql`SELECT data FROM fileshare_state WHERE id = 1`;
+    if (rows[0]?.data) persistentData = Buffer.from(rows[0].data);
   }
   if (persistentData) {
     db = new SQL.Database(persistentData);
@@ -122,7 +122,7 @@ function saveDb() {
   fs.writeFileSync(dbPath, data);
   if (postgresEnabled) {
     persistencePromise = persistencePromise.then(() => sql`
-      INSERT INTO fileshare_state (id, data, updated_at) VALUES (1, decode(${data.toString('hex')}, 'hex'), NOW())
+      INSERT INTO fileshare_state (id, data, updated_at) VALUES (1, ${data}, NOW())
       ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
     `);
   }
@@ -162,7 +162,7 @@ function ensurePostgres() {
 function saveFileToPostgres(storedName, data) {
   if (!postgresEnabled) return Promise.resolve();
   return ensurePostgres().then(() => sql`
-    INSERT INTO fileshare_files (stored_name, data, updated_at) VALUES (${storedName}, decode(${Buffer.from(data).toString('hex')}, 'hex'), NOW())
+    INSERT INTO fileshare_files (stored_name, data, updated_at) VALUES (${storedName}, ${data}, NOW())
     ON CONFLICT (stored_name) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
   `);
 }
@@ -170,10 +170,10 @@ function saveFileToPostgres(storedName, data) {
 async function restoreFileFromPostgres(file) {
   if (!postgresEnabled) return null;
   await ensurePostgres();
-  const rows = await sql`SELECT encode(data, 'hex') AS data_hex FROM fileshare_files WHERE stored_name = ${file.stored_name}`;
-  if (!rows[0]?.data_hex) return null;
+  const rows = await sql`SELECT data FROM fileshare_files WHERE stored_name = ${file.stored_name}`;
+  if (!rows[0]?.data) return null;
   const localPath = path.join(uploadsDir, file.stored_name);
-  fs.writeFileSync(localPath, Buffer.from(rows[0].data_hex, 'hex'));
+  fs.writeFileSync(localPath, Buffer.from(rows[0].data));
   return localPath;
 }
 
