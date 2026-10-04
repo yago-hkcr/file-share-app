@@ -156,6 +156,10 @@ async function createTables() {
   )`);
   await q('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log (created_at)');
   await q('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
+  await q(`CREATE TABLE IF NOT EXISTS friendships (
+    id TEXT PRIMARY KEY, requester_id TEXT NOT NULL, addressee_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT, accepted_at TEXT
+  )`);
+  try { await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_friend_pair ON friendships (LEAST(requester_id, addressee_id), GREATEST(requester_id, addressee_id))'); } catch (e) { console.error('idx_friend_pair:', e && e.message); }
   await q(`CREATE TABLE IF NOT EXISTS auth_tokens (
     token_hash TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -357,8 +361,7 @@ function addFail(req, id) {
 function classifyAct(req) {
   const p = req.path, m = req.method;
   let r;
-  if (m === 'POST' && p === '/api/rooms') return ['sala_criada', req.body && req.body.name];
-  if (m === 'DELETE' && (r = /^\/api\/rooms\/([^/]+)$/.exec(p))) return ['sala_excluida', r[1].slice(0, 8)];
+  if (m === 'POST' && p === '/api/rooms') return [(req.body && req.body.type === 'private') ? 'sala_privada_criada' : 'sala_criada', req.body && req.body.name];
   if (m === 'POST' && /^\/api\/rooms\/[^/]+\/files$/.test(p)) return ['upload', (req.files || []).map(f => f.originalname).join(', ') || 'arquivo'];
   if (m === 'POST' && /^\/api\/rooms\/[^/]+\/files\/register$/.test(p)) return ['upload', (req.body && (req.body.name || req.body.original_name)) || 'arquivo'];
   if (m === 'DELETE' && /^\/api\/files\/[^/]+$/.test(p)) return ['arquivo_excluido', req.logDetail || p.split('/').pop().slice(0, 8)];
@@ -510,6 +513,7 @@ app.delete('/api/admin/users/:id', asAdmin, wrap(async (req, res) => {
   const victim = await one('SELECT username FROM users WHERE id = $1', [req.params.id]);
   await logAct(req, 'usuario_excluido', victim ? victim.username : req.params.id);
   await q('DELETE FROM auth_tokens WHERE user_id = $1', [req.params.id]);
+  await q('DELETE FROM friendships WHERE requester_id = $1 OR addressee_id = $1', [req.params.id]);
   await q('DELETE FROM room_members WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM notifications WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM messages WHERE user_id = $1', [req.params.id]);
@@ -526,14 +530,20 @@ app.post('/api/rooms', asMember, wrap(async (req, res) => {
   let isPublic = req.body.is_public === true || req.body.is_public === 'true' || req.body.is_public === 1 || req.body.is_public === 'on' ? 1 : 0;
   let expiresAt = null;
   const minutes = Number(req.body.duration_minutes) || 0;
-  if (!admin) {
-    // Usuário comum: só sala pública e temporária (5, 10 ou 30 min)
+  const wantsPrivate = !admin && req.body && req.body.type === 'private';
+  if (wantsPrivate) {
+    // Usuário comum: sala privada (sem prazo), até 5 por usuário
+    const mine = num((await one('SELECT COUNT(*) AS c FROM rooms WHERE created_by = $1 AND is_public = 0', [req.user.id])).c);
+    if (mine >= MAX_PRIVATE_ROOMS) return res.status(429).json({ error: `Você já tem ${MAX_PRIVATE_ROOMS} salas privadas. Exclua uma para criar outra.` });
+    isPublic = 0;
+  } else if (!admin) {
+    // Usuário comum: sala pública e temporária (5, 10 ou 30 min)
     if (![5, 10, 30].includes(minutes)) return res.status(400).json({ error: 'Escolha 5, 10 ou 30 minutos' });
     const active = num((await one('SELECT COUNT(*) AS c FROM rooms WHERE created_by = $1 AND expires_at IS NOT NULL AND expires_at > $2', [req.user.id, ts()])).c);
     if (active >= 3) return res.status(429).json({ error: 'Você já tem 3 salas temporárias ativas' });
     isPublic = 1;
   }
-  if (minutes && [5, 10, 30].includes(minutes)) expiresAt = new Date(Date.now() + minutes * 60000).toISOString().slice(0, 19).replace('T', ' ');
+  if (!wantsPrivate && minutes && [5, 10, 30].includes(minutes)) expiresAt = new Date(Date.now() + minutes * 60000).toISOString().slice(0, 19).replace('T', ' ');
   const id = uuidv4();
   let slug = await generateSlug(name);
   for (let attempt = 0; ; attempt++) {
@@ -546,7 +556,7 @@ app.post('/api/rooms', asMember, wrap(async (req, res) => {
       throw e;
     }
   }
-  if (!admin) await q('INSERT INTO room_members (id, room_id, user_id, joined_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [uuidv4(), id, req.user.id, ts()]);
+  if (!admin) await q('INSERT INTO room_members (id, room_id, user_id, role, joined_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING', [uuidv4(), id, req.user.id, wantsPrivate ? 'owner' : 'member', ts()]);
   res.json(await one('SELECT * FROM rooms WHERE id = $1', [id]));
 }));
 
@@ -563,6 +573,8 @@ async function loadRooms(user) {
        FROM room_members rm JOIN users u ON rm.user_id = u.id
        WHERE rm.room_id IN (SELECT id FROM rooms WHERE ${cond})`, params)
   ]);
+  const ownerIds = [...new Set(rooms.map(r => r.created_by).filter(Boolean))];
+  const owners = ownerIds.length ? await q(`SELECT id, username FROM users WHERE id IN (${ownerIds.map((_, i) => '$' + (i + 1)).join(',')})`, ownerIds) : [];
   return rooms.map(room => {
     const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(user), can_delete: isAdmin(user) || f.uploaded_by === user.id || room.created_by === user.id }));
     const roomMembers = members.filter(m => m.room_id === room.id).map(({ room_id, ...m }) => m);
@@ -572,6 +584,9 @@ async function loadRooms(user) {
       members: roomMembers,
       fileCount: roomFiles.length,
       memberCount: roomMembers.length,
+      owner_name: (owners.find(o => o.id === room.created_by) || {}).username || null,
+      is_owner: room.created_by === user.id,
+      can_manage: isAdmin(user) || (room.created_by === user.id && !room.is_public),
       isMember: isAdmin(user) || roomMembers.some(m => m.id === user.id)
     };
   });
@@ -599,19 +614,13 @@ app.post('/api/rooms/:id/join', asMember, wrap(async (req, res) => {
 }));
 
 app.post('/api/rooms/:id/leave', requireAuth, wrap(async (req, res) => {
+  const lr = await one('SELECT id, name, created_by, is_public FROM rooms WHERE id = $1', [req.params.id]);
+  if (lr && !lr.is_public && lr.created_by === req.user.id && !isAdmin(req.user)) {
+    await destroyRoom(lr.id);
+    await logAct(req, 'sala_privada_excluida', lr.name + ' (dono saiu)');
+    return res.json({ success: true, deleted: true });
+  }
   await q('DELETE FROM room_members WHERE room_id = $1 AND user_id = $2', [req.params.id, req.user.id]);
-  res.json({ success: true });
-}));
-
-app.delete('/api/rooms/:id', asAdmin, wrap(async (req, res) => {
-  const id = req.params.id;
-  const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [id]);
-  await deleteBlobs(roomFiles.map(f => f.stored_name));
-  await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [id]);
-  await q('DELETE FROM files WHERE room_id = $1', [id]);
-  await q('DELETE FROM room_members WHERE room_id = $1', [id]);
-  await q('DELETE FROM messages WHERE room_id = $1', [id]);
-  await q('DELETE FROM rooms WHERE id = $1', [id]);
   res.json({ success: true });
 }));
 
@@ -624,11 +633,20 @@ app.post('/api/rooms/:id/members', asAdmin, wrap(async (req, res) => {
   if (await isRoomMember(req.params.id, userId)) return res.status(400).json({ error: 'Já é membro' });
   await q('INSERT INTO room_members (id, room_id, user_id, joined_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
     [uuidv4(), req.params.id, userId, ts()]);
+  const mr = await one('SELECT name FROM rooms WHERE id = $1', [req.params.id]), mu = await one('SELECT username FROM users WHERE id = $1', [userId]);
+  await notify(userId, 'Você foi adicionado a uma sala', `Um administrador adicionou você à sala "${mr.name}".`, 'info');
+  await logAct(req, 'adm_membro_adicionado', `${mu.username} → ${mr.name}`);
   res.json({ success: true });
 }));
 
 app.delete('/api/rooms/:roomId/members/:userId', asAdmin, wrap(async (req, res) => {
+  const mr = await one('SELECT name, created_by FROM rooms WHERE id = $1', [req.params.roomId]), mu = await one('SELECT username FROM users WHERE id = $1', [req.params.userId]);
   await q('DELETE FROM room_members WHERE room_id = $1 AND user_id = $2', [req.params.roomId, req.params.userId]);
+  if (mr && mu) {
+    await notify(req.params.userId, 'Removido de uma sala', `Um administrador removeu você da sala "${mr.name}".`, 'warning');
+    if (mr.created_by && mr.created_by !== req.params.userId && mr.created_by !== req.user.id) await notify(mr.created_by, 'Um ADM alterou sua sala', `${mu.username} foi removido da sala "${mr.name}" por um administrador.`, 'warning');
+    await logAct(req, 'adm_membro_removido', `${mu.username} ← ${mr.name}`);
+  }
   res.json({ success: true });
 }));
 
@@ -880,7 +898,11 @@ app.get('/api/admin/users/:id/detail', asAdmin, adminTarget, wrap(async (req, re
   const rooms = await q('SELECT r.id, r.name FROM room_members m JOIN rooms r ON r.id = m.room_id WHERE m.user_id = $1', [id]);
   const sessions = await q('SELECT created_at, user_agent FROM auth_tokens WHERE user_id = $1 AND expires_at > $2 ORDER BY created_at DESC', [id, ts()]);
   const activity = await q('SELECT action, detail, ip, created_at FROM activity_log WHERE user_id = $1 ORDER BY created_at DESC LIMIT 15', [id]);
-  res.json({ user, files: files.map(f => ({ ...f, size: num(f.size) })), rooms, sessions, activity });
+  const fr = await q(`SELECT f.id, f.status, f.requester_id, f.created_at, u.username FROM friendships f JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END WHERE f.requester_id = $1 OR f.addressee_id = $1 ORDER BY f.created_at DESC`, [id]);
+  const friends = fr.filter(x => x.status === 'accepted').map(x => ({ id: x.id, username: x.username }));
+  const pendingFriends = fr.filter(x => x.status !== 'accepted').map(x => ({ id: x.id, username: x.username, direction: x.requester_id === id ? 'enviado' : 'recebido' }));
+  const privateRooms = await q('SELECT r.id, r.name, (r.created_by = $1) AS owner FROM rooms r WHERE r.is_public = 0 AND (r.created_by = $1 OR r.id IN (SELECT room_id FROM room_members WHERE user_id = $1)) ORDER BY r.created_at DESC', [id]);
+  res.json({ user, files: files.map(f => ({ ...f, size: num(f.size) })), rooms, sessions, activity, friends, pendingFriends, privateRooms });
 }));
 
 app.post('/api/admin/users/:id/role', asAdmin, adminTarget, wrap(async (req, res) => {
@@ -940,6 +962,234 @@ app.post('/api/admin/settings', asAdmin, wrap(async (req, res) => {
   await logAct(req, 'configuracoes_alteradas', (b.registration_mode ? 'cadastro: ' + b.registration_mode + ' ' : '') + (typeof b.announcement === 'string' ? '| aviso atualizado' : ''));
   res.json({ success: true });
 }));
+
+// =================== AMIZADES + SALAS PRIVADAS ===================
+const MAX_PRIVATE_ROOMS = 5;
+const PAIR_SQL = '((requester_id = $1 AND addressee_id = $2) OR (requester_id = $2 AND addressee_id = $1))';
+async function friendshipBetween(a, b) { return one(`SELECT * FROM friendships WHERE ${PAIR_SQL}`, [a, b]); }
+async function areFriends(a, b) { const f = await friendshipBetween(a, b); return !!(f && f.status === 'accepted'); }
+// Quem remove um amigo o tira das salas privadas que ele (dono) criou
+async function dropFromPrivateRooms(ownerId, friendId) {
+  await q('DELETE FROM room_members WHERE user_id = $2 AND room_id IN (SELECT id FROM rooms WHERE created_by = $1 AND is_public = 0)', [ownerId, friendId]);
+}
+async function destroyRoom(id) {
+  const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [id]);
+  try { await deleteBlobs(roomFiles.map(f => f.stored_name)); } catch (e) { console.error('blobs:', e && e.message); }
+  await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [id]);
+  await q('DELETE FROM files WHERE room_id = $1', [id]);
+  await q('DELETE FROM room_members WHERE room_id = $1', [id]);
+  await q('DELETE FROM messages WHERE room_id = $1', [id]);
+  await q('DELETE FROM rooms WHERE id = $1', [id]);
+}
+const usableUser = u => u && (u.status === 'approved' || u.role === 'admin');
+
+app.get('/api/friends', asMember, wrap(async (req, res) => {
+  const me = req.user.id, online = agoTs(2 * 60000);
+  const rows = await q(`SELECT f.id, f.requester_id, f.addressee_id, f.status, f.created_at, u.id AS uid, u.username, u.avatar_color, u.role, u.status AS ustatus, u.last_seen
+    FROM friendships f JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
+    WHERE f.requester_id = $1 OR f.addressee_id = $1 ORDER BY f.created_at DESC`, [me]);
+  const out = { friends: [], incoming: [], outgoing: [] };
+  for (const r of rows) {
+    if (!usableUser({ status: r.ustatus, role: r.role })) continue;
+    const item = { id: r.id, user_id: r.uid, username: r.username, avatar_color: r.avatar_color, role: r.role, online: !!(r.last_seen && r.last_seen >= online), created_at: r.created_at };
+    if (r.status === 'accepted') out.friends.push(item);
+    else if (r.addressee_id === me) out.incoming.push(item);
+    else out.outgoing.push(item);
+  }
+  out.friends.sort((a, b) => (b.online - a.online) || a.username.localeCompare(b.username));
+  res.json(out);
+}));
+
+app.post('/api/friends/request', asMember, wrap(async (req, res) => {
+  const name = String((req.body && req.body.username) || '').trim().slice(0, 60);
+  if (!name) return res.status(400).json({ error: 'Digite o nome da conta' });
+  const target = await one('SELECT id, username, role, status FROM users WHERE LOWER(username) = LOWER($1) ORDER BY (username = $1) DESC LIMIT 1', [name]);
+  if (!target || !usableUser(target)) return res.status(404).json({ error: 'Usuário não encontrado ou indisponível' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'Você não pode adicionar a si mesmo' });
+  const ex = await friendshipBetween(req.user.id, target.id);
+  if (ex) {
+    if (ex.status === 'accepted') return res.status(400).json({ error: 'Vocês já são amigos' });
+    if (ex.requester_id === req.user.id) return res.status(400).json({ error: 'Você já enviou um pedido para essa conta' });
+    await q("UPDATE friendships SET status = 'accepted', accepted_at = $1 WHERE id = $2", [ts(), ex.id]);
+    await notify(target.id, 'Pedido de amizade aceito', `${req.user.username} agora é seu amigo.`, 'success');
+    await logAct(req, 'amizade_aceita', target.username);
+    return res.json({ success: true, accepted: true, username: target.username });
+  }
+  try {
+    await q("INSERT INTO friendships (id, requester_id, addressee_id, status, created_at) VALUES ($1,$2,$3,'pending',$4)", [uuidv4(), req.user.id, target.id, ts()]);
+  } catch (e) { if (isUnique(e)) return res.status(400).json({ error: 'Já existe um pedido entre vocês' }); throw e; }
+  await notify(target.id, 'Novo pedido de amizade', `${req.user.username} quer ser seu amigo.`, 'info');
+  await logAct(req, 'pedido_amizade', target.username);
+  res.json({ success: true, username: target.username });
+}));
+
+app.post('/api/friends/:id/accept', asMember, wrap(async (req, res) => {
+  const f = await one("SELECT * FROM friendships WHERE id = $1 AND addressee_id = $2 AND status = 'pending'", [req.params.id, req.user.id]);
+  if (!f) return res.status(404).json({ error: 'Pedido não encontrado' });
+  const other = await one('SELECT id, username, role, status FROM users WHERE id = $1', [f.requester_id]);
+  if (!usableUser(other)) return res.status(404).json({ error: 'Usuário indisponível' });
+  await q("UPDATE friendships SET status = 'accepted', accepted_at = $1 WHERE id = $2", [ts(), f.id]);
+  await notify(other.id, 'Pedido de amizade aceito', `${req.user.username} aceitou seu pedido.`, 'success');
+  await logAct(req, 'amizade_aceita', other.username);
+  res.json({ success: true });
+}));
+
+// Recusar, cancelar pedido enviado ou desfazer amizade
+app.delete('/api/friends/:id', asMember, wrap(async (req, res) => {
+  const f = await one('SELECT * FROM friendships WHERE id = $1 AND (requester_id = $2 OR addressee_id = $2)', [req.params.id, req.user.id]);
+  if (!f) return res.status(404).json({ error: 'Não encontrado' });
+  const otherId = f.requester_id === req.user.id ? f.addressee_id : f.requester_id;
+  const other = await one('SELECT username FROM users WHERE id = $1', [otherId]);
+  await q('DELETE FROM friendships WHERE id = $1', [f.id]);
+  if (f.status === 'accepted') { await dropFromPrivateRooms(req.user.id, otherId); await logAct(req, 'amizade_removida', other ? other.username : ''); }
+  res.json({ success: true });
+}));
+
+// Membros de sala privada (dono ou ADM)
+async function privateRoomGuard(req, res) {
+  const room = await one('SELECT * FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) { res.status(404).json({ error: 'Sala não encontrada' }); return null; }
+  if (!isAdmin(req.user) && (room.created_by !== req.user.id || room.is_public)) { res.status(403).json({ error: 'Só o dono da sala privada pode gerenciar membros' }); return null; }
+  return room;
+}
+app.post('/api/rooms/:id/private-members', asMember, wrap(async (req, res) => {
+  const room = await privateRoomGuard(req, res); if (!room) return;
+  const admin = isAdmin(req.user);
+  const userId = String((req.body && req.body.userId) || '');
+  const target = await one('SELECT id, username, role, status FROM users WHERE id = $1', [userId]);
+  if (!usableUser(target)) return res.status(404).json({ error: 'Usuário não encontrado ou indisponível' });
+  if (!admin && !(await areFriends(req.user.id, target.id))) return res.status(403).json({ error: 'Só é possível adicionar amigos' });
+  if (await isRoomMember(room.id, target.id)) return res.status(400).json({ error: 'Já é membro da sala' });
+  if (!admin) {
+    const count = num((await one('SELECT COUNT(*) AS c FROM room_members WHERE room_id = $1', [room.id])).c);
+    if (count >= num(room.max_members)) return res.status(409).json({ error: 'A sala atingiu o limite de membros' });
+  }
+  await q("INSERT INTO room_members (id, room_id, user_id, role, joined_at) VALUES ($1,$2,$3,'member',$4) ON CONFLICT DO NOTHING", [uuidv4(), room.id, target.id, ts()]);
+  await notify(target.id, 'Você foi adicionado a uma sala', `${req.user.username} adicionou você à sala "${room.name}".`, 'info');
+  await logAct(req, admin ? 'adm_membro_adicionado' : 'membro_sala_privada_adicionado', `${target.username} → ${room.name}`);
+  res.json({ success: true });
+}));
+app.delete('/api/rooms/:id/private-members/:userId', asMember, wrap(async (req, res) => {
+  const room = await privateRoomGuard(req, res); if (!room) return;
+  const admin = isAdmin(req.user);
+  if (req.params.userId === room.created_by) return res.status(400).json({ error: 'O dono não pode ser removido (troque o dono antes)' });
+  const target = await one('SELECT id, username FROM users WHERE id = $1', [req.params.userId]);
+  await q('DELETE FROM room_members WHERE room_id = $1 AND user_id = $2', [room.id, req.params.userId]);
+  if (target) {
+    await notify(target.id, 'Removido de uma sala', `Você foi removido da sala "${room.name}".`, 'warning');
+    if (admin && room.created_by !== req.user.id) await notify(room.created_by, 'Um ADM alterou sua sala', `${target.username} foi removido da sala "${room.name}" por um administrador.`, 'warning');
+  }
+  await logAct(req, admin ? 'adm_membro_removido' : 'membro_sala_privada_removido', `${target ? target.username : req.params.userId} ← ${room.name}`);
+  res.json({ success: true });
+}));
+
+// Renomear sala (dono da privada ou ADM)
+app.patch('/api/rooms/:id', asMember, wrap(async (req, res) => {
+  const room = await privateRoomGuard(req, res); if (!room) return;
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 60);
+  if (!name) return res.status(400).json({ error: 'Nome obrigatório' });
+  const description = typeof (req.body && req.body.description) === 'string' ? req.body.description.slice(0, 300) : room.description;
+  await q('UPDATE rooms SET name = $1, description = $2 WHERE id = $3', [name, description, room.id]);
+  const admin = isAdmin(req.user);
+  if (admin && room.created_by !== req.user.id) await notify(room.created_by, 'Um ADM alterou sua sala', `A sala "${room.name}" agora se chama "${name}".`, 'info');
+  await logAct(req, admin ? 'adm_sala_privada_editada' : 'sala_renomeada', `${room.name} → ${name}`);
+  res.json({ success: true });
+}));
+
+// Excluir sala (dono da privada ou ADM)
+app.delete('/api/rooms/:id', asMember, wrap(async (req, res) => {
+  const room = await privateRoomGuard(req, res); if (!room) return;
+  const admin = isAdmin(req.user);
+  await destroyRoom(room.id);
+  if (admin && room.created_by !== req.user.id) await notify(room.created_by, 'Sala excluída por um ADM', `A sala "${room.name}" foi excluída por um administrador.`, 'warning');
+  await logAct(req, admin ? 'adm_sala_privada_excluida' : 'sala_privada_excluida', room.name);
+  res.json({ success: true });
+}));
+
+// ---- ADM: salas privadas e amizades ----
+app.get('/api/admin/private-rooms', asAdmin, wrap(async (req, res) => {
+  const rooms = await q(`SELECT r.id, r.name, r.slug, r.description, r.created_by, r.created_at, r.is_public, r.expires_at, ou.username AS owner_name,
+    (SELECT COUNT(*) FROM files f WHERE f.room_id = r.id) AS files, (SELECT COUNT(*) FROM messages m WHERE m.room_id = r.id) AS msgs
+    FROM rooms r LEFT JOIN users ou ON ou.id = r.created_by WHERE r.is_public = 0 ORDER BY r.created_at DESC`);
+  const members = await q('SELECT rm.room_id, u.id, u.username, u.role FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id IN (SELECT id FROM rooms WHERE is_public = 0)');
+  res.json(rooms.map(r => ({ ...r, files: num(r.files), msgs: num(r.msgs), members: members.filter(m => m.room_id === r.id).map(({ room_id, ...m }) => m) })));
+}));
+app.post('/api/admin/rooms/:id/owner', asAdmin, wrap(async (req, res) => {
+  const room = await one('SELECT * FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  const target = await one('SELECT id, username, role, status FROM users WHERE id = $1', [String((req.body && req.body.userId) || '')]);
+  if (!usableUser(target)) return res.status(404).json({ error: 'Usuário não encontrado ou indisponível' });
+  await q('UPDATE rooms SET created_by = $1 WHERE id = $2', [target.id, room.id]);
+  await q("UPDATE room_members SET role = 'member' WHERE room_id = $1 AND role = 'owner'", [room.id]);
+  await q("INSERT INTO room_members (id, room_id, user_id, role, joined_at) VALUES ($1,$2,$3,'owner',$4) ON CONFLICT (room_id, user_id) DO UPDATE SET role = 'owner'", [uuidv4(), room.id, target.id, ts()]);
+  await notify(target.id, 'Você agora é dono de uma sala', `Um administrador tornou você dono da sala "${room.name}".`, 'info');
+  if (room.created_by && room.created_by !== target.id) await notify(room.created_by, 'Dono da sala alterado', `A sala "${room.name}" agora pertence a ${target.username}.`, 'warning');
+  await logAct(req, 'adm_sala_privada_editada', `${room.name}: novo dono ${target.username}`);
+  res.json({ success: true });
+}));
+// ADM: muda a visibilidade (privada / pública / temporária)
+app.post('/api/admin/rooms/:id/visibility', asAdmin, wrap(async (req, res) => {
+  const room = await one('SELECT * FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  const mode = String((req.body && req.body.mode) || '');
+  if (mode === 'private') await q('UPDATE rooms SET is_public = 0, expires_at = NULL WHERE id = $1', [room.id]);
+  else if (mode === 'public') await q('UPDATE rooms SET is_public = 1, expires_at = NULL WHERE id = $1', [room.id]);
+  else if (mode === 'temporary') {
+    const mins = [5, 10, 30, 60].includes(Number(req.body.minutes)) ? Number(req.body.minutes) : 30;
+    await q('UPDATE rooms SET is_public = 1, expires_at = $1 WHERE id = $2', [new Date(Date.now() + mins * 60000).toISOString().slice(0, 19).replace('T', ' '), room.id]);
+  } else return res.status(400).json({ error: 'Modo inválido' });
+  if (room.created_by && room.created_by !== req.user.id) await notify(room.created_by, 'Um ADM alterou sua sala', `A sala "${room.name}" agora é ${mode === 'private' ? 'privada' : mode === 'public' ? 'pública' : 'temporária'}.`, 'info');
+  await logAct(req, 'adm_sala_privada_editada', `${room.name}: ${mode}`);
+  res.json({ success: true });
+}));
+// ADM: apagar mensagem de qualquer sala
+app.delete('/api/admin/messages/:id', asAdmin, wrap(async (req, res) => {
+  const m = await one('SELECT m.id, m.room_id, r.name FROM messages m LEFT JOIN rooms r ON r.id = m.room_id WHERE m.id = $1', [req.params.id]);
+  if (!m) return res.status(404).json({ error: 'Mensagem não encontrada' });
+  await q('DELETE FROM messages WHERE id = $1', [m.id]);
+  await logAct(req, 'adm_mensagem_excluida', m.name || '');
+  res.json({ success: true });
+}));
+app.get('/api/admin/friendships', asAdmin, wrap(async (req, res) => {
+  const search = '%' + String(req.query.q || '').trim().toLowerCase().replace(/[%_]/g, '') + '%';
+  res.json(await q(`SELECT f.id, f.status, f.created_at, f.accepted_at, f.requester_id, f.addressee_id, a.username AS requester, b.username AS addressee
+    FROM friendships f JOIN users a ON a.id = f.requester_id JOIN users b ON b.id = f.addressee_id
+    WHERE LOWER(a.username) LIKE $1 OR LOWER(b.username) LIKE $1 ORDER BY f.created_at DESC LIMIT 300`, [search]));
+}));
+app.post('/api/admin/friendships', asAdmin, wrap(async (req, res) => {
+  const find = n => one('SELECT id, username, role, status FROM users WHERE LOWER(username) = LOWER($1) ORDER BY (username = $1) DESC LIMIT 1', [String(n || '').trim().slice(0, 60)]);
+  const a = await find(req.body && req.body.a), b = await find(req.body && req.body.b);
+  if (!usableUser(a) || !usableUser(b)) return res.status(404).json({ error: 'Usuário não encontrado ou indisponível' });
+  if (a.id === b.id) return res.status(400).json({ error: 'Escolha duas contas diferentes' });
+  const ex = await friendshipBetween(a.id, b.id);
+  if (ex && ex.status === 'accepted') return res.status(400).json({ error: 'Já são amigos' });
+  if (ex) await q("UPDATE friendships SET status = 'accepted', accepted_at = $1 WHERE id = $2", [ts(), ex.id]);
+  else await q("INSERT INTO friendships (id, requester_id, addressee_id, status, created_at, accepted_at) VALUES ($1,$2,$3,'accepted',$4,$4)", [uuidv4(), a.id, b.id, ts()]);
+  await notify(a.id, 'Nova amizade', `Um administrador conectou você a ${b.username}.`, 'info');
+  await notify(b.id, 'Nova amizade', `Um administrador conectou você a ${a.username}.`, 'info');
+  await logAct(req, 'adm_amizade_criada', `${a.username} ↔ ${b.username}`);
+  res.json({ success: true });
+}));
+app.post('/api/admin/friendships/:id/accept', asAdmin, wrap(async (req, res) => {
+  const f = await one("SELECT f.*, a.username AS ra, b.username AS rb FROM friendships f JOIN users a ON a.id = f.requester_id JOIN users b ON b.id = f.addressee_id WHERE f.id = $1", [req.params.id]);
+  if (!f) return res.status(404).json({ error: 'Não encontrado' });
+  await q("UPDATE friendships SET status = 'accepted', accepted_at = $1 WHERE id = $2", [ts(), f.id]);
+  await notify(f.requester_id, 'Pedido de amizade aceito', `Um administrador aceitou seu pedido para ${f.rb}.`, 'success');
+  await notify(f.addressee_id, 'Nova amizade', `Um administrador aceitou o pedido de ${f.ra}.`, 'info');
+  await logAct(req, 'adm_amizade_criada', `${f.ra} ↔ ${f.rb} (forçada)`);
+  res.json({ success: true });
+}));
+app.delete('/api/admin/friendships/:id', asAdmin, wrap(async (req, res) => {
+  const f = await one("SELECT f.*, a.username AS ra, b.username AS rb FROM friendships f JOIN users a ON a.id = f.requester_id JOIN users b ON b.id = f.addressee_id WHERE f.id = $1", [req.params.id]);
+  if (!f) return res.status(404).json({ error: 'Não encontrado' });
+  await q('DELETE FROM friendships WHERE id = $1', [f.id]);
+  if (f.status === 'accepted') { await dropFromPrivateRooms(f.requester_id, f.addressee_id); await dropFromPrivateRooms(f.addressee_id, f.requester_id); }
+  await notify(f.requester_id, 'Amizade removida', `Um administrador removeu a ligação com ${f.rb}.`, 'warning');
+  await notify(f.addressee_id, 'Amizade removida', `Um administrador removeu a ligação com ${f.ra}.`, 'warning');
+  await logAct(req, 'adm_amizade_removida', `${f.ra} ↔ ${f.rb}`);
+  res.json({ success: true });
+}));
+
 // Pulso do site (a cada 2s): versão publicada, sessão, aviso global e novas notificações
 const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || '';
 app.get('/api/live', wrap(async (req, res) => {
