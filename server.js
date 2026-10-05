@@ -6,6 +6,10 @@ const { v4: uuidv4 } = require('uuid');
 const { neon } = require('@neondatabase/serverless');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
+const { pathToFileURL } = require('url');
 const { Readable } = require('stream');
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -24,13 +28,27 @@ if (!IS_VERCEL) {
   }
 }
 
+const LOCAL_MODE = !IS_VERCEL && process.env.FILESHARE_LOCAL === '1';
+const LOCAL_DATA_DIR = path.resolve(process.env.FILESHARE_DATA_DIR || path.join(__dirname, 'data', 'local'));
+const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (LOCAL_MODE ? crypto.randomBytes(9).toString('base64url') : 'admin123');
+function sessionSecret() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (!LOCAL_MODE) return 'fileshare-local-development-secret';
+  fs.mkdirSync(LOCAL_DATA_DIR, { recursive: true });
+  const secretPath = path.join(LOCAL_DATA_DIR, 'session-secret');
+  if (fs.existsSync(secretPath)) return fs.readFileSync(secretPath, 'utf8').trim();
+  const secret = crypto.randomBytes(48).toString('hex');
+  fs.writeFileSync(secretPath, secret, { mode: 0o600 });
+  return secret;
+}
+
 // ---------------------------------------------------------------------------
 // Vercel Blob (armazenamento privado dos arquivos). Na Vercel a autenticação é por OIDC
 // (BLOB_STORE_ID + VERCEL_OIDC_TOKEN, injetados automaticamente). Sem essas variáveis
 // (ex.: rodando local sem `vercel env pull`), cai no Postgres como antes.
 // ---------------------------------------------------------------------------
 const blobSdk = () => import('@vercel/blob');
-const blobEnabled = () => Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
+const blobEnabled = () => !LOCAL_MODE && Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
 const isBlobPath = name => typeof name === 'string' && name.startsWith('rooms/');
 async function deleteBlobs(pathnames) {
   const list = pathnames.filter(isBlobPath);
@@ -56,16 +74,29 @@ function cleanUrl(value) {
 }
 
 const DATABASE_URL = cleanUrl(process.env.DATABASE_URL || process.env.POSTGRES_URL);
-if (!DATABASE_URL) {
+if (!LOCAL_MODE && !DATABASE_URL) {
   console.error('❌ DATABASE_URL não definida. Configure a integração Neon na Vercel (ou o .env.local).');
 }
-const sql = DATABASE_URL ? neon(DATABASE_URL) : null;
+const sql = !LOCAL_MODE && DATABASE_URL ? neon(DATABASE_URL) : null;
+let localDatabasePromise = null;
+
+async function localDatabase() {
+  if (!localDatabasePromise) {
+    const moduleUrl = pathToFileURL(path.join(__dirname, 'local-runtime', 'database.mjs')).href;
+    localDatabasePromise = import(moduleUrl).then(({ openLocalDatabase }) => openLocalDatabase(path.join(LOCAL_DATA_DIR, 'database')));
+  }
+  return localDatabasePromise;
+}
 
 // ---------------------------------------------------------------------------
-// Helpers de banco (Postgres/Neon). Cada consulta é uma chamada HTTP sem estado,
-// então todas as instâncias serverless enxergam exatamente os mesmos dados.
+// Helpers de banco. Na Vercel usam Neon; no modo de sala usam Postgres local persistente.
 // ---------------------------------------------------------------------------
 async function q(text, params = []) {
+  if (LOCAL_MODE) {
+    const db = await localDatabase();
+    const result = await db.query(text, params);
+    return result.rows;
+  }
   if (!sql) throw new Error('Banco de dados não configurado (DATABASE_URL ausente)');
   return sql.query(text, params);
 }
@@ -179,11 +210,12 @@ async function initDatabase() {
   }
   const admin = await one("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
   if (!admin) {
-    const hash = bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10);
+    const hash = bcrypt.hashSync(INITIAL_ADMIN_PASSWORD, 10);
     await q(`INSERT INTO users (id, username, email, password_hash, role, status, avatar_color, created_at)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
       [uuidv4(), 'admin', 'admin@fileshare.com', hash, 'admin', 'approved', '#ef4444', ts()]);
-    console.log('✅ Admin criado');
+    console.log(LOCAL_MODE ? '✅ Administrador local criado.' : '✅ Admin criado');
+    if (LOCAL_MODE) console.log('🔐 Acesso inicial: admin / ' + INITIAL_ADMIN_PASSWORD + ' — altere a senha após entrar.');
   }
 }
 
@@ -201,7 +233,7 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon-48.png')));
 app.use(cookieSession({
   name: 'fileshare_session',
-  keys: [process.env.SESSION_SECRET || 'fileshare-local-development-secret'],
+  keys: [sessionSecret()],
   maxAge: 30 * 24 * 60 * 60 * 1000,
   httpOnly: true,
   secure: IS_VERCEL,
@@ -211,7 +243,6 @@ app.use(wrap(async (req, res, next) => { await ensureDatabase(); next(); }));
 
 // ===== Login persistente ("lembrar de mim") =====
 // Além do cookie de sessão, guardamos um token longo (1 ano) no navegador; só o hash dele fica no banco.
-const crypto = require('crypto');
 const REMEMBER_COOKIE = 'fs_remember';
 const REMEMBER_DAYS = 365;
 const hashToken = t => crypto.createHash('sha256').update(String(t)).digest('hex');
@@ -1351,12 +1382,41 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT || 3000);
+  const HOST = LOCAL_MODE ? '0.0.0.0' : process.env.HOST;
   ensureDatabase().then(() => {
-    app.listen(PORT, () => {
-      console.log(`\n🚀 FileShare rodando em http://localhost:${PORT}`);
-      console.log('🔐 Admin: admin / admin123 (ou ADMIN_PASSWORD)\n');
+    const server = app.listen(PORT, ...(HOST ? [HOST] : []), () => {
+      console.log(`\n🚀 FileShare ${LOCAL_MODE ? 'na rede local' : 'rodando'} em http://localhost:${PORT}`);
+      if (LOCAL_MODE) {
+        const addresses = Object.values(os.networkInterfaces()).flat().filter(item =>
+          item && !item.internal && item.family === 'IPv4' && !item.address.startsWith('169.254.')
+        ).map(item => item.address);
+        console.log('\n📡 Endereços para os outros computadores nesta rede:');
+        if (addresses.length) addresses.forEach(address => console.log(`   http://${address}:${PORT}`));
+        else console.log('   Nenhuma rede local encontrada. Conecte este computador ao Wi-Fi/roteador da sala.');
+        console.log('\n⏹ Para encerrar o servidor, pressione Ctrl+C nesta janela.');
+        if (process.env.FILESHARE_NO_BROWSER !== '1') {
+          const url = `http://127.0.0.1:${PORT}`;
+          const command = process.platform === 'win32' ? 'cmd.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+          const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+          try { spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch (e) {}
+        }
+      } else {
+        console.log('🔐 Admin: admin / admin123 (ou ADMIN_PASSWORD)\n');
+      }
     });
+    if (LOCAL_MODE) {
+      const shutdown = () => {
+        console.log('\n⏹ Encerrando servidor e salvando dados...');
+        server.close(async () => {
+          try { if (localDatabasePromise) await (await localDatabasePromise).close(); } catch (e) {}
+          process.exit(0);
+        });
+        setTimeout(() => process.exit(1), 10000).unref();
+      };
+      process.once('SIGINT', shutdown);
+      process.once('SIGTERM', shutdown);
+    }
   }).catch(err => { console.error('Erro ao iniciar:', err); process.exit(1); });
 } else {
   module.exports = app;

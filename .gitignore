@@ -13,3 +13,7 @@ npm-debug.log*
 skills-lock.json
 .vercel
 .env*
+
+# FileShare offline/LAN data
+/data/local/
+/local-runtime/node_modules/
