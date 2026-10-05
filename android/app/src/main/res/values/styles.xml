@@ -1,0 +1,18 @@
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#B45CFF</item>
+        <item name="android:statusBarColor">#100B1F</item>
+        <item name="android:navigationBarColor">#100B1F</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">#100B1F</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
+    <style name="PickerTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+</resources>
