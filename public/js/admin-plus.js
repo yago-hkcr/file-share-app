@@ -237,7 +237,7 @@
 
   // ---------- comunicados / sistema ----------
   async function loadComms() {
-    try { const s = await api('/api/admin/settings'); const fo = document.activeElement; if (fo !== $('anT')) $('anT').value = s.announcement; if (fo !== $('anY')) $('anY').value = s.announcement_type; if (fo !== $('syReg')) $('syReg').value = s.registration_mode; } catch (e) {}
+    try { const s = await api('/api/admin/settings'); const fo = document.activeElement; const editing = id => { const el = $(id); return fo === el || !!el.closest('.fs-select')?.contains(fo); }; if (!editing('anT')) $('anT').value = s.announcement; if (!editing('anY')) $('anY').value = s.announcement_type; if (!editing('syReg')) $('syReg').value = s.registration_mode; } catch (e) {}
   }
   $('bcSend').onclick = () => { const t = $('bcT').value.trim(), m = $('bcM').value.trim(); if (!t || !m) return toast('Preencha título e mensagem', 'error'); ask('Enviar este comunicado para TODOS os usuários?', async () => { try { const r = await post('/api/admin/broadcast', { title: t, message: m, type: $('bcY').value }); toast('Enviado para ' + r.sent + ' usuários'); $('bcT').value = ''; $('bcM').value = ''; } catch (e) { toast(e.message, 'error'); } }); };
   $('anSave').onclick = async () => { try { await post('/api/admin/settings', { announcement: $('anT').value, announcement_type: $('anY').value }); toast('Aviso publicado'); } catch (e) { toast(e.message, 'error'); } };
