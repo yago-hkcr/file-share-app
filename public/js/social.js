@@ -46,7 +46,7 @@
       known = ids;
       if (sig === fSig) return; fSig = sig; F = d; badge();
       if (friendsSheet.style.display !== 'none') paintFriends();
-    } catch (e) { /* tenta de novo */ }
+    } catch (e) {}
   }
   window.friendAccept = async id => { try { await send('/api/friends/' + id + '/accept'); toast('Amizade aceita'); fSig = ''; pollFriends(); } catch (e) { toast(e.message, 'error'); } };
   window.friendRemove = async (id, msg) => { if (!confirm(msg)) return; try { await remove('/api/friends/' + id); fSig = ''; pollFriends(); } catch (e) { toast(e.message, 'error'); } };
@@ -59,12 +59,51 @@
   $('friendName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sendRequest(); } });
   window.showFriends = () => { friendsSheet.style.display = 'flex'; paintFriends(); pollFriends(); };
 
-  // botões no topo
+  // Botões no topo.
   const actions = document.querySelector('.intro-actions');
   if (actions) {
     actions.insertAdjacentHTML('afterbegin', '<button id="friendsBtn" class="btn btn-outline" onclick="showFriends()"><i class="fas fa-user-group"></i> Amigos</button>');
     const nb = $('newRoomBtn'); if (nb) nb.innerHTML = '<i class="fas fa-plus"></i> Nova sala';
   }
+
+  // ADM: atalho de volta ao painel administrativo, visível somente para administradores.
+  function ensureAdminBackButton() {
+    if (!actions || !me || me.role !== 'admin' || $('adminBackBtn')) return;
+    actions.insertAdjacentHTML('afterbegin', '<a id="adminBackBtn" class="btn btn-outline" href="/admin"><i class="fas fa-shield-halved"></i> Voltar ao ADM</a>');
+  }
+
+  // Editar arquivo depois do envio: permite substituir o conteúdo mantendo a mesma sala.
+  function addFileEditButtons() {
+    const list = $('roomFiles');
+    if (!list || typeof replaceFile !== 'function') return;
+    list.querySelectorAll('.file-row').forEach(row => {
+      if (row.dataset.editReady === '1') return;
+      const preview = row.querySelector('.fp-trigger');
+      const rename = row.querySelector('[title="Renomear"]');
+      if (!preview || !rename) return; // só aparece para quem tem permissão de edição
+      const id = preview.dataset.id;
+      const name = rename.dataset.name || preview.dataset.name || '';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-sm btn-outline';
+      btn.title = 'Editar arquivo';
+      btn.innerHTML = '<i class="fas fa-file-pen"></i> Editar';
+      btn.onclick = () => {
+        const roomId = typeof currentRoom !== 'undefined' ? currentRoom : null;
+        replaceFile(id, name, roomId, () => {
+          if (typeof lastFilesSig !== 'undefined') lastFilesSig = '';
+          if (typeof lastRoomsSig !== 'undefined') lastRoomsSig = '';
+          if (typeof loadFiles === 'function') loadFiles();
+          if (typeof loadRooms === 'function') loadRooms();
+        });
+      };
+      rename.insertAdjacentElement('afterend', btn);
+      row.dataset.editReady = '1';
+    });
+  }
+  const fileObserver = $('roomFiles') ? new MutationObserver(addFileEditButtons) : null;
+  if (fileObserver) fileObserver.observe($('roomFiles'), { childList: true, subtree: true });
+  addFileEditButtons();
 
   // ---------------- NOVA SALA: pública temporária ou privada ----------------
   let roomType = 'temp';
@@ -142,7 +181,7 @@
       const [rooms, friends] = await Promise.all([api('/api/rooms'), api('/api/friends')]);
       const room = rooms.find(r => r.id === currentRoom); if (!room) return;
       const sig = JSON.stringify([room.members, friends.friends]); if (sig === mSig) return; mSig = sig; MD = { room, friends }; paintMembers();
-    } catch (e) { /* tenta de novo */ }
+    } catch (e) {}
   }
   $('memSearch').addEventListener('input', paintMembers);
   window.openMembers = () => { mSig = ''; MD = null; $('memLists').innerHTML = ''; $('memSearch').value = ''; memSheet.style.display = 'flex'; loadMembers(); };
@@ -150,6 +189,8 @@
   window.memRemove = async uid => { if (!confirm('Remover este membro da sala?')) return; try { await remove('/api/rooms/' + currentRoom + '/private-members/' + uid); toast('Membro removido'); mSig = ''; lastRoomsSig = ''; loadMembers(); } catch (e) { toast(e.message, 'error'); } };
 
   document.addEventListener('keydown', e => { if (e.key === 'Escape') ['friendsSheet', 'membersSheet'].forEach(id => { const m = $(id); if (m) m.style.display = 'none'; }); });
-  setInterval(() => { pollFriends(); if (memSheet.style.display !== 'none') loadMembers(); }, 2000);
+  setInterval(() => { pollFriends(); ensureAdminBackButton(); if (memSheet.style.display !== 'none') loadMembers(); addFileEditButtons(); }, 2000);
   pollFriends();
+  ensureAdminBackButton();
+  addFileEditButtons();
 })();
