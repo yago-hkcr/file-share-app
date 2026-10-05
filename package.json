@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "node --check server.js && node --check api/index.js",
     "local:install": "npm install && npm --prefix local-runtime install",
     "local:start": "node local-runtime/start.cjs"
   },
