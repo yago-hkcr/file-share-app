@@ -25,15 +25,15 @@ use Vercel Blob com upload direto do navegador.
 
 Defina `SESSION_SECRET` em producao. Nunca publique `.env`, `data/database.sqlite` ou arquivos enviados.
 
-## Sala local sem internet (Windows)
+## Sala local sem internet
 
-Um computador da sala pode hospedar o FileShare na rede local. Os outros computadores e celulares acessam pelo navegador, conectados ao mesmo Wi-Fi ou roteador; somente o computador servidor precisa executar o programa.
+Um computador da sala hospeda o FileShare, enquanto os demais entram pelo navegador na mesma rede Wi-Fi ou cabeada. O acesso pela rede começa desligado e só uma conta ADM pode ativá-lo no painel.
 
-1. No computador servidor, instale o Node.js 24 LTS.
-2. Com internet disponível uma vez, execute `Instalar FileShare Local.bat` para baixar as dependências.
-3. Depois, mesmo sem internet, clique duas vezes em `Abrir Servidor FileShare.bat`.
-4. A janela mostrará um endereço `http://192.168...`. Compartilhe esse endereço com os demais computadores.
-5. Se o Windows Firewall perguntar, permita o acesso em redes privadas. Mantenha a janela aberta enquanto a sala estiver usando o servidor. Pressione Ctrl+C para encerrá-lo.
-6. Entre como `admin` usando a senha inicial exibida na primeira inicialização e troque-a em seguida.
+1. Em qualquer computador Windows/macOS/Linux que será o servidor, instale o Node.js 24 LTS.
+2. Com internet disponível uma vez, prepare os componentes: clique em `Instalar FileShare Local.bat` no Windows ou execute `npm run local:install` no macOS/Linux.
+3. Depois, mesmo sem internet, inicie o FileShare: clique em `Abrir Servidor FileShare.bat` no Windows ou execute `npm run local:start` no macOS/Linux.
+4. O serviço começa fechado para a rede. Entre como `admin` com a senha inicial exibida no terminal e troque-a.
+5. No painel ADM, clique em `Servidor da sala` e escolha `Iniciar servidor`. Só então os outros computadores poderão entrar pelo endereço mostrado. Apenas ADM pode iniciar ou parar o acesso.
+6. Se o Firewall perguntar, permita o acesso em redes privadas. Mantenha o computador ligado e o processo aberto.
 
 O banco e os arquivos enviados ficam persistidos em `data/local` no computador servidor. Faça cópias dessa pasta com o servidor encerrado. O servidor local e o site publicado na Vercel usam bases separadas; dados de um não são sincronizados automaticamente com o outro.

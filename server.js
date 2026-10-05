@@ -30,6 +30,9 @@ if (!IS_VERCEL) {
 
 const LOCAL_MODE = !IS_VERCEL && process.env.FILESHARE_LOCAL === '1';
 const LOCAL_DATA_DIR = path.resolve(process.env.FILESHARE_DATA_DIR || path.join(__dirname, 'data', 'local'));
+const LOCAL_LAN_PORT = Number(process.env.FILESHARE_LAN_PORT || Number(process.env.PORT || 3000) + 1);
+let localLanServer = null;
+let localLanStartPromise = null;
 const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (LOCAL_MODE ? crypto.randomBytes(9).toString('base64url') : 'admin123');
 function sessionSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
@@ -86,6 +89,41 @@ async function localDatabase() {
     localDatabasePromise = import(moduleUrl).then(({ openLocalDatabase }) => openLocalDatabase(path.join(LOCAL_DATA_DIR, 'database')));
   }
   return localDatabasePromise;
+}
+
+function localLanAddresses() {
+  return Object.values(os.networkInterfaces()).flat()
+    .filter(item => item && !item.internal && item.family === 'IPv4' && !item.address.startsWith('169.254.'))
+    .map(item => ({ address: item.address, url: 'http://' + item.address + ':' + LOCAL_LAN_PORT }));
+}
+
+async function startLocalLanServer() {
+  if (localLanServer && localLanServer.listening) return localLanServer;
+  if (!localLanStartPromise) {
+    localLanStartPromise = new Promise((resolve, reject) => {
+      const listener = app.listen(LOCAL_LAN_PORT, '0.0.0.0', () => {
+        localLanServer = listener;
+        resolve(listener);
+      });
+      listener.once('error', reject);
+    });
+  }
+  try {
+    return await localLanStartPromise;
+  } finally {
+    localLanStartPromise = null;
+  }
+}
+
+async function stopLocalLanServer() {
+  if (localLanStartPromise) await localLanStartPromise.catch(() => {});
+  if (!localLanServer) return;
+  const listener = localLanServer;
+  localLanServer = null;
+  await new Promise(resolve => {
+    listener.close(resolve);
+    if (typeof listener.closeAllConnections === 'function') listener.closeAllConnections();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1372,6 +1410,38 @@ app.post('/api/change-password', requireAuth, wrap(async (req, res) => {
   res.json({ success: true });
 }));
 
+// ===== Servidor da sala (somente modo local e somente ADM) =====
+app.get('/api/admin/local-server/status', asAdmin, wrap(async (req, res) => {
+  res.json({
+    available: LOCAL_MODE,
+    active: Boolean(LOCAL_MODE && localLanServer && localLanServer.listening),
+    port: LOCAL_LAN_PORT,
+    addresses: LOCAL_MODE && localLanServer && localLanServer.listening ? localLanAddresses() : []
+  });
+}));
+app.post('/api/admin/local-server/start', asAdmin, wrap(async (req, res) => {
+  if (!LOCAL_MODE) return res.status(404).json({ error: 'Servidor local indisponível nesta instalação' });
+  try {
+    await startLocalLanServer();
+    const addresses = localLanAddresses();
+    console.log('\n📡 Servidor da sala ativado pelo ADM:');
+    if (addresses.length) addresses.forEach(item => console.log('   ' + item.url));
+    else console.log('   Nenhum endereço de rede encontrado; conecte este computador ao Wi-Fi/roteador da sala.');
+    res.json({ success: true, active: true, port: LOCAL_LAN_PORT, addresses });
+  } catch (error) {
+    console.error('Falha ao abrir servidor da sala:', error && error.message);
+    const message = error && error.code === 'EADDRINUSE'
+      ? 'A porta ' + LOCAL_LAN_PORT + ' já está em uso. Feche o outro servidor ou escolha outra porta.'
+      : 'Não foi possível abrir o servidor da sala. Verifique a rede e tente novamente.';
+    res.status(409).json({ error: message });
+  }
+}));
+app.post('/api/admin/local-server/stop', asAdmin, wrap(async (req, res) => {
+  if (!LOCAL_MODE) return res.status(404).json({ error: 'Servidor local indisponível nesta instalação' });
+  await stopLocalLanServer();
+  res.json({ success: true, active: false });
+}));
+
 // =================== ERROS ===================
 app.use((err, req, res, next) => {
   console.error('Erro em', req.method, req.originalUrl, '-', err && err.stack || err);
@@ -1381,19 +1451,15 @@ app.use((err, req, res, next) => {
   res.status(500).send(message);
 });
 
-if (require.main === module) {
+if (require.main === module || process.env.FILESHARE_LOCAL_BOOTSTRAP === '1') {
   const PORT = Number(process.env.PORT || 3000);
-  const HOST = LOCAL_MODE ? '0.0.0.0' : process.env.HOST;
+  const HOST = LOCAL_MODE ? '127.0.0.1' : process.env.HOST;
   ensureDatabase().then(() => {
     const server = app.listen(PORT, ...(HOST ? [HOST] : []), () => {
       console.log(`\n🚀 FileShare ${LOCAL_MODE ? 'na rede local' : 'rodando'} em http://localhost:${PORT}`);
       if (LOCAL_MODE) {
-        const addresses = Object.values(os.networkInterfaces()).flat().filter(item =>
-          item && !item.internal && item.family === 'IPv4' && !item.address.startsWith('169.254.')
-        ).map(item => item.address);
-        console.log('\n📡 Endereços para os outros computadores nesta rede:');
-        if (addresses.length) addresses.forEach(address => console.log(`   http://${address}:${PORT}`));
-        else console.log('   Nenhuma rede local encontrada. Conecte este computador ao Wi-Fi/roteador da sala.');
+        console.log('\n🔒 O servidor está acessível apenas neste computador até um ADM liberá-lo para a sala.');
+        console.log('   Entre como admin e use o botão “Servidor da sala” no painel ADM.');
         console.log('\n⏹ Para encerrar o servidor, pressione Ctrl+C nesta janela.');
         if (process.env.FILESHARE_NO_BROWSER !== '1') {
           const url = `http://127.0.0.1:${PORT}`;
@@ -1408,6 +1474,11 @@ if (require.main === module) {
     if (LOCAL_MODE) {
       const shutdown = () => {
         console.log('\n⏹ Encerrando servidor e salvando dados...');
+        if (localLanServer) {
+          const lanListener = localLanServer;
+          localLanServer = null;
+          try { lanListener.close(); if (typeof lanListener.closeAllConnections === 'function') lanListener.closeAllConnections(); } catch (e) {}
+        }
         server.close(async () => {
           try { if (localDatabasePromise) await (await localDatabasePromise).close(); } catch (e) {}
           process.exit(0);
