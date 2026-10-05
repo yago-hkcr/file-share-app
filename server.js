@@ -651,7 +651,7 @@ async function loadRooms(user) {
   const ownerIds = [...new Set(rooms.map(r => r.created_by).filter(Boolean))];
   const owners = ownerIds.length ? await q(`SELECT id, username FROM users WHERE id IN (${ownerIds.map((_, i) => '$' + (i + 1)).join(',')})`, ownerIds) : [];
   return rooms.map(room => {
-    const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(user), can_delete: isAdmin(user) || f.uploaded_by === user.id || room.created_by === user.id }));
+    const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(user) || f.uploaded_by === user.id, can_delete: isAdmin(user) || f.uploaded_by === user.id || room.created_by === user.id }));
     const roomMembers = members.filter(m => m.room_id === room.id).map(({ room_id, ...m }) => m);
     return {
       ...room,
@@ -847,7 +847,7 @@ app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
 app.patch('/api/files/:id', requireAuth, wrap(async (req, res) => {
   const file = await one('SELECT id, uploaded_by, original_name FROM files WHERE id = $1', [req.params.id]);
   if (!file) return res.status(404).json({ error: 'Arquivo não encontrado' });
-  if (!isAdmin(req.user)) return res.status(403).json({ error: 'Sem permissão' });
+  if (!isAdmin(req.user) && file.uploaded_by !== req.user.id) return res.status(403).json({ error: 'Você só pode renomear arquivos enviados por você' });
   const name = String((req.body && req.body.name) || '').replace(/[\u0000-\u001f\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150);
   if (!name) return res.status(400).json({ error: 'Digite um nome para o arquivo' });
   await q('UPDATE files SET original_name = $1 WHERE id = $2', [name, file.id]);
@@ -960,7 +960,7 @@ app.get('/api/sala/:slug', asMember, wrap(async (req, res) => {
   const files = await q(`SELECT f.id, f.original_name, f.size, f.mime_type, f.uploaded_at, f.uploaded_by, u.username AS uploader, u.role AS uploader_role
     FROM files f LEFT JOIN users u ON f.uploaded_by = u.id WHERE f.room_id = $1 ORDER BY f.uploaded_at DESC`, [room.id]);
   const count = await one('SELECT COUNT(*) AS c FROM room_members WHERE room_id = $1', [room.id]);
-  res.json({ ...room, files: files.map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(req.user), can_delete: isAdmin(req.user) || f.uploaded_by === req.user.id || room.created_by === req.user.id })), memberCount: num(count.c) });
+  res.json({ ...room, files: files.map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(req.user) || f.uploaded_by === req.user.id, can_delete: isAdmin(req.user) || f.uploaded_by === req.user.id || room.created_by === req.user.id })), memberCount: num(count.c) });
 }));
 
 // =================== ESTATÍSTICAS / SENHA ===================
