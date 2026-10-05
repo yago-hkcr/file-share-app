@@ -4,7 +4,9 @@
   "description": "File sharing web application",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "local:install": "npm install && npm --prefix local-runtime install",
+    "local:start": "node local-runtime/start.cjs"
   },
   "engines": {
     "node": ">=18"
