@@ -16,14 +16,7 @@ if errorlevel 1 (
 )
 echo Instalando os componentes do FileShare. Esta etapa precisa de internet e so e feita uma vez.
 echo.
-call npm install
-if errorlevel 1 (
-  echo.
-  echo Nao foi possivel instalar os componentes principais.
-  pause
-  exit /b 1
-)
-call npm --prefix local-runtime install
+call npm run local:install
 if errorlevel 1 (
   echo.
   echo Nao foi possivel instalar o banco local.
