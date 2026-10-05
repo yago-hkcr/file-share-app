@@ -2,6 +2,7 @@ package com.fileshare.floating;
 
 import android.app.Activity;
 import android.content.ClipData;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -13,12 +14,12 @@ public class FilePickerActivity extends Activity {
     private static final int PICK_FILE_REQUEST = 4701;
     private static ValueCallback<Uri[]> pendingCallback;
 
-    public static void open(Activity activity, ValueCallback<Uri[]> callback, boolean fromService) {
+    public static void open(Context context, ValueCallback<Uri[]> callback, boolean fromService) {
         if (pendingCallback != null) pendingCallback.onReceiveValue(null);
         pendingCallback = callback;
-        Intent intent = new Intent(activity, FilePickerActivity.class);
+        Intent intent = new Intent(context, FilePickerActivity.class);
         if (fromService) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        activity.startActivity(intent);
+        context.startActivity(intent);
     }
 
     @Override
