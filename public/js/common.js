@@ -1,9 +1,9 @@
-// Recursos compartilhados por todas as páginas: tema claro/escuro e renomear arquivo.
+// Recursos compartilhados por todas as páginas: tema claro/escuro, renomear e substituir arquivos.
 (function () {
   const KEY = 'fileshare-theme';
   const root = document.documentElement;
   const saved = (() => { try { return localStorage.getItem(KEY); } catch (e) { return null; } })();
-  root.setAttribute('data-theme', saved === 'dark' ? 'dark' : 'light'); // roda antes da página aparecer: sem "piscar"
+  root.setAttribute('data-theme', saved === 'dark' ? 'dark' : 'light');
 
   function paintButton(btn) {
     const dark = root.getAttribute('data-theme') === 'dark';
@@ -19,11 +19,10 @@
     btn.addEventListener('click', () => {
       const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       root.setAttribute('data-theme', next);
-      try { localStorage.setItem(KEY, next); } catch (e) { /* sem armazenamento: vale só nesta página */ }
+      try { localStorage.setItem(KEY, next); } catch (e) {}
       paintButton(btn);
     });
     paintButton(btn);
-    // Canto superior esquerdo: dentro do cabeçalho quando existe; senão, fixo na tela
     const host = document.querySelector('.header-left') || document.querySelector('.sala-left');
     if (host) host.insertBefore(btn, host.firstChild);
     else { btn.classList.add('theme-toggle-fixed'); document.body.appendChild(btn); }
@@ -31,7 +30,6 @@
 
   const esc = t => { const d = document.createElement('div'); d.textContent = t == null ? '' : t; return d.innerHTML; };
 
-  // "enviado por fulano"
   window.uploaderTag = function (name, role) {
     if (!name) return '';
     const adm = role === 'admin';
@@ -40,7 +38,6 @@
   };
   window.admBadge = role => role === 'admin' ? ' <span class="adm-badge">ADM</span>' : '';
 
-  // Links clicáveis em textos (já escapa o HTML)
   window.linkify = function (text) {
     return esc(text).replace(/\b((?:https?:\/\/|www\.)[^\s<]+[^\s<.,;:!?)"'\]])/gi, function (u) {
       const href = /^www\./i.test(u) ? 'https://' + u : u;
@@ -48,7 +45,6 @@
     });
   };
 
-  // Tipo do arquivo (ex.: "PNG · Imagem")
   window.fileKind = function (name, mime) {
     const dot = (name || '').lastIndexOf('.');
     const ext = dot > 0 ? name.slice(dot + 1).toUpperCase().slice(0, 6) : '';
@@ -67,7 +63,6 @@
   };
   window.kindBadge = (name, mime) => '<span class="kind-badge"><i class="fas fa-tag"></i> ' + esc(window.fileKind(name, mime)) + '</span>';
 
-  // "há 5 min" a partir de "YYYY-MM-DD HH:MM:SS" (UTC)
   window.timeAgo = function (str) {
     if (!str) return '';
     const d = new Date(String(str).replace(' ', 'T') + 'Z');
@@ -81,11 +76,10 @@
     return '<span class="time-ago" title="' + full + '"><i class="fas fa-clock"></i> ' + rel + ' · ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + '</span>';
   };
 
-  // Ctrl+V: cola imagens/arquivos da área de transferência
   window.enablePaste = function (onFiles) {
     document.addEventListener('paste', function (e) {
       const items = e.clipboardData && e.clipboardData.files ? Array.from(e.clipboardData.files) : [];
-      if (!items.length) return; // só texto: deixa colar normalmente
+      if (!items.length) return;
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '').replace(/^(\d{8})(\d{6})$/, '$1-$2');
       const files = items.map(f => /^image\.(png|jpe?g|gif|webp)$/i.test(f.name)
         ? new File([f], 'imagem-' + stamp + f.name.slice(f.name.lastIndexOf('.')), { type: f.type })
@@ -95,7 +89,6 @@
     });
   };
 
-  // Diálogo de renomear. A extensão (.pdf, .docx...) fica fixa para o arquivo não "perder o tipo".
   window.renameFile = function (id, currentName, onDone) {
     const dot = currentName.lastIndexOf('.');
     const ext = dot > 0 && currentName.length - dot <= 8 ? currentName.slice(dot) : '';
@@ -145,14 +138,51 @@
     });
   };
 
+  // Substitui o conteúdo de um arquivo já enviado, mantendo a ação disponível para quem pode editar.
+  // O novo arquivo é enviado para a mesma sala e o antigo é removido somente após o novo envio terminar.
+  window.replaceFile = function (id, currentName, roomId, onDone) {
+    if (!roomId || typeof window.uploadToRoom !== 'function') {
+      alert('Não foi possível iniciar a edição deste arquivo.');
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '*/*';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.onchange = async () => {
+      const selected = input.files && input.files[0];
+      input.remove();
+      if (!selected) return;
+      const dot = currentName.lastIndexOf('.');
+      const ext = dot > 0 && currentName.length - dot <= 8 ? currentName.slice(dot) : '';
+      const replacement = ext && !selected.name.toLowerCase().endsWith(ext.toLowerCase())
+        ? new File([selected], currentName, { type: selected.type, lastModified: selected.lastModified })
+        : selected;
+      if (!confirm('Substituir "' + currentName + '" pelo arquivo selecionado?')) return;
+      try {
+        const result = await window.uploadToRoom(roomId, [replacement], text => {
+          if (typeof window.toast === 'function') {
+            window.toast(text);
+          }
+        });
+        if (!result || !result.sent) return;
+        const res = await fetch('/api/files/' + id, { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'O novo arquivo foi enviado, mas o antigo não pôde ser removido.');
+        if (typeof onDone === 'function') onDone();
+      } catch (err) {
+        if (typeof window.toast === 'function') window.toast(err.message, 'error');
+        else alert(err.message);
+      }
+    };
+    input.click();
+  };
 
-  // ---- Arrastar e soltar arquivos ----
   const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') >= 0;
-  // Evita que o navegador abra o arquivo (e saia da página) se ele for solto fora da área certa
   window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
   window.addEventListener('drop', e => { if (hasFiles(e)) e.preventDefault(); });
 
-  // root: elemento que contém as áreas; selector: quais elementos aceitam soltar; onDrop(elemento, arquivos)
   window.enableDrop = function (root, selector, onDrop) {
     let current = null;
     const clear = () => { if (current) { current.classList.remove('drag-over'); current = null; } };
