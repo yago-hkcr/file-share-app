@@ -1,4 +1,4 @@
-// FX: rede de partículas viva + tilt 3D + ondinha + contador. Leve: 30 fps, pausa fora da tela, se adapta ao aparelho.
+// FX: partículas, luz interativa, tilt 3D, ondinha e contador. Leve: 30 fps, pausa fora da tela e reduz efeitos em aparelhos simples.
 (function () {
   const root = document.documentElement;
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) { root.classList.add('fx-off'); return; }
@@ -15,6 +15,15 @@
     // ---- rede de partículas ----
     const cv = document.createElement('canvas'); cv.id = 'fxCanvas'; cv.setAttribute('aria-hidden', 'true'); document.body.prepend(cv);
     const ctx = cv.getContext('2d');
+    const glow = document.createElement('div'); glow.className = 'fx-pointer-glow'; glow.setAttribute('aria-hidden', 'true'); document.body.insertBefore(glow, cv.nextSibling);
+    let glowTimer = null;
+    const moveGlow = e => {
+      glow.style.setProperty('--fx-pointer-x', e.clientX + 'px'); glow.style.setProperty('--fx-pointer-y', e.clientY + 'px'); glow.classList.add('is-visible');
+      if (glowTimer) clearTimeout(glowTimer);
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') glowTimer = setTimeout(() => glow.classList.remove('is-visible'), 1350);
+    };
+    addEventListener('pointermove', moveGlow, { passive:true }); addEventListener('pointerdown', moveGlow, { passive:true });
+    addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && e.pointerType !== 'pen') glow.classList.remove('is-visible'); });
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     let W = 0, H = 0, N = mobile ? 22 : (weak ? 34 : 54), nodes = [], pulses = [], mx = -999, my = -999, rgb = '168,85,247';
     const LINK = mobile ? 110 : 140;
