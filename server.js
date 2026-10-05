@@ -208,6 +208,12 @@ async function createTables() {
       content TEXT NOT NULL,
       created_at TEXT
     )`),
+    q(`CREATE TABLE IF NOT EXISTS room_typing (
+      room_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(room_id, user_id)
+    )`),
     q(`CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -896,6 +902,27 @@ app.get('/preview/:fileId', asMember, wrap(async (req, res) => {
   const blob = await one(`SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1`, [file.id]);
   if (!blob) return res.status(404).send('Arquivo não encontrado');
   res.send(Buffer.from(blob.data, 'base64'));
+}));
+// =================== PRESENÇA DE DIGITAÇÃO ===================
+app.get('/api/rooms/:id/typing', requireAuth, wrap(async (req, res) => {
+  if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error:'Sem permissão' });
+  await q('DELETE FROM room_typing WHERE room_id = $1 AND updated_at < $2', [req.params.id, agoTs(20000)]);
+  const people = await q(`SELECT t.user_id, u.username FROM room_typing t
+    JOIN users u ON u.id = t.user_id
+    WHERE t.room_id = $1 AND t.user_id <> $2 AND t.updated_at >= $3
+    ORDER BY t.updated_at ASC`, [req.params.id, req.user.id, agoTs(7000)]);
+  res.json(people);
+}));
+
+app.post('/api/rooms/:id/typing', asMember, wrap(async (req, res) => {
+  if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error:'Entre na sala para usar o chat' });
+  if (req.body && req.body.typing) {
+    await q(`INSERT INTO room_typing (room_id, user_id, updated_at) VALUES ($1,$2,$3)
+      ON CONFLICT (room_id, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at`, [req.params.id, req.user.id, ts()]);
+  } else {
+    await q('DELETE FROM room_typing WHERE room_id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  }
+  res.json({ ok:true });
 }));
 // =================== MENSAGENS ===================
 app.get('/api/rooms/:id/messages', requireAuth, wrap(async (req, res) => {

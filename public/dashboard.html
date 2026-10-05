@@ -99,6 +99,7 @@
         <div class="section-title"><i class="fas fa-folder-open"></i> Arquivos <span id="fileCount" class="section-count"></span></div>
         <div id="roomFiles" class="file-list"></div>
         <div class="section-title"><i class="fas fa-comments"></i> Chat da sala</div>
+        <div id="typingIndicator" class="typing-indicator" aria-live="polite" aria-atomic="true" hidden></div>
         <div class="chat-box">
           <div id="chatList" class="chat-list"></div>
           <form id="messageForm" class="chat-compose" autocomplete="off">
@@ -131,18 +132,92 @@
     const MAX_UPLOAD = 4 * 1024 * 1024; // limite de requisição da Vercel (~4,5 MB)
     let currentRoom = null, me = null;
     let lastRoomsSig = '', lastFilesSig = '', lastChatSig = '', filesRequestId = 0;
+    let chatSeenIds = new Set(), lastTypingSig = '', typingActive = false, typingLastSentAt = 0, typingRoomId = null, typingTimer = null, typingRequestQueue = Promise.resolve();
     const esc = value => { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; };
     const formatSize = bytes => { if (!bytes) return '0 B'; const units = ['B','KB','MB','GB']; const i = Math.floor(Math.log(bytes) / Math.log(1024)); return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`; };
     function toast(message, type='success') { const item = document.createElement('div'); item.className = `toast toast-${type} show`; item.textContent = message; document.getElementById('toastContainer').appendChild(item); setTimeout(() => item.remove(), type === 'error' ? 7000 : 3000); }
     async function api(url, options) { const response = await fetch(url, options); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação'); return data; }
     async function loadUser() { try { const user = await api('/api/me'); me = user; document.getElementById('userName').textContent = user.username; const avatar = document.getElementById('userAvatar'); avatar.textContent = user.username[0].toUpperCase(); avatar.style.background = user.avatar_color; if (user.role === 'admin') { const b = document.getElementById('newRoomBtn'); if (b) b.style.display = 'none'; } } catch (error) { window.location.href = '/'; } }
-    async function loadRooms() { const grid = document.getElementById('roomsGrid'); try { const rooms = await api('/api/rooms'); const sig = JSON.stringify(rooms); if (sig === lastRoomsSig) return; lastRoomsSig = sig; window.roomsById = Object.fromEntries(rooms.map(r => [r.id, r])); if (!rooms.length) { grid.innerHTML = '<div class="empty-state"><i class="fas fa-door-open"></i><h3>Nenhuma sala disponível</h3><p>O administrador ainda não criou uma sala para você.</p></div>'; return; } grid.innerHTML = rooms.map(room => `<article class="card room-card"><div class="room-card-body"><div class="room-card-header"><i class="fas fa-folder-open"></i><span class="badge ${room.is_public ? 'badge-green' : 'badge-yellow'}">${room.is_public ? 'Pública' : '<i class=\"fas fa-lock\"></i> Privada'}</span>${room.is_owner && !room.is_public ? '<span class=\"badge badge-blue\"><i class=\"fas fa-crown\"></i> Dono</span>' : ''}${room.expires_at ? `<span class="badge badge-yellow room-exp" data-exp="${esc(room.expires_at)}"><i class="fas fa-hourglass-half"></i> <span></span></span>` : ''}</div><h3>${esc(room.name)}</h3><p class="room-description">${esc(room.description || 'Sem descrição')}</p><div class="room-meta"><span><i class="fas fa-file"></i> ${room.fileCount} arquivo(s)</span><span><i class="fas fa-users"></i> ${room.memberCount}</span></div></div><div class="room-actions">${room.isMember ? `<button class="btn btn-primary" onclick="openRoom('${room.id}', '${esc(room.name)}')"><i class="fas fa-folder-open"></i> Abrir</button><button class="btn btn-outline btn-danger" onclick="leaveRoom('${room.id}')"><i class="fas fa-sign-out-alt"></i> Sair</button>` : `<button class="btn btn-primary" onclick="joinRoom('${room.id}')"><i class="fas fa-door-open"></i> Entrar na sala</button>`}<a class="btn btn-outline" href="/sala/${encodeURIComponent(room.slug)}" target="_blank"><i class="fas fa-link"></i> Link público</a></div></article>`).join(''); } catch (error) { grid.innerHTML = `<div class="alert alert-error">${esc(error.message)}</div>`; } }
+    async function loadRooms() { const grid = document.getElementById('roomsGrid'); try { const rooms = await api('/api/rooms'); const sig = JSON.stringify(rooms); if (sig === lastRoomsSig) return; lastRoomsSig = sig; window.roomsById = Object.fromEntries(rooms.map(r => [r.id, r])); if (!rooms.length) { grid.innerHTML = '<div class="empty-state"><i class="fas fa-door-open"></i><h3>Nenhuma sala disponível</h3><p>O administrador ainda não criou uma sala para você.</p></div>'; return; } grid.innerHTML = rooms.map(room => `<article class="card room-card" data-room-id="${esc(room.id)}" data-room-name="${esc(room.name)}"><div class="room-card-body"><div class="room-card-header"><i class="fas fa-folder-open"></i><span class="badge ${room.is_public ? 'badge-green' : 'badge-yellow'}">${room.is_public ? 'Pública' : '<i class=\"fas fa-lock\"></i> Privada'}</span>${room.is_owner && !room.is_public ? '<span class=\"badge badge-blue\"><i class=\"fas fa-crown\"></i> Dono</span>' : ''}${room.expires_at ? `<span class="badge badge-yellow room-exp" data-exp="${esc(room.expires_at)}"><i class="fas fa-hourglass-half"></i> <span></span></span>` : ''}</div><h3>${esc(room.name)}</h3><p class="room-description">${esc(room.description || 'Sem descrição')}</p><div class="room-meta"><span><i class="fas fa-file"></i> ${room.fileCount} arquivo(s)</span><span><i class="fas fa-users"></i> ${room.memberCount}</span></div></div><div class="room-actions">${room.isMember ? `<button class="btn btn-primary" onclick="openRoom(this.closest('.room-card').dataset.roomId, this.closest('.room-card').dataset.roomName, this.closest('.room-card'))"><i class="fas fa-folder-open"></i> Abrir</button><button class="btn btn-outline btn-danger" onclick="leaveRoom('${room.id}')"><i class="fas fa-sign-out-alt"></i> Sair</button>` : `<button class="btn btn-primary" onclick="joinRoom('${room.id}')"><i class="fas fa-door-open"></i> Entrar na sala</button>`}<a class="btn btn-outline" href="/sala/${encodeURIComponent(room.slug)}" target="_blank"><i class="fas fa-link"></i> Link público</a></div></article>`).join(''); } catch (error) { grid.innerHTML = `<div class="alert alert-error">${esc(error.message)}</div>`; } }
     async function joinRoom(id) { try { await api(`/api/rooms/${id}/join`, { method:'POST' }); toast('Você entrou na sala'); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
     async function leaveRoom(id) { if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${id}/leave`, { method:'POST' }); toast('Você saiu da sala'); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
-    async function openRoom(id, name) { currentRoom = id; lastFilesSig = ''; lastChatSig = ''; document.getElementById('roomModalTitle').textContent = name; document.getElementById('roomModal').style.display = 'flex'; const lb = document.getElementById('leaveRoomBtn'); if (lb) lb.style.display = (me && me.role === 'admin') ? 'none' : ''; try { await Promise.all([loadFiles(), loadMessages()]); } catch (error) { toast(error.message, 'error'); } }
+    let roomAnimation = null, roomOrigin = null, roomTransition = 0, roomClosePending = false;
+    function cancelRoomAnimation() { const animation = roomAnimation; roomAnimation = null; if (animation) { animation.onfinish = null; animation.cancel(); } }
+    function roomTransform(rect, base) { return 'translate3d(' + (rect.left - base.left) + 'px,' + (rect.top - base.top) + 'px,0) scale(' + (rect.width / base.width) + ',' + (rect.height / base.height) + ')'; }
+    function playRoomMorph(fromRect, toRect, token, closing, done) {
+      const modal = document.getElementById('roomModal'), content = modal.querySelector('.modal-content');
+      if (!fromRect || !toRect || !content.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+      const base = content.getBoundingClientRect();
+      if (!base.width || !base.height) return false;
+      modal.classList.add('room-morph-active'); content.style.transformOrigin = 'top left';
+      const animation = content.animate([{ transform: roomTransform(fromRect, base), opacity: closing ? 1 : .82 }, { transform: roomTransform(toRect, base), opacity: closing ? .55 : 1 }], { duration: 560, easing: 'cubic-bezier(.2,.9,.3,1)' });
+      roomAnimation = animation;
+      animation.onfinish = () => {
+        if (token !== roomTransition) return;
+        if (roomAnimation === animation) roomAnimation = null;
+        content.style.transformOrigin = ''; content.style.transform = ''; modal.classList.remove('room-morph-active');
+        if (done) done();
+      };
+      return true;
+    }
+    function queueTypingState(active, roomId) {
+      if (!roomId) return;
+      typingRequestQueue = typingRequestQueue.catch(() => {}).then(() => api('/api/rooms/' + roomId + '/typing', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ typing:active }) })).catch(() => {});
+    }
+    function stopRoomTyping(roomId = typingRoomId || currentRoom) {
+      if (typingRoomId && roomId && typingRoomId !== roomId) return;
+      if (typingTimer) clearTimeout(typingTimer); typingTimer = null;
+      if (typingActive && roomId) queueTypingState(false, roomId);
+      typingActive = false; typingRoomId = null; typingLastSentAt = 0;
+    }
+    function updateRoomTyping() {
+      const input = document.getElementById('messageInput'), roomId = currentRoom;
+      if (typingTimer) clearTimeout(typingTimer); typingTimer = null;
+      if (!roomId || !input.value.trim()) { stopRoomTyping(); return; }
+      const now = Date.now();
+      if (!typingActive || typingRoomId !== roomId || now - typingLastSentAt >= 1700) {
+        typingActive = true; typingRoomId = roomId; typingLastSentAt = now; queueTypingState(true, roomId);
+      }
+      typingTimer = setTimeout(() => stopRoomTyping(roomId), 4800);
+    }
+    async function loadTyping() {
+      const roomId = currentRoom; if (!roomId) return;
+      const people = await api('/api/rooms/' + roomId + '/typing');
+      if (roomId !== currentRoom) return;
+      const signature = JSON.stringify(people.map(person => person.user_id)); if (signature === lastTypingSig) return; lastTypingSig = signature;
+      const indicator = document.getElementById('typingIndicator');
+      if (!people.length) { indicator.hidden = true; indicator.textContent = ''; return; }
+      const names = people.map(person => person.username);
+      const label = names.length === 1 ? names[0] + ' está digitando' : names.length === 2 ? names[0] + ' e ' + names[1] + ' estão digitando' : names[0] + ', ' + names[1] + ' e mais ' + (names.length - 2) + ' estão digitando';
+      indicator.innerHTML = '<span class="typing-copy">' + esc(label) + '</span><span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>'; indicator.hidden = false;
+    }
+    async function openRoom(id, name, sourceCard) {
+      if (currentRoom && currentRoom !== id) stopRoomTyping();
+      if (typingTimer) clearTimeout(typingTimer); typingTimer = null; typingActive = false; typingRoomId = null; typingLastSentAt = 0; lastTypingSig = '';
+      currentRoom = id; lastFilesSig = ''; lastChatSig = ''; chatSeenIds = new Set();
+      const modal = document.getElementById('roomModal'), content = modal.querySelector('.modal-content');
+      const rect = sourceCard && sourceCard.getBoundingClientRect ? sourceCard.getBoundingClientRect() : null;
+      roomOrigin = rect ? { left:rect.left, top:rect.top, width:rect.width, height:rect.height } : null;
+      const token = ++roomTransition; roomClosePending = false; cancelRoomAnimation();
+      modal.classList.remove('room-morph-active'); content.style.transformOrigin = ''; content.style.transform = '';
+      const canMorph = !!(roomOrigin && content.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches);
+      if (canMorph) modal.classList.add('room-morph-active');
+      document.getElementById('roomModalTitle').textContent = name; modal.style.display = 'flex';
+      const lb = document.getElementById('leaveRoomBtn'); if (lb) lb.style.display = (me && me.role === 'admin') ? 'none' : '';
+      if (canMorph) requestAnimationFrame(() => { if (token === roomTransition && currentRoom === id) playRoomMorph(roomOrigin, content.getBoundingClientRect(), token, false); });
+      try { await Promise.all([loadFiles(), loadMessages(), loadTyping()]); } catch (error) { toast(error.message, 'error'); }
+    }
     async function leaveCurrentRoom() { if (!currentRoom) return; if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${currentRoom}/leave`, { method:'POST' }); toast('Você saiu da sala'); closeRoom(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
     document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (document.querySelector('.rename-modal')) return; ['createRoomModal','passwordModal'].forEach(id => { const m = document.getElementById(id); if (m && m.style.display !== 'none') m.style.display = 'none'; }); if (currentRoom) closeRoom(); });
-    function closeRoom() { currentRoom = null; filesRequestId++; lastRoomsSig = ''; document.getElementById('roomModal').style.display = 'none'; }
+    function closeRoom() {
+      const modal = document.getElementById('roomModal'), content = modal.querySelector('.modal-content');
+      if (modal.style.display === 'none' && !currentRoom) return; if (roomClosePending) return;
+      const startRect = content.getBoundingClientRect(), closingRoom = currentRoom, destination = roomOrigin;
+      if (closingRoom) stopRoomTyping(closingRoom); currentRoom = null; filesRequestId++; lastRoomsSig = '';
+      const token = ++roomTransition; cancelRoomAnimation();
+      const finish = () => { if (token !== roomTransition) return; modal.style.display = 'none'; modal.classList.remove('room-morph-active'); content.style.transformOrigin = ''; content.style.transform = ''; roomOrigin = null; roomClosePending = false; };
+      if (destination && playRoomMorph(startRect, destination, token, true, finish)) roomClosePending = true; else finish();
+    }
     async function loadFiles() { const roomId = currentRoom; if (!roomId) return; const requestId = ++filesRequestId; const rooms = await api('/api/rooms'); if (requestId !== filesRequestId || roomId !== currentRoom) return; const room = rooms.find(item => item.id === roomId); if (!room) { toast('Esta sala expirou ou foi removida', 'error'); closeRoom(); loadRooms(); return; } const sig = JSON.stringify(room.files); if (sig === lastFilesSig) return; lastFilesSig = sig; document.getElementById('fileCount').textContent = '(' + room.files.length + ')'; const list = document.getElementById('roomFiles'); list.innerHTML = room.files.length ? room.files.map(file => `<div class="file-row"><div class="file-main">${uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button>${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`).join('') : '<div class="empty-state"><i class="fas fa-inbox"></i><p>Nenhum arquivo nesta sala.</p></div>'; }
     async function deleteFile(id) { if (!confirm('Excluir este arquivo?')) return; try { await api('/api/files/' + id, { method:'DELETE' }); toast('Arquivo excluído'); lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
     let newRoomMinutes = 5;
@@ -155,7 +230,8 @@
     enablePaste(files => { if (currentRoom && document.getElementById('roomModal').style.display !== 'none') sendFiles(files); });
     const chatTime = value => { const d = new Date(String(value).replace(' ', 'T') + 'Z'); const hm = d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }); return d.toDateString() === new Date().toDateString() ? hm : d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' }) + ' ' + hm; };
     async function loadMessages(forceBottom = false) {
-      const messages = await api(`/api/rooms/${currentRoom}/messages`);
+      const roomId = currentRoom; if (!roomId) return;
+      const messages = await api('/api/rooms/' + roomId + '/messages'); if (roomId !== currentRoom) return;
       const sig = JSON.stringify(messages); if (sig === lastChatSig) return;
       const first = lastChatSig === ''; lastChatSig = sig;
       const box = document.getElementById('chatList');
@@ -164,7 +240,8 @@
       box.innerHTML = messages.length ? messages.map(m => {
         const mine = me && m.user_id === me.id;
         const cont = prev && prev.user_id === m.user_id; prev = m;
-        return `<div class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || '#8b5cf6')}">${esc(m.username[0].toUpperCase())}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}<div class="msg-text">${linkify(m.content)}</div></div></div>`;
+        const animateNew = !first && m.id && !chatSeenIds.has(m.id); if (m.id) chatSeenIds.add(m.id);
+        return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || '#8b5cf6')}">${esc(m.username[0].toUpperCase())}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}<div class="msg-text">${linkify(m.content)}</div></div></div>`;
       }).join('') : '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
       if (first || forceBottom || atBottom) box.scrollTop = box.scrollHeight;
     }
@@ -187,7 +264,13 @@
     document.getElementById('uploadForm').addEventListener('submit', event => event.preventDefault());
     document.getElementById('fileInput').addEventListener('change', event => { const files = Array.from(event.target.files); event.target.value = ''; sendFiles(files); });
     enableDrop(document.getElementById('roomModal'), '.drop-target', (el, files) => sendFiles(files));
-    document.getElementById('messageForm').addEventListener('submit', async event => { event.preventDefault(); const input = document.getElementById('messageInput'); try { await api(`/api/rooms/${currentRoom}/messages`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content:input.value}) }); input.value = ''; loadMessages(true); } catch (error) { toast(error.message, 'error'); } });
+    document.getElementById('messageInput').addEventListener('input', updateRoomTyping);
+    document.getElementById('messageInput').addEventListener('blur', () => stopRoomTyping());
+    document.getElementById('messageForm').addEventListener('submit', async event => {
+      event.preventDefault(); const input = document.getElementById('messageInput'), content = input.value.trim(); if (!currentRoom || !content) return;
+      stopRoomTyping();
+      try { await api('/api/rooms/' + currentRoom + '/messages', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content}) }); input.value = ''; loadMessages(true); } catch (error) { toast(error.message, 'error'); }
+    });
     function showPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
     function closePasswordModal() { document.getElementById('passwordModal').style.display = 'none'; }
     async function changePassword() { try { await api('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ currentPassword:document.getElementById('currentPassword').value, newPassword:document.getElementById('newPassword').value }) }); closePasswordModal(); toast('Senha alterada'); } catch (error) { toast(error.message, 'error'); } }
@@ -201,7 +284,7 @@
       if (document.hidden || refreshing) return;
       refreshing = true;
       try {
-        if (currentRoom) await Promise.all([loadFiles(), loadMessages()]);
+        if (currentRoom) await Promise.all([loadFiles(), loadMessages(), loadTyping()]);
         else await loadRooms();
       } catch (error) { /* tenta de novo no próximo ciclo */ }
       finally { refreshing = false; }
