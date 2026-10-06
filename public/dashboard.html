@@ -207,10 +207,33 @@
       document.getElementById('roomModalTitle').textContent = name; modal.style.display = 'flex';
       const lb = document.getElementById('leaveRoomBtn'); if (lb) lb.style.display = (me && me.role === 'admin') ? 'none' : '';
       if (canMorph) requestAnimationFrame(() => { if (token === roomTransition && currentRoom === id) playRoomMorph(roomOrigin, content.getBoundingClientRect(), token, false); });
-      // No celular, garante que o campo de chat seja realmente focável depois que a sala abrir.
-      setTimeout(() => { const input = document.getElementById('messageInput'); if (input && currentRoom === id && window.matchMedia('(pointer: coarse)').matches) { input.focus({ preventScroll: true }); } }, 180);
+      // Não forçamos o teclado ao abrir a sala: navegadores móveis podem ignorar foco
+      // programático fora de um gesto do usuário. O próprio toque no campo trata o foco.
+
       try { await Promise.all([loadFiles(), loadMessages(), loadTyping()]); } catch (error) { toast(error.message, 'error'); }
     }
+    function bindMobileChatInput() {
+      const input = document.getElementById('messageInput');
+      if (!input || input.dataset.mobileBound === '1') return;
+      input.dataset.mobileBound = '1';
+
+      const focusFromUserGesture = () => {
+        if (!currentRoom || input.disabled) return;
+        requestAnimationFrame(() => {
+          try { input.focus({ preventScroll: true }); } catch (_) { input.focus(); }
+        });
+      };
+
+      input.addEventListener('touchend', focusFromUserGesture, { passive: true });
+      input.addEventListener('pointerup', event => {
+        if (event.pointerType === 'touch' || event.pointerType === 'pen') focusFromUserGesture();
+      }, { passive: true });
+      input.addEventListener('click', () => {
+        if (document.activeElement !== input) focusFromUserGesture();
+      });
+    }
+    bindMobileChatInput();
+
     async function leaveCurrentRoom() { if (!currentRoom) return; if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${currentRoom}/leave`, { method:'POST' }); toast('Você saiu da sala'); closeRoom(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
     document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (document.querySelector('.rename-modal')) return; ['createRoomModal','passwordModal'].forEach(id => { const m = document.getElementById(id); if (m && m.style.display !== 'none') m.style.display = 'none'; }); if (currentRoom) closeRoom(); });
     function closeRoom() {
