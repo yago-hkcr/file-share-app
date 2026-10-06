@@ -1,5 +1,5 @@
 // Envio de arquivos para uma sala.
-// Caminho principal: direto do navegador para o Vercel Blob (arquivos de até 100 MB).
+// Arquivos até 100 MB usam URL assinada; acima disso, upload multipart direto ao Blob (limite 10 GB).
 // Reserva (servidor sem Blob, ex.: rodando local sem `vercel env pull`): envio pelo servidor.
 // O limite por arquivo vem do servidor (/api/me → max_upload_bytes), então o aviso nunca fica desatualizado.
 (function () {
@@ -128,7 +128,7 @@
       let pathname;
       if (file.size > 100 * 1024 * 1024) {
         try {
-          const { uploadPresigned } = await import('https://esm.sh/@vercel/blob@2.3.0/client?bundle');
+          const { uploadPresigned } = await import('https://esm.sh/@vercel/blob@2.8.0/client?bundle');
           const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
           const objectPath = 'rooms/' + roomId + '/' + crypto.randomUUID() + '-' + safe;
           const blob = await uploadPresigned(objectPath, file, {
