@@ -128,10 +128,10 @@
       let pathname;
       if (file.size > 100 * 1024 * 1024) {
         try {
-          const { upload } = await import('https://esm.sh/@vercel/blob@2.3.0/client?bundle');
+          const { uploadPresigned } = await import('https://esm.sh/@vercel/blob@2.3.0/client?bundle');
           const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
           const objectPath = 'rooms/' + roomId + '/' + crypto.randomUUID() + '-' + safe;
-          const blob = await upload(objectPath, file, {
+          const blob = await uploadPresigned(objectPath, file, {
             access: 'private',
             handleUploadUrl: '/api/rooms/' + roomId + '/upload-token',
             clientPayload: JSON.stringify({ size: file.size }),
