@@ -13,7 +13,7 @@
     }
     return el;
   }
-  const avatar = u => '<span class="avatar" style="background:' + esc(u.avatar_color || '#8b5cf6') + '">' + esc(String(u.username || '?')[0].toUpperCase()) + '</span>';
+  const avatar = u => '<span class="avatar" style="background:' + esc(u.avatar_color || '#8b5cf6') + '">' + (u.avatar_image ? '<img src="' + esc(u.avatar_image) + '" alt="Foto de ' + esc(u.username || 'usuário') + '">' : esc(String(u.username || '?')[0].toUpperCase())) + '</span>';
   const admTag = r => r === 'admin' ? '<span class="adm-tag">ADM</span>' : '';
 
   // ---------------- AMIGOS ----------------
@@ -30,17 +30,20 @@
       '<div class="soc-title">Pedidos enviados <span class="soc-count">' + F.outgoing.length + '</span></div>' +
       list(F.outgoing, u => row(u, '<button class="btn btn-outline" onclick="friendRemove(\'' + u.id + '\',\'Cancelar o pedido?\')">Cancelar</button>')) +
       '<div class="soc-title">Meus amigos <span class="soc-count">' + F.friends.length + '</span></div>' +
-      list(F.friends, u => '<div class="soc-row"><span class="online-dot ' + (u.online ? 'on' : '') + '" title="' + (u.online ? 'Online' : 'Offline') + '"></span>' + avatar(u) + '<span class="grow">' + esc(u.username) + admTag(u.role) + '</span><button class="btn btn-outline btn-danger" onclick="friendRemove(\'' + u.id + '\',\'Remover ' + esc(u.username).replace(/'/g, '') + ' dos amigos? Ele também sai das suas salas privadas.\')">Remover</button></div>');
+      list(F.friends, u => '<div class="soc-row"><span class="online-dot ' + (u.online ? 'on' : '') + '" title="' + (u.online ? 'Online' : 'Offline') + '"></span>' + avatar(u) + '<span class="grow">' + esc(u.username) + admTag(u.role) + '</span><button class="btn btn-primary" data-dm-user="' + esc(u.user_id) + '" data-dm-name="' + esc(u.username) + '"><i class="fas fa-comment-dots"></i> Conversar</button><button class="btn btn-outline btn-danger" onclick="friendRemove(\'' + u.id + '\',\'Remover ' + esc(u.username).replace(/'/g, '') + ' dos amigos? Ele também sai das suas salas privadas.\')">Remover</button></div>');
   }
   function badge() {
     const b = $('friendsBtn'); if (!b) return;
     b.querySelector('.soc-count') && b.querySelector('.soc-count').remove();
     if (F.incoming.length) b.insertAdjacentHTML('beforeend', ' <span class="soc-count">' + F.incoming.length + '</span>');
   }
-  async function pollFriends() {
+  async function pollFriends(withAvatars = false) {
     if (document.hidden) return;
     try {
-      const d = await api('/api/friends'); const sig = JSON.stringify(d);
+      const d = await api('/api/friends' + (withAvatars ? '?avatars=1' : ''));
+      const previousAvatars = new Map(F.friends.map(x => [x.user_id, x.avatar_image]));
+      d.friends.forEach(x => { if (!x.avatar_image && previousAvatars.has(x.user_id)) x.avatar_image = previousAvatars.get(x.user_id); });
+      const sig = JSON.stringify(d);
       const ids = d.incoming.map(x => x.id);
       if (known !== null) d.incoming.filter(x => !known.includes(x.id)).forEach(x => toast(x.username + ' enviou um pedido de amizade', 'info'));
       known = ids;
@@ -57,7 +60,8 @@
   }
   $('friendSend').onclick = sendRequest;
   $('friendName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sendRequest(); } });
-  window.showFriends = () => { friendsSheet.style.display = 'flex'; paintFriends(); pollFriends(); };
+  $('friendLists').addEventListener('click', e => { const button = e.target.closest('[data-dm-user]'); if (button) window.openDirectChat(button.dataset.dmUser, button.dataset.dmName); });
+  window.showFriends = () => { friendsSheet.style.display = 'flex'; paintFriends(); pollFriends(true); };
 
   // Botões no topo.
   const actions = document.querySelector('.intro-actions');
