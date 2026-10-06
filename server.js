@@ -51,6 +51,7 @@ function sessionSecret() {
 // (ex.: rodando local sem `vercel env pull`), cai no Postgres como antes.
 // ---------------------------------------------------------------------------
 const blobSdk = () => import('@vercel/blob');
+const blobClientSdk = () => import('@vercel/blob/client');
 const blobEnabled = () => !LOCAL_MODE && Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
 const isBlobPath = name => typeof name === 'string' && name.startsWith('rooms/');
 async function deleteBlobs(pathnames) {
@@ -556,7 +557,7 @@ app.post('/api/logout', wrap(async (req, res) => {
 app.get('/api/me', requireAuth, wrap(async (req, res) => {
   const user = await one('SELECT id, username, email, role, status, avatar_color, created_at FROM users WHERE id = $1', [req.user.id]);
   const unread = await one('SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND "read" = 0', [req.user.id]);
-  res.json({ ...user, unread_notifications: num(unread && unread.count), max_upload_bytes: blobEnabled() ? MAX_DIRECT_BYTES : MAX_FILE_BYTES });
+  res.json({ ...user, unread_notifications: num(unread && unread.count), max_upload_bytes: blobEnabled() ? MAX_BLOB_UPLOAD_BYTES : MAX_FILE_BYTES });
 }));
 
 // =================== ADMIN: USUÁRIOS ===================
@@ -771,6 +772,7 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
 // 3) /files/register: o servidor confere o envio e grava o arquivo no banco
 // ---------------------------------------------------------------------------
 const MAX_DIRECT_BYTES = 100 * 1024 * 1024;
+const MAX_BLOB_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
 const BLOB_PATH_RE = /^rooms\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
 
 app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
@@ -803,6 +805,47 @@ app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
   res.json({ pathname, presignedUrl });
 }));
 
+
+
+// Upload multipart direto do navegador ao Blob para arquivos acima de 100 MB.
+// O helper do Blob valida os callbacks e emite tokens limitados ao caminho do arquivo.
+app.post('/api/rooms/:id/upload-token', wrap(async (req, res) => {
+  if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
+  const action = req.body && req.body.type;
+  if (action === 'blob.generate-client-token') {
+    if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
+    const user = await one('SELECT id, username, role, status, last_seen, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
+    if (!user || user.status === 'banned' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
+      req.session = null;
+      return res.status(401).json({ error: 'Não autorizado' });
+    }
+    if (!isApproved(user)) return res.status(403).json({ error: 'Conta aguardando aprovação' });
+    const room = await one('SELECT id FROM rooms WHERE id = $1', [req.params.id]);
+    if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+    if (!(await canUseRoom(user, room.id))) return res.status(403).json({ error: 'Entre na sala antes de enviar arquivos' });
+  } else if (action !== 'blob.upload-completed') {
+    return res.status(400).json({ error: 'Ação de upload inválida' });
+  }
+
+  try {
+    const { handleUpload } = await blobClientSdk();
+    const result = await handleUpload({
+      request: req,
+      body: req.body,
+      onBeforeGenerateToken: async pathname => {
+        const m = BLOB_PATH_RE.exec(pathname);
+        if (!m || m[1] !== req.params.id) throw new Error('Caminho de arquivo inválido');
+        return { maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, addRandomSuffix: false };
+      },
+      onUploadCompleted: async () => {}
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Blob multipart:', error && error.message);
+    res.status(400).json({ error: 'Não foi possível preparar ou concluir o upload multipart' });
+  }
+}));
+
 app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
   const pathname = String((req.body && req.body.pathname) || '');
   const m = BLOB_PATH_RE.exec(pathname);
@@ -817,11 +860,13 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
     const { head } = await blobSdk();
     const info = await head(pathname);
     if (info && Number(info.size)) size = Number(info.size);
+    else return res.status(400).json({ error: 'Não foi possível validar o tamanho do arquivo' });
   } catch (e) {
     if (e && e.name === 'BlobNotFoundError') return res.status(400).json({ error: 'O envio do arquivo não foi concluído' });
-    console.error('head do Blob falhou (usando o tamanho informado):', e && e.message);
+    console.error('head do Blob falhou:', e && e.message);
+    return res.status(502).json({ error: 'Não foi possível validar o arquivo no armazenamento' });
   }
-  if (size > MAX_DIRECT_BYTES) {
+  if (size > MAX_BLOB_UPLOAD_BYTES) {
     await deleteBlobs([pathname]);
     return res.status(413).json({ error: 'Arquivo grande demais' });
   }
