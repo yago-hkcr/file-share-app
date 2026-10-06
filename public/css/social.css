@@ -191,3 +191,19 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   .msg-copy-trigger { position: static; margin: 4px 0 -2px auto; }
   .msg-bubble .msg-text { padding-right: 0; }
 }
+
+
+/* Seletor de texto extraído de imagens: permite escolher exatamente o trecho a copiar. */
+.image-text-modal { z-index: 2300; }
+.image-text-modal .modal-content { width: min(760px, calc(100% - 24px)); max-width: 760px; }
+.image-text-hint { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+.image-text-selection { display: block; width: 100%; min-height: 300px; max-height: 52vh; resize: vertical; box-sizing: border-box; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); color: var(--ink); font: 14px/1.55 inherit; white-space: pre-wrap; }
+.image-text-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.image-text-actions .btn { min-height: 42px; }
+@media (max-width: 640px) {
+  .image-text-modal { padding: 12px; align-items: flex-end; }
+  .image-text-modal .modal-content { width: 100%; max-width: 100%; border-radius: 18px 18px 0 0; }
+  .image-text-selection { min-height: 260px; max-height: 48vh; }
+  .image-text-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .image-text-actions .btn { width: 100%; justify-content: center; }
+}
