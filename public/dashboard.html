@@ -293,8 +293,10 @@
     function showPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
     function closePasswordModal() { document.getElementById('passwordModal').style.display = 'none'; }
     async function changePassword() { try { await api('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ currentPassword:document.getElementById('currentPassword').value, newPassword:document.getElementById('newPassword').value }) }); closePasswordModal(); toast('Senha alterada'); } catch (error) { toast(error.message, 'error'); } }
-    async function logout() { await fetch('/api/logout', { method:'POST' }); window.location.href = '/'; }
-    document.querySelector('.btn-danger').addEventListener('click', logout);
+    async function logout() {
+      try { await fetch('/api/logout', { method:'POST' }); }
+      finally { window.location.href = '/'; }
+    }
     loadUser(); loadRooms(); fillLimitNotes();
 
     // Atualização automática a cada 2 s (sem recarregar a página, para não atrapalhar quem está digitando)
