@@ -59,8 +59,10 @@
     input.disabled = false; sendButton.disabled = false;
   }
   function showDmReply() {
-    const box = $('directReplyPreview'); box.hidden = !dmReply;
-    if (dmReply) { $('directReplyName').textContent = dmReply.name; $('directReplyText').textContent = dmReply.content; }
+    const box = $('directReplyPreview'); if (!box) return;
+    const active = !!dmReply;
+    box.hidden = !active; box.style.display = active ? 'flex' : 'none';
+    if (active) { $('directReplyName').textContent = dmReply.name; $('directReplyText').textContent = dmReply.content; }
   }
   const clearDmReply = () => { dmReply = null; showDmReply(); };
   function paintDmMessages(messages) {
@@ -116,7 +118,10 @@
   let noticeIds = null, unreadCount = 0;
   function updateNoticeCount(count) {
     unreadCount = count; const badge = $('notificationCount'), button = $('notificationsBtn');
-    badge.hidden = !count; badge.textContent = count > 99 ? '99+' : String(count); button.setAttribute('aria-label', count ? 'Notificações, ' + count + ' não lidas' : 'Notificações');
+    if (!badge || !button) return;
+    const hasUnread = Number(count) > 0;
+    badge.hidden = !hasUnread; badge.style.display = hasUnread ? 'inline-grid' : 'none'; badge.textContent = hasUnread ? (count > 99 ? '99+' : String(count)) : '';
+    button.setAttribute('aria-label', hasUnread ? 'Notificações, ' + count + ' não lidas' : 'Notificações');
   }
   async function pollNotices() {
     try {
@@ -139,6 +144,50 @@
   // Preferências de aparência, conforto, atualização e segurança da conta.
   const settings = modal('personalSettingsSheet', '<i class="fas fa-sliders"></i> Configurações', 'settings-sheet');
   settings.querySelector('.modal-body').innerHTML = '<form id="personalSettingsForm" class="settings-sections"><section class="settings-card"><div><h4><i class="fas fa-palette"></i> Aparência</h4><p>Escolha o visual e a densidade das listas.</p></div><label class="settings-field">Tema<select id="prefTheme"><option value="dark">Escuro</option><option value="light">Claro</option></select></label><label class="settings-switch"><input id="prefCompact" type="checkbox"><span><b>Visual compacto</b><small>Mostra mais salas e conversas na tela.</small></span></label></section><section class="settings-card"><div><h4><i class="fas fa-gauge-high"></i> Desempenho</h4><p>Defina a frequência de atualização automática.</p></div><label class="settings-field">Atualizar a cada<select id="prefRefresh"><option value="2">2 segundos</option><option value="5">5 segundos</option><option value="10">10 segundos</option></select></label><label class="settings-switch"><input id="prefMotion" type="checkbox"><span><b>Reduzir animações</b><small>Ajuda a evitar movimento visual excessivo.</small></span></label></section><section class="settings-card"><div><h4><i class="fas fa-shield-halved"></i> Segurança e avisos</h4><p>Controle de senha e notificações deste navegador.</p></div><button id="settingsPassword" class="btn btn-outline" type="button"><i class="fas fa-key"></i> Alterar senha</button><label class="settings-switch"><input id="prefBrowserNotifications" type="checkbox"><span><b>Notificações do navegador</b><small>Receba avisos enquanto o FileShare estiver aberto.</small></span></label><button id="requestNotificationPermission" class="btn btn-outline" type="button"><i class="fas fa-bell"></i> Permitir neste navegador</button><p id="notificationPermissionStatus" class="settings-hint" aria-live="polite"></p></section><section class="settings-card"><div><h4><i class="fas fa-user-circle"></i> Foto de perfil</h4><p>JPG, PNG ou WebP. A imagem será reduzida para caber no seu perfil.</p></div><div class="avatar-editor"><span id="settingsAvatarPreview" class="personal-avatar personal-avatar-large"></span><button id="chooseAvatar" class="btn btn-outline avatar-upload-button" type="button"><i class="fas fa-camera"></i> Escolher foto</button><input id="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" hidden><button id="removeAvatar" class="btn btn-outline btn-danger" type="button">Remover foto</button></div><p id="avatarStatus" class="settings-hint" aria-live="polite"></p></section><div class="settings-actions"><button class="btn btn-primary" type="submit"><i class="fas fa-floppy-disk"></i> Salvar configurações</button></div></form>';
+
+  // Editor de enquadramento da foto de perfil.
+  const avatarCrop = modal('avatarCropSheet', '<i class="fas fa-crop-simple"></i> Enquadrar foto', 'avatar-crop-sheet');
+  avatarCrop.querySelector('.modal-body').innerHTML = '<div class="avatar-crop-copy">Arraste a foto para posicionar e use o zoom para deixar o enquadramento perfeito.</div><div class="avatar-crop-stage"><canvas id="avatarCropCanvas" width="320" height="320"></canvas></div><label class="avatar-crop-zoom"><span><i class="fas fa-magnifying-glass-minus"></i> Zoom</span><input id="avatarCropZoom" type="range" min="1" max="3" step="0.01" value="1"><i class="fas fa-magnifying-glass-plus"></i></label><div class="avatar-crop-actions"><button id="avatarCropCancel" class="btn btn-outline" type="button">Cancelar</button><button id="avatarCropApply" class="btn btn-primary" type="button"><i class="fas fa-check"></i> Usar foto</button></div>';
+  const cropCanvas = $('avatarCropCanvas'), cropCtx = cropCanvas.getContext('2d');
+  let cropImage = null, cropZoom = 1, cropX = 0, cropY = 0, cropPointer = null, cropBusy = false;
+  const CROP_SIZE = 320;
+  function cropScale() { if (!cropImage) return 1; return Math.max(CROP_SIZE / cropImage.naturalWidth, CROP_SIZE / cropImage.naturalHeight) * cropZoom; }
+  function clampCrop() {
+    if (!cropImage) return;
+    const scale = cropScale(), maxX = Math.max(0, (cropImage.naturalWidth * scale - CROP_SIZE) / 2), maxY = Math.max(0, (cropImage.naturalHeight * scale - CROP_SIZE) / 2);
+    cropX = Math.max(-maxX, Math.min(maxX, cropX)); cropY = Math.max(-maxY, Math.min(maxY, cropY));
+  }
+  function drawCrop() {
+    if (!cropCtx) return;
+    cropCtx.clearRect(0, 0, CROP_SIZE, CROP_SIZE);
+    cropCtx.fillStyle = '#0a0612'; cropCtx.fillRect(0, 0, CROP_SIZE, CROP_SIZE);
+    if (!cropImage) return;
+    const scale = cropScale(); clampCrop();
+    const w = cropImage.naturalWidth * scale, h = cropImage.naturalHeight * scale;
+    cropCtx.drawImage(cropImage, (CROP_SIZE - w) / 2 + cropX, (CROP_SIZE - h) / 2 + cropY, w, h);
+  }
+  function openAvatarCrop(source) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        cropImage = image; cropZoom = 1; cropX = 0; cropY = 0; cropBusy = false;
+        $('avatarCropZoom').value = '1'; drawCrop(); open(avatarCrop);
+        const finish = value => { avatarCrop.style.display = 'none'; cropPointer = null; resolve(value); };
+        const cancel = () => finish(null);
+        const apply = () => { if (cropBusy || !cropImage) return; cropBusy = true; clampCrop(); let data = cropCanvas.toDataURL('image/jpeg', .84); if (data.length > 125000) data = cropCanvas.toDataURL('image/jpeg', .68); if (data.length > 136000) data = cropCanvas.toDataURL('image/jpeg', .52); if (data.length > 136000) { $('avatarStatus').textContent = 'A foto ficou grande demais. Diminua o zoom ou escolha outra imagem.'; cropBusy = false; return; } finish(data); };
+        $('avatarCropCancel').onclick = cancel; $('avatarCropApply').onclick = apply;
+        $('avatarCropZoom').oninput = event => { cropZoom = Number(event.target.value) || 1; clampCrop(); drawCrop(); };
+        cropCanvas.onpointerdown = event => { cropCanvas.setPointerCapture?.(event.pointerId); cropPointer = { id: event.pointerId, x: event.clientX, y: event.clientY }; };
+        cropCanvas.onpointermove = event => { if (!cropPointer || cropPointer.id !== event.pointerId) return; cropX += event.clientX - cropPointer.x; cropY += event.clientY - cropPointer.y; cropPointer.x = event.clientX; cropPointer.y = event.clientY; clampCrop(); drawCrop(); };
+        cropCanvas.onpointerup = cropCanvas.onpointercancel = () => { cropPointer = null; };
+        avatarCrop.querySelector('.modal-overlay').onclick = cancel;
+        avatarCrop.querySelector('.modal-close').onclick = cancel;
+      };
+      image.onerror = () => reject(new Error('Não foi possível abrir essa foto.'));
+      image.src = source;
+    });
+  }
+
   const defaults = { theme: document.documentElement.getAttribute('data-theme') || 'light', compact_mode: false, reduced_motion: false, refresh_seconds: 2, browser_notifications: false };
   window.fileSharePreferences = { ...defaults };
   let preferencesReady = false, queuedTheme = null;
@@ -217,17 +266,14 @@
     if (!file) return;
     if (!/^image\/(?:jpeg|png|webp)$/.test(file.type)) { $('avatarStatus').textContent = 'Escolha uma imagem JPG, PNG ou WebP.'; return; }
     if (file.size > 12 * 1024 * 1024) { $('avatarStatus').textContent = 'Escolha uma foto com até 12 MB para preparar.'; return; }
-    $('avatarStatus').textContent = 'Preparando imagem…';
+    $('avatarStatus').textContent = 'Abrindo enquadramento…';
     try {
       const source = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error('Não foi possível ler essa foto.')); reader.readAsDataURL(file); });
-      const bitmap = await new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error('O arquivo não parece ser uma imagem válida.')); image.src = source; });
-      const scale = Math.min(1, 320 / Math.max(bitmap.naturalWidth, bitmap.naturalHeight));
-      const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(bitmap.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(bitmap.naturalHeight * scale));
-      canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      let data = canvas.toDataURL('image/jpeg', .78);
-      if (data.length > 125000) data = canvas.toDataURL('image/jpeg', .56);
-      if (data.length > 136000) throw new Error('A imagem ficou grande demais. Escolha uma foto menor.');
-      const result = await post('/api/profile/avatar', { image: data }, 'PUT'); me.avatar_image = result.avatar_image; paintUserAvatar(); paintAvatarPreview();
+      const data = await openAvatarCrop(source);
+      if (!data) { $('avatarStatus').textContent = 'Enquadramento cancelado.'; return; }
+      $('avatarStatus').textContent = 'Salvando foto…';
+      const result = await post('/api/profile/avatar', { image: data }, 'PUT');
+      me.avatar_image = result.avatar_image; paintUserAvatar(); paintAvatarPreview();
       $('avatarStatus').textContent = 'Foto de perfil atualizada.'; toast('Foto de perfil atualizada');
     } catch (error) { $('avatarStatus').textContent = error.message || 'Não foi possível atualizar a foto.'; }
   });
