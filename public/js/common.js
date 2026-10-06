@@ -21,6 +21,7 @@
       root.setAttribute('data-theme', next);
       try { localStorage.setItem(KEY, next); } catch (e) {}
       paintButton(btn);
+      window.dispatchEvent(new CustomEvent('fileshare:theme-change', { detail: { theme: next } }));
     });
     paintButton(btn);
     const host = document.querySelector('.header-left') || document.querySelector('.sala-left');

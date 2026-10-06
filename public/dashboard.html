@@ -14,8 +14,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/social.css">
-  <script src="/js/common.js"></script>
+  <link rel="stylesheet" href="/css/social.css?v=20261005b">
+  <script src="/js/common.js?v=20261005b"></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
     .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
@@ -101,7 +101,8 @@
         <div class="section-title"><i class="fas fa-comments"></i> Chat da sala</div>
         <div id="typingIndicator" class="typing-indicator" aria-live="polite" aria-atomic="true" hidden></div>
         <div class="chat-box">
-          <div id="chatList" class="chat-list"></div>
+          <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
+          <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
           <form id="messageForm" class="chat-compose" autocomplete="off">
             <input id="messageInput" type="text" placeholder="Escreva uma mensagem..." maxlength="1000" required>
             <button class="btn btn-primary chat-send" type="submit" title="Enviar"><i class="fas fa-paper-plane"></i></button>
@@ -130,14 +131,14 @@
   <script src="/js/upload.js?v=20261005a"></script>
   <script>
     const MAX_UPLOAD = 4 * 1024 * 1024; // limite de requisição da Vercel (~4,5 MB)
-    let currentRoom = null, me = null;
+    let currentRoom = null, me = null, roomReplyTo = null;
     let lastRoomsSig = '', lastFilesSig = '', lastChatSig = '', filesRequestId = 0;
     let chatSeenIds = new Set(), lastTypingSig = '', typingActive = false, typingLastSentAt = 0, typingRoomId = null, typingTimer = null, typingRequestQueue = Promise.resolve();
     const esc = value => { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; };
     const formatSize = bytes => { if (!bytes) return '0 B'; const units = ['B','KB','MB','GB']; const i = Math.floor(Math.log(bytes) / Math.log(1024)); return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`; };
     function toast(message, type='success') { const item = document.createElement('div'); item.className = `toast toast-${type} show`; item.textContent = message; document.getElementById('toastContainer').appendChild(item); setTimeout(() => item.remove(), type === 'error' ? 7000 : 3000); }
     async function api(url, options) { const response = await fetch(url, options); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação'); return data; }
-    async function loadUser() { try { const user = await api('/api/me'); me = user; document.getElementById('userName').textContent = user.username; const avatar = document.getElementById('userAvatar'); avatar.textContent = user.username[0].toUpperCase(); avatar.style.background = user.avatar_color; if (user.role === 'admin') { const b = document.getElementById('newRoomBtn'); if (b) b.style.display = 'none'; } } catch (error) { window.location.href = '/'; } }
+    async function loadUser() { try { const user = await api('/api/me'); me = user; document.getElementById('userName').textContent = user.username; const avatar = document.getElementById('userAvatar'); avatar.style.background = user.avatar_color; avatar.innerHTML = user.avatar_image ? '<img src="' + esc(user.avatar_image) + '" alt="">' : esc(user.username[0].toUpperCase()); if (user.role === 'admin') { const b = document.getElementById('newRoomBtn'); if (b) b.style.display = 'none'; } } catch (error) { window.location.href = '/'; } }
     async function loadRooms() { const grid = document.getElementById('roomsGrid'); try { const rooms = await api('/api/rooms'); const sig = JSON.stringify(rooms); if (sig === lastRoomsSig) return; lastRoomsSig = sig; window.roomsById = Object.fromEntries(rooms.map(r => [r.id, r])); if (!rooms.length) { grid.innerHTML = '<div class="empty-state"><i class="fas fa-door-open"></i><h3>Nenhuma sala disponível</h3><p>O administrador ainda não criou uma sala para você.</p></div>'; return; } grid.innerHTML = rooms.map(room => `<article class="card room-card" data-room-id="${esc(room.id)}" data-room-name="${esc(room.name)}"><div class="room-card-body"><div class="room-card-header"><i class="fas fa-folder-open"></i><span class="badge ${room.is_public ? 'badge-green' : 'badge-yellow'}">${room.is_public ? 'Pública' : '<i class=\"fas fa-lock\"></i> Privada'}</span>${room.is_owner && !room.is_public ? '<span class=\"badge badge-blue\"><i class=\"fas fa-crown\"></i> Dono</span>' : ''}${room.expires_at ? `<span class="badge badge-yellow room-exp" data-exp="${esc(room.expires_at)}"><i class="fas fa-hourglass-half"></i> <span></span></span>` : ''}</div><h3>${esc(room.name)}</h3><p class="room-description">${esc(room.description || 'Sem descrição')}</p><div class="room-meta"><span><i class="fas fa-file"></i> ${room.fileCount} arquivo(s)</span><span><i class="fas fa-users"></i> ${room.memberCount}</span></div></div><div class="room-actions">${room.isMember ? `<button class="btn btn-primary" onclick="openRoom(this.closest('.room-card').dataset.roomId, this.closest('.room-card').dataset.roomName, this.closest('.room-card'))"><i class="fas fa-folder-open"></i> Abrir</button><button class="btn btn-outline btn-danger" onclick="leaveRoom('${room.id}')"><i class="fas fa-sign-out-alt"></i> Sair</button>` : `<button class="btn btn-primary" onclick="joinRoom('${room.id}')"><i class="fas fa-door-open"></i> Entrar na sala</button>`}<a class="btn btn-outline" href="/sala/${encodeURIComponent(room.slug)}" target="_blank"><i class="fas fa-link"></i> Link público</a></div></article>`).join(''); } catch (error) { grid.innerHTML = `<div class="alert alert-error">${esc(error.message)}</div>`; } }
     async function joinRoom(id) { try { await api(`/api/rooms/${id}/join`, { method:'POST' }); toast('Você entrou na sala'); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
     async function leaveRoom(id) { if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${id}/leave`, { method:'POST' }); toast('Você saiu da sala'); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
@@ -195,6 +196,7 @@
       if (currentRoom && currentRoom !== id) stopRoomTyping();
       if (typingTimer) clearTimeout(typingTimer); typingTimer = null; typingActive = false; typingRoomId = null; typingLastSentAt = 0; lastTypingSig = '';
       currentRoom = id; lastFilesSig = ''; lastChatSig = ''; chatSeenIds = new Set();
+      cancelRoomReply();
       const modal = document.getElementById('roomModal'), content = modal.querySelector('.modal-content');
       const rect = sourceCard && sourceCard.getBoundingClientRect ? sourceCard.getBoundingClientRect() : null;
       roomOrigin = rect ? { left:rect.left, top:rect.top, width:rect.width, height:rect.height } : null;
@@ -241,10 +243,27 @@
         const mine = me && m.user_id === me.id;
         const cont = prev && prev.user_id === m.user_id; prev = m;
         const animateNew = !first && m.id && !chatSeenIds.has(m.id); if (m.id) chatSeenIds.add(m.id);
-        return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || '#8b5cf6')}">${esc(m.username[0].toUpperCase())}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}<div class="msg-text">${linkify(m.content)}</div></div></div>`;
+        const quote = m.reply_to_id ? `<button class="reply-quote" type="button" data-jump-id="${esc(m.reply_to_id)}"><b>${esc(m.reply_username || 'Mensagem respondida')}</b><span>${esc(m.reply_content || 'Mensagem indisponível')}</span></button>` : '';
+        const messageAvatar = mine && me && me.avatar_image ? `<img src="${esc(me.avatar_image)}" alt="">` : esc(m.username[0].toUpperCase());
+        return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || '#8b5cf6')}">${messageAvatar}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}${quote}<div class="msg-text">${linkify(m.content)}</div><button class="msg-reply-trigger" type="button" data-reply-id="${esc(m.id)}" data-reply-name="${esc(m.username)}" data-reply-text="${esc(m.content)}" aria-label="Responder ${esc(m.username)}"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></div></div>`;
       }).join('') : '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
       if (first || forceBottom || atBottom) box.scrollTop = box.scrollHeight;
     }
+    function setRoomReply(id, name, content) {
+      roomReplyTo = { id, name, content };
+      document.getElementById('roomReplyName').textContent = name;
+      document.getElementById('roomReplyText').textContent = content;
+      document.getElementById('roomReplyPreview').hidden = false;
+      document.getElementById('messageInput').focus();
+    }
+    function cancelRoomReply() { roomReplyTo = null; const preview = document.getElementById('roomReplyPreview'); if (preview) preview.hidden = true; }
+    window.cancelRoomReply = cancelRoomReply;
+    document.getElementById('chatList').addEventListener('click', event => {
+      const quote = event.target.closest('[data-jump-id]');
+      if (quote) { const target = document.querySelector('#chatList [data-message-id="' + CSS.escape(quote.dataset.jumpId) + '"]'); if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); target.classList.add('msg-highlight'); setTimeout(() => target.classList.remove('msg-highlight'), 1300); } return; }
+      const button = event.target.closest('[data-reply-id]'); if (!button) return;
+      setRoomReply(button.dataset.replyId, button.dataset.replyName, button.dataset.replyText);
+    });
     async function sendFiles(list) {
       const files = Array.from(list);
       if (!files.length || !currentRoom) return;
@@ -269,7 +288,7 @@
     document.getElementById('messageForm').addEventListener('submit', async event => {
       event.preventDefault(); const input = document.getElementById('messageInput'), content = input.value.trim(); if (!currentRoom || !content) return;
       stopRoomTyping();
-      try { await api('/api/rooms/' + currentRoom + '/messages', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content}) }); input.value = ''; loadMessages(true); } catch (error) { toast(error.message, 'error'); }
+      try { await api('/api/rooms/' + currentRoom + '/messages', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content, reply_to_id:roomReplyTo && roomReplyTo.id}) }); input.value = ''; cancelRoomReply(); loadMessages(true); } catch (error) { toast(error.message, 'error'); }
     });
     function showPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
     function closePasswordModal() { document.getElementById('passwordModal').style.display = 'none'; }
@@ -289,10 +308,12 @@
       } catch (error) { /* tenta de novo no próximo ciclo */ }
       finally { refreshing = false; }
     }
-    setInterval(autoRefresh, 2000);
+    window.dashboardRefreshTimer = setInterval(autoRefresh, 2000);
+    window.setDashboardRefresh = seconds => { clearInterval(window.dashboardRefreshTimer); window.dashboardRefreshTimer = setInterval(autoRefresh, Math.max(2, Number(seconds) || 2) * 1000); };
     document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
   </script>
-  <script src="/js/social.js"></script>
+  <script src="/js/social.js?v=20261005b"></script>
+  <script src="/js/personal.js?v=20261005b"></script>
   <script src="/js/cursor.js"></script>
   <script src="/js/preview.js"></script>
   <script src="/js/announce.js"></script>
