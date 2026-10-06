@@ -27,7 +27,7 @@
   // Conversas diretas entre amigos.
   const dm = modal('directMessagesSheet', '<i class="fas fa-message"></i> Conversas', 'direct-sheet');
   dm.querySelector('.modal-content').classList.add('direct-modal-content');
-  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread"><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><input id="directMessageInput" type="text" maxlength="1000" placeholder="Escreva uma mensagem…" aria-label="Mensagem" disabled><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
+  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread"><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><input id="directMessageInput" type="text" maxlength="1000" placeholder="Escreva uma mensagem…" aria-label="Mensagem" disabled><input id="directOcrFileInput" type="file" accept="image/*" hidden><button class="btn btn-outline ocr-button" type="button" id="directOcrButton" title="Transcrever texto de uma foto" aria-label="Transcrever texto de uma foto"><i class="fas fa-file-image"></i></button><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
   let dmFriends = [], activeFriend = null, lastDmSig = '', dmReply = null, initialDm = true, dmAvatarsLoaded = false;
   const renderDmFriends = conversations => {
     const host = $('directFriendList');
@@ -73,7 +73,7 @@
     host.innerHTML = messages.length ? messages.map(message => {
       const mine = me && message.user_id === me.id;
       const reply = message.reply_to_id ? '<button class="reply-quote" type="button" data-jump-id="' + escHtml(message.reply_to_id) + '"><b>' + escHtml(message.reply_username || 'Mensagem respondida') + '</b><span>' + escHtml(message.reply_content || 'Mensagem indisponível') + '</span></button>' : '';
-      return '<article class="direct-message ' + (mine ? 'mine' : '') + '" data-message-id="' + escHtml(message.id) + '"><div class="direct-bubble">' + reply + '<div class="direct-message-text">' + linkify(message.content) + '</div><footer><time>' + escHtml(humanTime(message.created_at)) + '</time><button type="button" data-reply-id="' + escHtml(message.id) + '" data-reply-name="' + escHtml(message.username) + '" data-reply-text="' + escHtml(message.content) + '" aria-label="Responder ' + escHtml(message.username) + '"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></footer></div></article>';
+      return '<article class="direct-message ' + (mine ? 'mine' : '') + '" data-message-id="' + escHtml(message.id) + '"><div class="direct-bubble">' + reply + '<div class="direct-message-text">' + linkify(message.content) + '</div><footer><button type="button" class="direct-copy-trigger" data-copy-text="' + escHtml(message.content) + '" aria-label="Copiar mensagem" title="Copiar mensagem"><i class="fas fa-copy"></i><span>Copiar</span></button><time>' + escHtml(humanTime(message.created_at)) + '</time><button type="button" data-reply-id="' + escHtml(message.id) + '" data-reply-name="' + escHtml(message.username) + '" data-reply-text="' + escHtml(message.content) + '" aria-label="Responder ' + escHtml(message.username) + '"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></footer></div></article>';
     }).join('') : '<div class="chat-empty"><i class="fas fa-comment-dots"></i><span>Esta conversa está começando. Envie a primeira mensagem.</span></div>';
     if (first || initialDm || wasAtBottom) host.scrollTop = host.scrollHeight;
     initialDm = false;
@@ -91,12 +91,31 @@
   }
   dm.querySelector('#directFriendList').addEventListener('click', event => { const row = event.target.closest('[data-user-id]'); if (row) selectFriend(row.dataset.userId); });
   dm.querySelector('#directMessageList').addEventListener('click', event => {
+    const copy = event.target.closest('[data-copy-text]');
+    if (copy) {
+      const text = copy.dataset.copyText || '';
+      navigator.clipboard?.writeText(text).then(() => { copy.innerHTML = '<i class="fas fa-check"></i><span>Copiado</span>'; setTimeout(() => { if (copy.isConnected) copy.innerHTML = '<i class="fas fa-copy"></i><span>Copiar</span>'; }, 1400); }).catch(() => toast('Não foi possível copiar a mensagem.', 'error'));
+      return;
+    }
     const quote = event.target.closest('[data-jump-id]');
     if (quote) { const target = dm.querySelector('[data-message-id="' + CSS.escape(quote.dataset.jumpId) + '"]'); if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); target.classList.add('msg-highlight'); setTimeout(() => target.classList.remove('msg-highlight'), 1200); } return; }
     const reply = event.target.closest('[data-reply-id]'); if (!reply) return;
     dmReply = { id: reply.dataset.replyId, name: reply.dataset.replyName, content: reply.dataset.replyText }; showDmReply(); $('directMessageInput').focus();
   });
   $('directReplyCancel').addEventListener('click', clearDmReply);
+  const directOcrButton = $('directOcrButton'), directOcrFileInput = $('directOcrFileInput');
+  directOcrButton?.addEventListener('click', () => directOcrFileInput?.click());
+  directOcrFileInput?.addEventListener('change', async event => {
+    const file = event.target.files && event.target.files[0]; event.target.value = '';
+    if (!file || typeof window.transcribeImage !== 'function') return;
+    directOcrButton.disabled = true; directOcrButton.classList.add('is-loading');
+    try {
+      const text = await window.transcribeImage(file, status => { directOcrButton.title = status; });
+      $('directMessageInput').value = text.slice(0, 1000); $('directMessageInput').dispatchEvent(new Event('input', { bubbles: true })); $('directMessageInput').focus();
+      toast('Texto transcrito. Revise antes de enviar.');
+    } catch (error) { toast(error.message || 'Não foi possível transcrever a imagem.', 'error'); }
+    finally { directOcrButton.disabled = false; directOcrButton.title = 'Transcrever texto de uma foto'; directOcrButton.classList.remove('is-loading'); }
+  });
   dm.querySelector('#directMessageForm').addEventListener('submit', async event => {
     event.preventDefault(); if (!activeFriend) return;
     const input = $('directMessageInput'), content = input.value.trim(); if (!content) return;
