@@ -118,7 +118,7 @@
           <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
           <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
           <form id="messageForm" class="chat-compose" autocomplete="off">
-            <input id="messageInput" type="text" placeholder="Escreva uma mensagem..." maxlength="1000" required>
+            <input id="messageInput" type="text" inputmode="text" enterkeyhint="send" autocapitalize="sentences" autocomplete="off" spellcheck="true" placeholder="Escreva uma mensagem..." maxlength="1000" required>
             <button id="chatSendBtn" class="btn btn-primary chat-send" type="submit" title="Enviar"><i class="fas fa-paper-plane"></i></button>
           </form>
         </div>
@@ -299,8 +299,28 @@
     document.getElementById('uploadForm').addEventListener('submit', event => event.preventDefault());
     document.getElementById('fileInput').addEventListener('change', event => { const files = Array.from(event.target.files); event.target.value = ''; sendFiles(files); });
     enableDrop(document.getElementById('roomModal'), '.drop-target', (el, files) => sendFiles(files));
-    document.getElementById('messageInput').addEventListener('input', updateRoomTyping);
-    document.getElementById('messageInput').addEventListener('blur', () => stopRoomTyping());
+    const messageInput = document.getElementById('messageInput');
+    const focusChatInput = () => {
+      if (!currentRoom || !messageInput || messageInput.disabled) return;
+      messageInput.focus({ preventScroll: true });
+      requestAnimationFrame(() => messageInput.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+    };
+    messageInput.addEventListener('input', updateRoomTyping);
+    messageInput.addEventListener('blur', () => stopRoomTyping());
+    // Mobile: force native focus on the actual touch/pointer target. This avoids
+    // browsers/WebViews swallowing the first tap inside a scrolling modal.
+    messageInput.addEventListener('pointerdown', () => {
+      if (window.matchMedia('(max-width: 600px)').matches) setTimeout(focusChatInput, 0);
+    });
+    messageInput.addEventListener('touchstart', () => {
+      if (window.matchMedia('(max-width: 600px)').matches) setTimeout(focusChatInput, 0);
+    }, { passive: true });
+    messageInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        document.getElementById('messageForm').requestSubmit();
+      }
+    });
     let sendingRoomMessage = false;
     async function sendRoomMessage(event) {
       if (event) event.preventDefault();
@@ -332,9 +352,8 @@
       }
     }
     document.getElementById('messageForm').addEventListener('submit', sendRoomMessage);
-    document.getElementById('chatSendBtn').addEventListener('click', event => {
-      if (event.detail > 0) sendRoomMessage(event);
-    });
+    // The button is type=submit; the form handler is the single send path.
+    // Keeping a second click handler here caused duplicate submits on some mobile browsers.
     function showPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
     function closePasswordModal() { document.getElementById('passwordModal').style.display = 'none'; }
     async function changePassword() { try { await api('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ currentPassword:document.getElementById('currentPassword').value, newPassword:document.getElementById('newPassword').value }) }); closePasswordModal(); toast('Senha alterada'); } catch (error) { toast(error.message, 'error'); } }
