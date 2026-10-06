@@ -27,7 +27,7 @@
   // Conversas diretas entre amigos.
   const dm = modal('directMessagesSheet', '<i class="fas fa-message"></i> Conversas', 'direct-sheet');
   dm.querySelector('.modal-content').classList.add('direct-modal-content');
-  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread"><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><input id="directMessageInput" type="text" maxlength="1000" placeholder="Escreva uma mensagem…" aria-label="Mensagem" disabled><input id="directOcrFileInput" type="file" accept="image/*" hidden><button class="btn btn-outline ocr-button" type="button" id="directOcrButton" title="Transcrever texto de uma foto" aria-label="Transcrever texto de uma foto"><i class="fas fa-file-image"></i></button><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
+  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread"><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><input id="directMessageInput" type="text" maxlength="1000" placeholder="Escreva uma mensagem…" aria-label="Mensagem" disabled><input id="directOcrFileInput" type="file" accept="image/*" hidden><button class="btn btn-outline ocr-button" type="button" id="directOcrButton" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
   let dmFriends = [], activeFriend = null, lastDmSig = '', dmReply = null, initialDm = true, dmAvatarsLoaded = false;
   const renderDmFriends = conversations => {
     const host = $('directFriendList');
@@ -107,14 +107,9 @@
   directOcrButton?.addEventListener('click', () => directOcrFileInput?.click());
   directOcrFileInput?.addEventListener('change', async event => {
     const file = event.target.files && event.target.files[0]; event.target.value = '';
-    if (!file || typeof window.transcribeImage !== 'function') return;
-    directOcrButton.disabled = true; directOcrButton.classList.add('is-loading');
-    try {
-      const text = await window.transcribeImage(file, status => { directOcrButton.title = status; });
-      $('directMessageInput').value = text.slice(0, 1000); $('directMessageInput').dispatchEvent(new Event('input', { bubbles: true })); $('directMessageInput').focus();
-      toast('Texto transcrito. Revise antes de enviar.');
-    } catch (error) { toast(error.message || 'Não foi possível transcrever a imagem.', 'error'); }
-    finally { directOcrButton.disabled = false; directOcrButton.title = 'Transcrever texto de uma foto'; directOcrButton.classList.remove('is-loading'); }
+    if (!file) return;
+    if (typeof window.copyTextFromImage !== 'function') { toast('O recurso de copiar texto da imagem ainda está carregando.', 'error'); return; }
+    await window.copyTextFromImage(file, directOcrButton);
   });
   dm.querySelector('#directMessageForm').addEventListener('submit', async event => {
     event.preventDefault(); if (!activeFriend) return;
