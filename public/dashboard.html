@@ -33,6 +33,20 @@
     .profile-pill { display:flex; align-items:center; gap:8px; color:var(--gray-700); font-size:14px; }
     .avatar { flex:none; }
     .modal-content { max-width:720px; }
+    /* Rodapé da criação de sala: área de toque isolada no mobile. */
+    #createRoomModal .modal-footer {
+      position: relative !important;
+      z-index: 50 !important;
+      pointer-events: auto !important;
+      isolation: isolate;
+    }
+    #createRoomModal #createRoomSubmit {
+      position: relative;
+      z-index: 51;
+      pointer-events: auto !important;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
     @media (max-width:640px) {
       .dashboard-content { padding:20px 14px; }
       .dashboard-intro { align-items:flex-start; flex-direction:column; }
@@ -120,7 +134,7 @@
         <div class="form-group"><label>Duração</label><div class="duration-pick" id="durationPick"><button type="button" data-m="5" class="active">5 min</button><button type="button" data-m="10">10 min</button><button type="button" data-m="30">30 min</button></div></div>
         <p class="text-muted" style="font-size:13px"><i class="fas fa-globe"></i> A sala é pública e é apagada sozinha (com arquivos e chat) quando o tempo acabar.</p>
       </div>
-      <div class="modal-footer"><button class="btn btn-green" onclick="createTempRoom()">Criar sala</button></div></div>
+      <div class="modal-footer" id="createRoomFooter"><button id="createRoomSubmit" class="btn btn-green" type="button"><i class="fas fa-check"></i> Criar sala</button></div></div>
   </div>
   <div id="passwordModal" class="modal" style="display:none;">
     <div class="modal-overlay" onclick="closePasswordModal()"></div>
@@ -226,7 +240,9 @@
     function showCreateRoom() { document.getElementById('createRoomModal').style.display = 'flex'; document.getElementById('newRoomName').focus(); }
     function closeCreateRoom() { document.getElementById('createRoomModal').style.display = 'none'; }
     document.getElementById('durationPick').addEventListener('click', e => { const b = e.target.closest('button[data-m]'); if (!b) return; newRoomMinutes = Number(b.dataset.m); document.querySelectorAll('#durationPick button').forEach(x => x.classList.toggle('active', x === b)); });
-    async function createTempRoom() { const name = document.getElementById('newRoomName').value.trim(); if (!name) { toast('Dê um nome para a sala', 'error'); return; } try { const room = await api('/api/rooms', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ name, duration_minutes:newRoomMinutes }) }); document.getElementById('newRoomName').value = ''; closeCreateRoom(); toast('Sala criada! Ela some em ' + newRoomMinutes + ' min'); lastRoomsSig = ''; await loadRooms(); openRoom(room.id, room.name); } catch (error) { toast(error.message, 'error'); } }
+    async function createTempRoom() { const button = document.getElementById('createRoomSubmit'); const name = document.getElementById('newRoomName').value.trim(); if (!name) { toast('Dê um nome para a sala', 'error'); document.getElementById('newRoomName').focus(); return; } if (button) { button.disabled = true; button.classList.add('is-loading'); } try { const room = await api('/api/rooms', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ name, duration_minutes:newRoomMinutes }) }); document.getElementById('newRoomName').value = ''; closeCreateRoom(); toast('Sala criada! Ela some em ' + newRoomMinutes + ' min'); lastRoomsSig = ''; await loadRooms(); openRoom(room.id, room.name); } catch (error) { toast(error.message, 'error'); } finally { if (button) { button.disabled = false; button.classList.remove('is-loading'); } } }
+    window.createTempRoom = createTempRoom;
+    document.getElementById('createRoomSubmit').addEventListener('click', event => { event.preventDefault(); createTempRoom(); });
     function tickExpiry() { document.querySelectorAll('.room-exp').forEach(el => { const left = new Date(el.dataset.exp.replace(' ', 'T') + 'Z') - Date.now(); el.lastElementChild.textContent = left > 0 ? 'expira em ' + Math.floor(left / 60000) + ':' + String(Math.floor(left / 1000) % 60).padStart(2, '0') : 'expirando...'; }); }
     setInterval(tickExpiry, 1000);
     enablePaste(files => { if (currentRoom && document.getElementById('roomModal').style.display !== 'none') sendFiles(files); });
