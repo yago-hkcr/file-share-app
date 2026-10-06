@@ -14,7 +14,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/onboarding.css">
-  <link rel="stylesheet" href="/css/social.css?v=20261006a">
+  <link rel="stylesheet" href="/css/social.css?v=20261006b">
   <script src="/js/common.js?v=20261005b"></script><script src="/js/onboarding.js" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
@@ -244,7 +244,7 @@
         const cont = prev && prev.user_id === m.user_id; prev = m;
         const animateNew = !first && m.id && !chatSeenIds.has(m.id); if (m.id) chatSeenIds.add(m.id);
         const quote = m.reply_to_id ? `<button class="reply-quote" type="button" data-jump-id="${esc(m.reply_to_id)}"><b>${esc(m.reply_username || 'Mensagem respondida')}</b><span>${esc(m.reply_content || 'Mensagem indisponível')}</span></button>` : '';
-        const messageAvatar = mine && me && me.avatar_image ? `<img src="${esc(me.avatar_image)}" alt="">` : esc(m.username[0].toUpperCase());
+        const messageAvatar = m.avatar_image ? `<img src="${esc(m.avatar_image)}" alt="">` : esc(m.username[0].toUpperCase());
         return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || '#8b5cf6')}">${messageAvatar}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}${quote}<div class="msg-text">${linkify(m.content)}</div><button class="msg-reply-trigger" type="button" data-reply-id="${esc(m.id)}" data-reply-name="${esc(m.username)}" data-reply-text="${esc(m.content)}" aria-label="Responder ${esc(m.username)}"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></div></div>`;
       }).join('') : '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
       if (first || forceBottom || atBottom) box.scrollTop = box.scrollHeight;
