@@ -812,7 +812,7 @@ app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
 app.post('/api/rooms/:id/upload-token', wrap(async (req, res) => {
   if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
   const action = req.body && req.body.type;
-  if (action === 'blob.generate-client-token') {
+  if (action === 'blob.generate-presigned-url') {
     if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
     const user = await one('SELECT id, username, role, status, last_seen, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
     if (!user || user.status === 'banned' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
