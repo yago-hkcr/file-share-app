@@ -4,9 +4,14 @@
 // O limite por arquivo vem do servidor (/api/me → max_upload_bytes), então o aviso nunca fica desatualizado.
 (function () {
   let limitBytes = null;
-  const mbLabel = b => { const mb = b / 1048576; return (Number.isInteger(mb) || mb >= 10 ? Math.round(mb) : mb.toFixed(1)) + ' MB'; };
+  const sizeLabel = b => {
+    const gb = b / (1024 ** 3);
+    if (gb >= 1) return (Number.isInteger(gb) ? gb : gb.toFixed(1)) + ' GB';
+    const mb = b / 1048576;
+    return (Number.isInteger(mb) || mb >= 10 ? Math.round(mb) : mb.toFixed(1)) + ' MB';
+  };
 
-  window.limitLabel = () => (limitBytes ? mbLabel(limitBytes) : '…');
+  window.limitLabel = () => (limitBytes ? sizeLabel(limitBytes) : '…');
   window.fillLimitNotes = () => document.querySelectorAll('.limit-note').forEach(el => { el.textContent = window.limitLabel(); });
 
   const limitReady = fetch('/api/me')
@@ -43,7 +48,7 @@
   async function legacyUpload(roomId, files) {
     const max = limitBytes || 4 * 1024 * 1024;
     if (files.reduce((sum, f) => sum + f.size, 0) > max) {
-      throw new Error('Limite de ' + mbLabel(max) + ' por envio neste ambiente.');
+      throw new Error('Limite de ' + sizeLabel(max) + ' por envio neste ambiente.');
     }
     const form = new FormData();
     files.forEach(f => form.append('files', f));
@@ -85,7 +90,7 @@
               (it.url ? '<img class="confirm-thumb" src="' + it.url + '" alt="prévia">' : '<div class="confirm-thumb confirm-icon"><i class="fas fa-file"></i><span>' + e2((it.ext || '').slice(1).toUpperCase() || 'ARQ') + '</span></div>') +
               '<div class="confirm-info"><div class="rename-field"><input type="text" data-i="' + i + '" maxlength="150" required autocomplete="off" value="' + e2(it.base).replace(/"/g, '&quot;') + '">' +
               (it.ext ? '<span class="rename-ext">' + e2(it.ext) + '</span>' : '') + '</div>' +
-              '<small>' + e2(window.fileKind ? window.fileKind(it.file.name, it.file.type) : '') + ' · ' + mbLabel(it.file.size) + '</small></div>' +
+              '<small>' + e2(window.fileKind ? window.fileKind(it.file.name, it.file.type) : '') + ' · ' + sizeLabel(it.file.size) + '</small></div>' +
               '<button type="button" class="btn btn-sm btn-outline confirm-del" data-del="' + i + '" title="Remover"><i class="fas fa-xmark"></i></button>' +
             '</div>').join('') + '</div>' +
           '<div class="rename-actions"><button type="button" class="btn btn-outline rename-cancel">Cancelar</button>' +

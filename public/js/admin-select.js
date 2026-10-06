@@ -66,11 +66,39 @@
 
     const menu = document.createElement('div');
     menu.className = 'fs-select__menu';
-    menu.id = 'fs-select-list-' + id;
-    menu.setAttribute('role', 'listbox');
+    menu.id = 'fs-select-menu-' + id;
+    menu.setAttribute('role', 'group');
     menu.setAttribute('aria-label', label);
-    menu.setAttribute('aria-labelledby', trigger.id);
-    trigger.setAttribute('aria-controls', menu.id);
+
+    const optionList = document.createElement('div');
+    optionList.className = 'fs-select__options';
+    optionList.id = 'fs-select-list-' + id;
+    optionList.setAttribute('role', 'listbox');
+    optionList.setAttribute('aria-label', label);
+    optionList.setAttribute('aria-labelledby', trigger.id);
+    trigger.setAttribute('aria-controls', optionList.id);
+
+    const searchable = select.id === 'arRoom';
+    let searchInput = null;
+    let emptyState = null;
+    let searchQuery = '';
+    if (searchable) {
+      searchInput = document.createElement('input');
+      searchInput.type = 'search';
+      searchInput.className = 'fs-select__search';
+      searchInput.placeholder = 'Buscar sala...';
+      searchInput.setAttribute('aria-label', 'Filtrar salas');
+      searchInput.autocomplete = 'off';
+      searchInput.spellcheck = false;
+
+      emptyState = document.createElement('div');
+      emptyState.className = 'fs-select__empty';
+      emptyState.textContent = 'Nenhuma sala encontrada.';
+      emptyState.hidden = true;
+      menu.append(searchInput, optionList);
+    } else {
+      menu.appendChild(optionList);
+    }
     wrap.appendChild(trigger);
 
     let expanded = false;
@@ -82,10 +110,14 @@
       return (option.label || option.textContent || '').trim();
     }
 
+    function normalizeSearch(value) {
+      return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+    }
+
     function setActive(index) {
       if (!items.length) return;
       let next = index;
-      if (next < 0 || next >= items.length || select.options[next]?.disabled) return;
+      if (next < 0 || next >= items.length || items[next].getAttribute('aria-disabled') === 'true') return;
       activeIndex = next;
       items.forEach((item, itemIndex) => item.classList.toggle('is-active', itemIndex === activeIndex));
       trigger.setAttribute('aria-activedescendant', items[activeIndex].id);
@@ -117,7 +149,8 @@
       const left = Math.max(12, Math.min(rect.left, viewWidth - width - 12));
       const roomBelow = Math.max(0, viewHeight - rect.bottom - 16);
       const roomAbove = Math.max(0, rect.top - 16);
-      const naturalHeight = Math.min(300, items.length * 48 + 14);
+      const contentHeight = items.length ? items.length * 48 + (searchInput ? 68 : 14) : (searchInput ? 112 : 14);
+      const naturalHeight = Math.min(300, contentHeight);
       const openAbove = roomBelow < naturalHeight && roomAbove > roomBelow;
       const available = Math.max(88, Math.min(300, (openAbove ? roomAbove : roomBelow) - 8));
       const menuHeight = Math.min(naturalHeight, available);
@@ -137,8 +170,12 @@
       trigger.setAttribute('aria-disabled', String(trigger.disabled));
 
       const oldActiveValue = activeIndex >= 0 ? items[activeIndex]?.dataset.value : null;
-      menu.replaceChildren();
-      items = options.map((option, index) => {
+      optionList.replaceChildren();
+      items = [];
+      const needle = normalizeSearch(searchQuery);
+      options.forEach((option, index) => {
+        const title = optionLabel(option);
+        if (needle && !normalizeSearch(title).includes(needle)) return;
         const item = document.createElement('div');
         item.className = 'fs-select__option';
         item.id = 'fs-select-option-' + id + '-' + index;
@@ -146,51 +183,62 @@
         item.setAttribute('aria-selected', String(index === select.selectedIndex));
         item.setAttribute('aria-disabled', String(option.disabled));
         item.dataset.value = option.value;
-        item.textContent = optionLabel(option);
-        item.addEventListener('pointerenter', () => { if (!option.disabled) setActive(index); });
+        item.dataset.optionIndex = String(index);
+        item.textContent = title;
+        item.addEventListener('pointerenter', () => { if (!option.disabled) setActive(items.indexOf(item)); });
         item.addEventListener('pointerdown', event => event.preventDefault());
-        item.addEventListener('click', () => choose(index));
-        menu.appendChild(item);
-        return item;
+        item.addEventListener('click', () => choose(items.indexOf(item)));
+        optionList.appendChild(item);
+        items.push(item);
       });
 
+      if (emptyState) {
+        emptyState.hidden = items.length !== 0;
+        if (items.length === 0) optionList.appendChild(emptyState);
+      }
+
       if (expanded) {
-        if (!items.length) { closeMenu(false); return; }
-        const preserved = oldActiveValue == null ? -1 : options.findIndex(option => option.value === oldActiveValue && !option.disabled);
+        const preserved = oldActiveValue == null ? -1 : items.findIndex(item => item.dataset.value === oldActiveValue && item.getAttribute('aria-disabled') !== 'true');
         const selectedIndex = select.selectedIndex;
-        const fallback = selectedIndex >= 0 && !options[selectedIndex]?.disabled ? selectedIndex : options.findIndex(option => !option.disabled);
+        const visibleSelected = items.findIndex(item => Number(item.dataset.optionIndex) === selectedIndex && item.getAttribute('aria-disabled') !== 'true');
+        const fallback = visibleSelected >= 0 ? visibleSelected : items.findIndex(item => item.getAttribute('aria-disabled') !== 'true');
         activeIndex = preserved >= 0 ? preserved : fallback;
         placeMenu();
         if (activeIndex >= 0) setActive(activeIndex);
+        else trigger.removeAttribute('aria-activedescendant');
       } else {
-        activeIndex = select.selectedIndex;
+        activeIndex = items.findIndex(item => Number(item.dataset.optionIndex) === select.selectedIndex);
         trigger.removeAttribute('aria-activedescendant');
       }
     }
 
-    function openMenu(direction) {
+    function openMenu(direction, focusSearch) {
       if (trigger.disabled || expanded) return;
       if (activeSelect && activeSelect !== state) activeSelect.close(false);
       clearTimeout(closeTimer);
+      searchQuery = '';
+      if (searchInput) searchInput.value = '';
       expanded = true;
       activeSelect = state;
       if (menu.parentNode !== document.body) document.body.appendChild(menu);
       trigger.setAttribute('aria-expanded', 'true');
       wrap.classList.add('fs-select--open');
       render();
-      const selectedIndex = select.selectedIndex;
-      if (direction === 1) {
-        const first = items.findIndex(item => item.getAttribute('aria-disabled') !== 'true');
-        setActive(selectedIndex >= 0 && !select.options[selectedIndex]?.disabled ? selectedIndex : first);
-      }
+      const first = items.findIndex(item => item.getAttribute('aria-disabled') !== 'true');
+      const selected = items.findIndex(item => Number(item.dataset.optionIndex) === select.selectedIndex && item.getAttribute('aria-disabled') !== 'true');
+      if (direction === 1) setActive(selected >= 0 ? selected : first);
       if (direction === -1) {
         for (let index = items.length - 1; index >= 0; index--) {
           if (items[index].getAttribute('aria-disabled') !== 'true') { setActive(index); break; }
         }
       }
       placeMenu();
-      requestAnimationFrame(() => { if (expanded) menu.classList.add('is-open'); });
-      trigger.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        if (!expanded) return;
+        menu.classList.add('is-open');
+        if (searchInput && (focusSearch || window.matchMedia('(hover: hover) and (pointer: fine)').matches)) searchInput.focus({ preventScroll: true });
+        else trigger.focus({ preventScroll: true });
+      });
     }
 
     function closeMenu(returnFocus) {
@@ -199,12 +247,15 @@
         return;
       }
       expanded = false;
+      searchQuery = '';
+      if (searchInput) searchInput.value = '';
       trigger.setAttribute('aria-expanded', 'false');
       trigger.removeAttribute('aria-activedescendant');
       wrap.classList.remove('fs-select--open');
       menu.classList.remove('is-open');
       menu.classList.remove('is-above');
       if (activeSelect === state) activeSelect = null;
+      render();
       clearTimeout(closeTimer);
       closeTimer = setTimeout(() => {
         if (!expanded && menu.parentNode) menu.remove();
@@ -213,7 +264,9 @@
     }
 
     function choose(index) {
-      const option = select.options[index];
+      const item = items[index];
+      const optionIndex = item ? Number(item.dataset.optionIndex) : -1;
+      const option = select.options[optionIndex];
       if (!option || option.disabled) return;
       select.value = option.value;
       select.dispatchEvent(new Event('input', { bubbles: true }));
@@ -262,16 +315,50 @@
       } else if (event.key === 'Tab' && expanded) {
         closeMenu(false);
       } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        typeBuffer += event.key.toLocaleLowerCase();
-        clearTimeout(typeTimer);
-        typeTimer = setTimeout(() => { typeBuffer = ''; }, 650);
-        const match = Array.from(select.options).findIndex(option => !option.disabled && optionLabel(option).toLocaleLowerCase().startsWith(typeBuffer));
-        if (match >= 0) {
-          if (!expanded) openMenu();
-          setActive(match);
+        event.preventDefault();
+        if (searchInput) {
+          if (!expanded) openMenu(undefined, true);
+          searchInput.focus({ preventScroll: true });
+          searchInput.value += event.key;
+          searchQuery = searchInput.value;
+          render();
+        } else {
+          typeBuffer += event.key.toLocaleLowerCase();
+          clearTimeout(typeTimer);
+          typeTimer = setTimeout(() => { typeBuffer = ''; }, 650);
+          const match = Array.from(select.options).findIndex(option => !option.disabled && optionLabel(option).toLocaleLowerCase().startsWith(typeBuffer));
+          if (match >= 0) {
+            if (!expanded) openMenu();
+            const active = items.findIndex(item => Number(item.dataset.optionIndex) === match);
+            if (active >= 0) setActive(active);
+          }
         }
       }
     });
+
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        searchQuery = searchInput.value;
+        render();
+      });
+      searchInput.addEventListener('keydown', event => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          moveActive(1);
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          moveActive(-1);
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          choose(activeIndex);
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          closeMenu(true);
+        } else if (event.key === 'Tab') {
+          closeMenu(false);
+        }
+      });
+    }
 
     select.addEventListener('change', render);
     select.addEventListener('input', render);

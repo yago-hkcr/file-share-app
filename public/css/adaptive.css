@@ -45,6 +45,10 @@ pre, code, table { max-width: 100%; }
   .dashboard-intro { align-items: stretch; flex-direction: column; }
   .intro-actions .btn { flex: 1 1 140px; justify-content: center; }
   .file-row { align-items: flex-start; }
+  #roomModal #roomFiles .file-row { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 10px; width: 100%; }
+  #roomModal #roomFiles .file-main { min-width: 0; width: 100%; }
+  #roomModal #roomFiles .file-btns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; min-width: 0; }
+  #roomModal #roomFiles .file-btns > .btn { box-sizing: border-box; min-width: 0; max-width: 100%; width: 100%; min-height: 42px; justify-content: center; text-align: center; white-space: normal; overflow-wrap: anywhere; }
   .file-btns { width: 100%; }
   .file-btns .btn { flex: 1 1 auto; justify-content: center; }
   .sala-file-card { flex-wrap: wrap; }
