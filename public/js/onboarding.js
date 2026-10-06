@@ -1,7 +1,7 @@
 /* FileShare — onboarding inicial com opção de pular e rever */
 (function(){
 'use strict';
-var KEY='fileshare-onboarding-seen-v1';
+var KEY='fileshare-onboarding-seen-v2';
 var steps=[
  {sel:'.dashboard-intro',title:'Bem-vindo ao FileShare',text:'Aqui você encontra suas salas e o caminho principal para compartilhar arquivos.'},
  {sel:'#newRoomBtn',title:'Crie uma sala',text:'Use este botão para criar uma sala temporária e começar um compartilhamento em poucos segundos.'},
