@@ -318,12 +318,21 @@
       document.getElementById('membersModal').style.display='flex';
     }
     async function addMember(roomId, userId) {
-      await fetch('/api/rooms/'+roomId+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId})});
-      showToast('Membro adicionado!'); showMembers(roomId); loadRooms();
+      try {
+        const res = await fetch('/api/rooms/'+encodeURIComponent(roomId)+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId})});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Não foi possível adicionar o membro');
+        showToast('Membro adicionado!'); showMembers(roomId); loadRooms();
+      } catch (e) { showToast(e.message || 'Não foi possível adicionar o membro', 'error'); }
     }
     async function removeMember(roomId, userId) {
-      await fetch('/api/rooms/'+roomId+'/members/'+userId,{method:'DELETE'});
-      showToast('Membro removido'); showMembers(roomId); loadRooms();
+      if (!confirm('Remover este membro da sala?')) return;
+      try {
+        const res = await fetch('/api/rooms/'+encodeURIComponent(roomId)+'/members/'+encodeURIComponent(userId),{method:'DELETE'});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Não foi possível remover o membro');
+        showToast('Membro removido'); showMembers(roomId); loadRooms();
+      } catch (e) { showToast(e.message || 'Não foi possível remover o membro', 'error'); }
     }
 
     // Create room
