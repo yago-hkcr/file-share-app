@@ -105,7 +105,7 @@
           <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
           <form id="messageForm" class="chat-compose" autocomplete="off">
             <input id="messageInput" type="text" placeholder="Escreva uma mensagem..." maxlength="1000" required>
-            <button class="btn btn-primary chat-send" type="submit" title="Enviar"><i class="fas fa-paper-plane"></i></button>
+            <button id="chatSendBtn" class="btn btn-primary chat-send" type="submit" title="Enviar"><i class="fas fa-paper-plane"></i></button>
           </form>
         </div>
       </div>
@@ -285,10 +285,39 @@
     enableDrop(document.getElementById('roomModal'), '.drop-target', (el, files) => sendFiles(files));
     document.getElementById('messageInput').addEventListener('input', updateRoomTyping);
     document.getElementById('messageInput').addEventListener('blur', () => stopRoomTyping());
-    document.getElementById('messageForm').addEventListener('submit', async event => {
-      event.preventDefault(); const input = document.getElementById('messageInput'), content = input.value.trim(); if (!currentRoom || !content) return;
+    let sendingRoomMessage = false;
+    async function sendRoomMessage(event) {
+      if (event) event.preventDefault();
+      const input = document.getElementById('messageInput');
+      const button = document.getElementById('chatSendBtn');
+      const roomId = currentRoom;
+      const content = input ? input.value.trim() : '';
+      if (!roomId || !content || sendingRoomMessage) return;
+      sendingRoomMessage = true;
+      if (button) { button.disabled = true; button.classList.add('is-loading'); }
       stopRoomTyping();
-      try { await api('/api/rooms/' + currentRoom + '/messages', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content, reply_to_id:roomReplyTo && roomReplyTo.id}) }); input.value = ''; cancelRoomReply(); loadMessages(true); } catch (error) { toast(error.message, 'error'); }
+      try {
+        await api('/api/rooms/' + encodeURIComponent(roomId) + '/messages', {
+          method:'POST',
+          credentials:'same-origin',
+          headers:{'Content-Type':'application/json','Accept':'application/json'},
+          body:JSON.stringify({content, reply_to_id:roomReplyTo && roomReplyTo.id})
+        });
+        input.value = '';
+        cancelRoomReply();
+        lastChatSig = '';
+        await loadMessages(true);
+      } catch (error) {
+        toast(error && error.message ? error.message : 'Não foi possível enviar a mensagem. Tente novamente.', 'error');
+      } finally {
+        sendingRoomMessage = false;
+        if (button) { button.disabled = false; button.classList.remove('is-loading'); }
+        if (input) input.focus();
+      }
+    }
+    document.getElementById('messageForm').addEventListener('submit', sendRoomMessage);
+    document.getElementById('chatSendBtn').addEventListener('click', event => {
+      if (event.detail > 0) sendRoomMessage(event);
     });
     function showPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
     function closePasswordModal() { document.getElementById('passwordModal').style.display = 'none'; }
