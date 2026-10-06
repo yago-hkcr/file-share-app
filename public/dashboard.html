@@ -33,23 +33,27 @@
     .profile-pill { display:flex; align-items:center; gap:8px; color:var(--gray-700); font-size:14px; }
     .avatar { flex:none; }
     .modal-content { max-width:720px; }
-    /* Chat novo: compositor permanece dentro do modal, sem mover o DOM. */
-    #roomModal .chat-compose { position:relative; z-index:20; }
-    #roomModal #messageInput {
-      display:block; position:relative; z-index:21; width:100%; min-width:0;
-      pointer-events:auto; touch-action:manipulation; -webkit-user-select:text; user-select:text;
-      -webkit-appearance:none; appearance:none;
-    }
-    #roomModal .chat-send { position:relative; z-index:21; pointer-events:auto; }
-    @media (max-width:600px) {
-      #roomModal .chat-compose {
-        position:relative; display:flex; align-items:center; width:100%;
-        margin-top:8px; padding:8px; gap:8px;
-        background:rgba(10,6,18,.92); border:1px solid rgba(139,92,246,.28);
-        border-radius:16px; box-sizing:border-box;
-      }
-      #roomModal #messageInput { flex:1 1 auto; height:48px; min-height:48px; font-size:16px!important; }
-      #roomModal .chat-send { flex:0 0 48px; width:48px; height:48px; min-height:48px; }
+    /* Chat da sala: painel independente, fora do modal de arquivos.
+       Isso elimina qualquer interferência de overflow/transform/overlay no teclado mobile. */
+    .room-chat-hint { display:flex; align-items:center; gap:10px; }
+    .room-chat-hint .btn { margin-left:auto; }
+    .room-chat-panel { position:fixed; inset:0; z-index:2100; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(5,3,12,.58); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+    .room-chat-card { width:min(720px,100%); height:min(720px,calc(100dvh - 36px)); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(var(--cy-rgb),.35); border-radius:22px; background:var(--surface,#181030); box-shadow:0 28px 90px rgba(0,0,0,.45); }
+    .room-chat-header { display:flex; align-items:center; justify-content:space-between; gap:14px; flex:none; padding:16px 18px; border-bottom:1px solid var(--line); }
+    .room-chat-header h3 { margin:3px 0 0; color:var(--ink); }
+    .room-chat-kicker { color:var(--cy); font:700 11px/1 'Share Tech Mono',monospace; letter-spacing:.12em; }
+    .room-chat-card .chat-box { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; overflow:hidden; }
+    .room-chat-card .chat-list { flex:1 1 auto; min-height:0; height:auto; overflow-y:auto; }
+    .room-chat-card .chat-compose { flex:none; display:flex; align-items:center; gap:8px; width:100%; padding:10px; box-sizing:border-box; border-top:1px solid rgba(var(--cy-rgb),.3); background:rgba(var(--cy-rgb),.05); }
+    .room-chat-card #messageInput { flex:1 1 auto; min-width:0; width:1px; height:48px; min-height:48px; padding:0 14px; font-size:16px; pointer-events:auto; touch-action:manipulation; -webkit-user-select:text; user-select:text; -webkit-appearance:none; appearance:none; }
+    .room-chat-card #chatSendBtn { flex:0 0 48px; width:48px; height:48px; min-height:48px; }
+    @media(max-width:600px) {
+      .room-chat-panel { align-items:flex-end; padding:0; }
+      .room-chat-card { width:100%; height:min(92dvh,760px); border-radius:20px 20px 0 0; }
+      .room-chat-header { padding:13px 14px 11px; }
+      .room-chat-card .chat-list { padding:10px; }
+      .room-chat-card .chat-compose { padding:10px max(10px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom)); }
+      .room-chat-card #messageInput { font-size:16px!important; }
     }
     @media (max-width:640px) {
       .dashboard-content { padding:20px 14px; }
@@ -116,16 +120,22 @@
         </form>
         <div class="section-title"><i class="fas fa-folder-open"></i> Arquivos <span id="fileCount" class="section-count"></span></div>
         <div id="roomFiles" class="file-list"></div>
-        <div class="section-title"><i class="fas fa-comments"></i> Chat da sala</div>
-        <div id="typingIndicator" class="typing-indicator" aria-live="polite" aria-atomic="true" hidden></div>
-        <div class="chat-box">
-          <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
-          <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
-          <form id="messageForm" class="chat-compose" autocomplete="off"><input id="messageInput" type="text" maxlength="1000" placeholder="Escreva uma mensagem…" aria-label="Mensagem"><button id="chatSendBtn" class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem"><i class="fas fa-paper-plane"></i></button></form>
-        </div>
+        <div id="roomChatOpenHint" class="section-title room-chat-hint"><i class="fas fa-comments"></i> Chat da sala <button type="button" class="btn btn-sm btn-primary" onclick="openRoomChat()"><i class="fas fa-message"></i> Abrir chat</button></div>
       </div>
     </div>
   </div>
+
+  <section id="roomChatPanel" class="room-chat-panel" style="display:none;" aria-label="Chat da sala">
+    <div class="room-chat-card">
+      <div class="room-chat-header"><div><span class="room-chat-kicker"><i class="fas fa-comments"></i> CHAT DA SALA</span><h3 id="roomChatTitle">Sala</h3></div><button type="button" class="modal-close" onclick="closeRoomChat()" aria-label="Fechar chat">&times;</button></div>
+      <div id="typingIndicator" class="typing-indicator" aria-live="polite" aria-atomic="true" hidden></div>
+      <div class="chat-box">
+        <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
+        <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
+        <form id="messageForm" class="chat-compose" autocomplete="off"><input id="messageInput" type="text" inputmode="text" enterkeyhint="send" maxlength="1000" placeholder="Escreva uma mensagem…" aria-label="Mensagem"><button id="chatSendBtn" class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem"><i class="fas fa-paper-plane"></i></button></form>
+      </div>
+    </div>
+  </section>
 
   <div id="createRoomModal" class="modal" style="display:none;">
     <div class="modal-overlay" onclick="closeCreateRoom()"></div>
@@ -219,11 +229,27 @@
       modal.classList.remove('room-morph-active'); content.style.transformOrigin = ''; content.style.transform = '';
       const canMorph = !!(roomOrigin && content.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches && !matchMedia('(pointer: coarse)').matches);
       if (canMorph) modal.classList.add('room-morph-active');
-      document.getElementById('roomModalTitle').textContent = name; modal.style.display = 'flex';
+      document.getElementById('roomModalTitle').textContent = name; document.getElementById('roomChatTitle').textContent = name; modal.style.display = 'flex';
       const lb = document.getElementById('leaveRoomBtn'); if (lb) lb.style.display = (me && me.role === 'admin') ? 'none' : '';
       if (canMorph) requestAnimationFrame(() => { if (token === roomTransition && currentRoom === id) playRoomMorph(roomOrigin, content.getBoundingClientRect(), token, false); });
       try { await Promise.all([loadFiles(), loadMessages(), loadTyping()]); } catch (error) { toast(error.message, 'error'); }
     }
+
+    function openRoomChat() {
+      if (!currentRoom) return;
+      const panel = document.getElementById('roomChatPanel');
+      panel.style.display = 'flex';
+      document.body.classList.add('room-chat-open');
+      requestAnimationFrame(() => document.getElementById('messageInput')?.focus());
+    }
+    function closeRoomChat() {
+      const panel = document.getElementById('roomChatPanel');
+      if (panel) panel.style.display = 'none';
+      document.body.classList.remove('room-chat-open');
+      stopRoomTyping();
+    }
+    window.openRoomChat = openRoomChat;
+    window.closeRoomChat = closeRoomChat;
 
     async function leaveCurrentRoom() { if (!currentRoom) return; if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${currentRoom}/leave`, { method:'POST' }); toast('Você saiu da sala'); closeRoom(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
     document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (document.querySelector('.rename-modal')) return; ['createRoomModal','passwordModal'].forEach(id => { const m = document.getElementById(id); if (m && m.style.display !== 'none') m.style.display = 'none'; }); if (currentRoom) closeRoom(); });
@@ -233,7 +259,7 @@
       const startRect = content.getBoundingClientRect(), closingRoom = currentRoom, destination = roomOrigin;
       if (closingRoom) stopRoomTyping(closingRoom); currentRoom = null; filesRequestId++; lastRoomsSig = '';
       const token = ++roomTransition; cancelRoomAnimation();
-      const finish = () => { if (token !== roomTransition) return; modal.style.display = 'none'; modal.classList.remove('room-morph-active'); content.style.transformOrigin = ''; content.style.transform = ''; roomOrigin = null; roomClosePending = false; };
+      const finish = () => { if (token !== roomTransition) return; closeRoomChat(); modal.style.display = 'none'; modal.classList.remove('room-morph-active'); content.style.transformOrigin = ''; content.style.transform = ''; roomOrigin = null; roomClosePending = false; };
       if (destination && playRoomMorph(startRect, destination, token, true, finish)) roomClosePending = true; else finish();
     }
     async function loadFiles() { const roomId = currentRoom; if (!roomId) return; const requestId = ++filesRequestId; const rooms = await api('/api/rooms'); if (requestId !== filesRequestId || roomId !== currentRoom) return; const room = rooms.find(item => item.id === roomId); if (!room) { toast('Esta sala expirou ou foi removida', 'error'); closeRoom(); loadRooms(); return; } const sig = JSON.stringify(room.files); if (sig === lastFilesSig) return; lastFilesSig = sig; document.getElementById('fileCount').textContent = '(' + room.files.length + ')'; const list = document.getElementById('roomFiles'); list.innerHTML = room.files.length ? room.files.map(file => `<div class="file-row"><div class="file-main">${uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button>${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`).join('') : '<div class="empty-state"><i class="fas fa-inbox"></i><p>Nenhum arquivo nesta sala.</p></div>'; }
