@@ -121,7 +121,7 @@
         <div class="chat-box">
           <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
           <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
-          <div id="roomComposerHost"></div>
+          <form id="messageForm" class="chat-compose" autocomplete="off"><input id="messageInput" type="text" maxlength="1000" placeholder="Escreva uma mensagem…" aria-label="Mensagem"><button id="chatSendBtn" class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem"><i class="fas fa-paper-plane"></i></button></form>
         </div>
       </div>
     </div>
@@ -207,33 +207,11 @@
       const label = names.length === 1 ? names[0] + ' está digitando' : names.length === 2 ? names[0] + ' e ' + names[1] + ' estão digitando' : names[0] + ', ' + names[1] + ' e mais ' + (names.length - 2) + ' estão digitando';
       indicator.innerHTML = '<span class="typing-copy">' + esc(label) + '</span><span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>'; indicator.hidden = false;
     }
-    function ensureRoomComposer() {
-      const host = document.getElementById('roomComposerHost');
-      if (!host) return null;
-      let form = document.getElementById('messageForm');
-      if (form) return form;
-      host.innerHTML = '<form id="messageForm" class="chat-compose" autocomplete="off" novalidate><input id="messageInput" type="text" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" spellcheck="true" aria-label="Mensagem" placeholder="Escreva uma mensagem..." maxlength="1000"><button id="chatSendBtn" class="btn btn-primary chat-send" type="submit" title="Enviar" aria-label="Enviar mensagem"><i class="fas fa-paper-plane"></i></button></form>';
-      form = document.getElementById('messageForm');
-      const input = document.getElementById('messageInput');
-      input.addEventListener('input', updateRoomTyping);
-      input.addEventListener('blur', () => stopRoomTyping());
-      input.addEventListener('keydown', event => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-          event.preventDefault();
-          if (form.requestSubmit) form.requestSubmit();
-          else sendRoomMessage(event);
-        }
-      });
-      form.addEventListener('submit', sendRoomMessage);
-      return form;
-    }
-
     async function openRoom(id, name, sourceCard) {
       if (currentRoom && currentRoom !== id) stopRoomTyping();
       if (typingTimer) clearTimeout(typingTimer); typingTimer = null; typingActive = false; typingRoomId = null; typingLastSentAt = 0; lastTypingSig = '';
       currentRoom = id; lastFilesSig = ''; lastChatSig = ''; chatSeenIds = new Set();
       cancelRoomReply();
-      ensureRoomComposer();
       const modal = document.getElementById('roomModal'), content = modal.querySelector('.modal-content');
       const rect = sourceCard && sourceCard.getBoundingClientRect ? sourceCard.getBoundingClientRect() : null;
       roomOrigin = rect ? { left:rect.left, top:rect.top, width:rect.width, height:rect.height } : null;
@@ -318,6 +296,18 @@
       } catch (error) { status.textContent = ''; toast(error.message, 'error'); }
       setTimeout(() => { if (!/Enviando/.test(status.textContent)) { bar.style.display = 'none'; status.textContent = ''; } }, 2500);
     }
+    const roomMessageInput = document.getElementById('messageInput');
+    const roomMessageForm = document.getElementById('messageForm');
+    roomMessageInput.addEventListener('input', updateRoomTyping);
+    roomMessageInput.addEventListener('blur', () => stopRoomTyping());
+    roomMessageInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        if (roomMessageForm.requestSubmit) roomMessageForm.requestSubmit();
+        else sendRoomMessage(event);
+      }
+    });
+    roomMessageForm.addEventListener('submit', sendRoomMessage);
     document.getElementById('uploadForm').addEventListener('submit', event => event.preventDefault());
     document.getElementById('fileInput').addEventListener('change', event => { const files = Array.from(event.target.files); event.target.value = ''; sendFiles(files); });
     enableDrop(document.getElementById('roomModal'), '.drop-target', (el, files) => sendFiles(files));
@@ -348,7 +338,6 @@
       } finally {
         sendingRoomMessage = false;
         if (button) { button.disabled = false; button.classList.remove('is-loading'); }
-        if (input) input.focus();
       }
     }
     function showPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
