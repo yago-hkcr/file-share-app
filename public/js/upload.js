@@ -125,16 +125,36 @@
       const file = files[i];
       const label = '(' + (i + 1) + '/' + files.length + ') ' + file.name;
       say('Enviando ' + label + '...');
-      const prep = await postJson('/api/rooms/' + roomId + '/upload-url', { name: file.name, size: file.size, type: file.type });
-      if (prep.status === 501) {
-        const rest = files.slice(i);
-        await legacyUpload(roomId, rest);
-        return { sent: sent + rest.length, skipped };
+      let pathname;
+      if (file.size > 100 * 1024 * 1024) {
+        try {
+          const { upload } = await import('https://esm.sh/@vercel/blob@2.3.0/client?bundle');
+          const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
+          const objectPath = 'rooms/' + roomId + '/' + crypto.randomUUID() + '-' + safe;
+          const blob = await upload(objectPath, file, {
+            access: 'private',
+            handleUploadUrl: '/api/rooms/' + roomId + '/upload-token',
+            clientPayload: JSON.stringify({ size: file.size }),
+            multipart: true,
+            onUploadProgress: event => say('Enviando ' + label + ' ' + Math.round(event.percentage) + '%')
+          });
+          pathname = blob.pathname;
+        } catch (error) {
+          throw new Error(error && error.message ? error.message : 'Falha no envio multipart. Confira sua conexão e tente novamente.');
+        }
+      } else {
+        const prep = await postJson('/api/rooms/' + roomId + '/upload-url', { name: file.name, size: file.size, type: file.type });
+        if (prep.status === 501) {
+          const rest = files.slice(i);
+          await legacyUpload(roomId, rest);
+          return { sent: sent + rest.length, skipped };
+        }
+        if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
+        await putWithProgress(prep.data.presignedUrl, file, p => say('Enviando ' + label + ' ' + p + '%'));
+        pathname = prep.data.pathname;
       }
-      if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
-      await putWithProgress(prep.data.presignedUrl, file, p => say('Enviando ' + label + ' ' + p + '%'));
       const done = await postJson('/api/rooms/' + roomId + '/files/register', {
-        pathname: prep.data.pathname, name: file.name, size: file.size, mime: file.type
+        pathname, name: file.name, size: file.size, mime: file.type
       });
       if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
       sent++;
