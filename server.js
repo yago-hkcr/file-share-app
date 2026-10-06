@@ -252,6 +252,12 @@ async function createTables() {
   )`);
   await q('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log (created_at)');
   await q('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
+  await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen INTEGER DEFAULT 0');
+  const onboardingMigration = await one("SELECT value FROM settings WHERE key = 'onboarding_migration_v1'");
+  if (!onboardingMigration) {
+    await q("UPDATE users SET onboarding_seen = 1 WHERE onboarding_seen = 0 OR onboarding_seen IS NULL");
+    await q("INSERT INTO settings (key, value) VALUES ('onboarding_migration_v1', '1') ON CONFLICT (key) DO UPDATE SET value = '1'");
+  }
   await q(`CREATE TABLE IF NOT EXISTS friendships (
     id TEXT PRIMARY KEY, requester_id TEXT NOT NULL, addressee_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT, accepted_at TEXT
   )`);
@@ -575,9 +581,13 @@ app.post('/api/logout', wrap(async (req, res) => {
 }));
 
 app.get('/api/me', requireAuth, wrap(async (req, res) => {
-  const user = await one('SELECT id, username, email, role, status, avatar_color, avatar_image, created_at FROM users WHERE id = $1', [req.user.id]);
+  const user = await one('SELECT id, username, email, role, status, avatar_color, avatar_image, created_at, onboarding_seen FROM users WHERE id = $1', [req.user.id]);
   const unread = await one('SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND "read" = 0', [req.user.id]);
   res.json({ ...user, unread_notifications: num(unread && unread.count), max_upload_bytes: blobEnabled() ? MAX_BLOB_UPLOAD_BYTES : MAX_FILE_BYTES });
+}));
+app.post('/api/onboarding/complete', requireAuth, wrap(async (req, res) => {
+  await q('UPDATE users SET onboarding_seen = 1 WHERE id = $1', [req.user.id]);
+  res.json({ success: true });
 }));
 
 app.get('/api/preferences', requireAuth, wrap(async (req, res) => {
