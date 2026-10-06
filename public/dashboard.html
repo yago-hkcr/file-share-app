@@ -36,7 +36,6 @@
     /* Chat da sala: painel independente, fora do modal de arquivos.
        Isso elimina qualquer interferência de overflow/transform/overlay no teclado mobile. */
     .room-chat-hint { display:flex; align-items:center; gap:10px; }
-    .room-chat-hint .btn { margin-left:auto; }
     .room-chat-panel { position:fixed; inset:0; z-index:2100; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(5,3,12,.58); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
     .room-chat-card { width:min(720px,100%); height:min(720px,calc(100dvh - 36px)); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(var(--cy-rgb),.35); border-radius:22px; background:var(--surface,#181030); box-shadow:0 28px 90px rgba(0,0,0,.45); }
     .room-chat-header { display:flex; align-items:center; justify-content:space-between; gap:14px; flex:none; padding:16px 18px; border-bottom:1px solid var(--line); }
@@ -120,7 +119,7 @@
         </form>
         <div class="section-title"><i class="fas fa-folder-open"></i> Arquivos <span id="fileCount" class="section-count"></span></div>
         <div id="roomFiles" class="file-list"></div>
-        <div id="roomChatOpenHint" class="section-title room-chat-hint"><i class="fas fa-comments"></i> Chat da sala <button type="button" class="btn btn-sm btn-primary" onclick="openRoomChat()"><i class="fas fa-message"></i> Abrir chat</button></div>
+        <div class="section-title room-chat-hint"><i class="fas fa-comments"></i> Chat da sala</div>
       </div>
     </div>
   </div>
@@ -235,20 +234,6 @@
       try { await Promise.all([loadFiles(), loadMessages(), loadTyping()]); } catch (error) { toast(error.message, 'error'); }
     }
 
-    function openRoomChat() {
-      if (!currentRoom) return;
-      const panel = document.getElementById('roomChatPanel');
-      panel.style.display = 'flex';
-      document.body.classList.add('room-chat-open');
-      requestAnimationFrame(() => document.getElementById('messageInput')?.focus());
-    }
-    function closeRoomChat() {
-      const panel = document.getElementById('roomChatPanel');
-      if (panel) panel.style.display = 'none';
-      document.body.classList.remove('room-chat-open');
-      stopRoomTyping();
-    }
-    window.openRoomChat = openRoomChat;
     window.closeRoomChat = closeRoomChat;
 
     async function leaveCurrentRoom() { if (!currentRoom) return; if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${currentRoom}/leave`, { method:'POST' }); toast('Você saiu da sala'); closeRoom(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
