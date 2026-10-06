@@ -13,9 +13,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/onboarding.css">
   <link rel="stylesheet" href="/css/social.css?v=20261005b">
-  <script src="/js/common.js?v=20261005b"></script>
+  <script src="/js/common.js?v=20261005b"></script><script src="/js/onboarding.js" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
     .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
@@ -67,7 +67,7 @@
     <div class="header-left"><i class="fas fa-share-alt header-logo"></i><h1>FileShare</h1><span class="badge">Salas</span></div>
     <div class="header-right">
       <span class="profile-pill"><span class="avatar" id="userAvatar"></span><span id="userName">Carregando...</span></span>
-      <button class="btn btn-sm btn-outline" onclick="showPasswordModal()" title="Alterar senha"><i class="fas fa-key"></i></button>
+      <button class="btn btn-sm btn-outline" onclick="window.fileshareStartTour&&window.fileshareStartTour()" title="Abrir tutorial"><i class="fas fa-compass"></i></button><button class="btn btn-sm btn-outline" onclick="showPasswordModal()" title="Alterar senha"><i class="fas fa-key"></i></button>
       <button class="btn btn-sm btn-danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
     </div>
   </header>
