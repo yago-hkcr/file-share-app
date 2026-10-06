@@ -1636,7 +1636,68 @@ img, video, canvas, svg { max-width: 100%; }
   }
 }
 
+/* ===== ROOM CHAT: mobile keyboard hardening ===== */
+#roomModal #messageForm.chat-compose,
+#roomModal #messageInput,
+#roomModal #chatSendBtn {
+  -webkit-tap-highlight-color: transparent;
+}
+#roomModal #messageInput {
+  touch-action: auto;
+  -webkit-user-select: text;
+  user-select: text;
+  caret-color: var(--cy);
+}
+@media (max-width: 600px) {
+  #roomModal {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+  #roomModal .modal-content {
+    height: min(94dvh, 100dvh);
+    max-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  #roomModal .modal-body {
+    min-height: 0;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    overscroll-behavior: contain;
+  }
+  #roomModal .chat-box {
+    min-width: 0;
+  }
+  #roomModal #messageForm.chat-compose {
+    position: relative;
+    z-index: 20;
+    isolation: isolate;
+    flex: 0 0 auto;
+    min-height: 64px;
+    margin-bottom: 0;
+  }
+  #roomModal #messageInput {
+    position: relative;
+    z-index: 21;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    height: 48px;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto !important;
+    touch-action: auto !important;
+    font-size: 16px !important;
+  }
+  #roomModal #chatSendBtn {
+    position: relative;
+    z-index: 21;
+    pointer-events: auto !important;
+    touch-action: manipulation;
+  }
+}
+
 /* ===== ROOM CHAT: static native composer ===== */
+
 #roomModal #messageForm.chat-compose {
   position:relative;
   display:flex;
