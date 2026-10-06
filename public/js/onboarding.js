@@ -1,0 +1,20 @@
+/* FileShare — onboarding inicial com opção de pular e rever */
+(function(){
+'use strict';
+var KEY='fileshare-onboarding-seen-v1';
+var steps=[
+ {sel:'.dashboard-intro',title:'Bem-vindo ao FileShare',text:'Aqui você encontra suas salas e o caminho principal para compartilhar arquivos.'},
+ {sel:'#newRoomBtn',title:'Crie uma sala',text:'Use este botão para criar uma sala temporária e começar um compartilhamento em poucos segundos.'},
+ {sel:'.rooms-grid',title:'Suas salas ficam aqui',text:'Entre em uma sala existente, veja os arquivos, baixe o que precisar ou abra o link público.'},
+ {sel:'.header-right',title:'Seu acesso',text:'Aqui você encontra seu perfil, alteração de senha e o botão para sair da conta.'},
+ {sel:'#roomsGrid',title:'É isso.',text:'Agora você já sabe o essencial. O tutorial pode ser reaberto quando quiser.'}
+];
+function boot(){if(!document.body.classList.contains('app-page'))return;var overlay=document.createElement('div');overlay.className='fs-tour-overlay';document.body.appendChild(overlay);var card=document.createElement('section');card.className='fs-tour-card';card.setAttribute('role','dialog');card.setAttribute('aria-label','Tutorial do FileShare');card.innerHTML='<div class="fs-tour-kicker" id="tourKicker"></div><div class="fs-tour-title" id="tourTitle"></div><div class="fs-tour-text" id="tourText"></div><div class="fs-tour-progress"><i id="tourBar"></i></div><div class="fs-tour-actions"><button class="fs-tour-skip" id="tourSkip">Pular tutorial</button><div style="display:flex;gap:7px"><button class="fs-tour-back" id="tourBack">Voltar</button><button class="fs-tour-next" id="tourNext">Próximo</button></div></div>';document.body.appendChild(card);var replay=document.createElement('button');replay.className='fs-tour-replay';replay.innerHTML='<i class="fas fa-compass"></i> Guia rápido';replay.title='Abrir tutorial novamente';document.body.appendChild(replay);var idx=0,active=false,last=null;
+function close(){active=false;if(last)last.classList.remove('fs-tour-highlight');overlay.classList.remove('show');card.classList.remove('show');setTimeout(function(){if(!active)card.style.display='none'},250);try{localStorage.setItem(KEY,'1')}catch(e){}}
+function place(){var step=steps[idx],el=document.querySelector(step.sel);if(!el){if(idx<steps.length-1){idx++;place();return}el=document.body}if(last)last.classList.remove('fs-tour-highlight');last=el;last.classList.add('fs-tour-highlight');var r=el.getBoundingClientRect();var gap=18,cardW=Math.min(360,innerWidth-28),top=r.bottom+gap,left=Math.max(14,Math.min(innerWidth-cardW-14,r.left));var side='bottom';if(top+250>innerHeight){top=Math.max(14,r.top-260);side='top'}if(r.height<8){top=Math.min(innerHeight-270,Math.max(14,innerHeight/2-100))}card.dataset.side=side;card.style.left=left+'px';card.style.top=top+'px';card.style.display='block';requestAnimationFrame(function(){card.classList.add('show')});document.getElementById('tourKicker').textContent='GUIA · '+(idx+1)+' / '+steps.length;document.getElementById('tourTitle').textContent=step.title;document.getElementById('tourText').textContent=step.text;document.getElementById('tourBar').style.width=((idx+1)/steps.length*100)+'%';document.getElementById('tourBack').style.visibility=idx?'visible':'hidden';document.getElementById('tourNext').textContent=idx===steps.length-1?'Concluir':'Próximo';}
+function start(){if(active)return;active=true;idx=0;overlay.classList.add('show');card.style.display='block';requestAnimationFrame(function(){place()})}
+document.getElementById('tourSkip').onclick=close;document.getElementById('tourBack').onclick=function(){if(idx>0){idx--;place()}};document.getElementById('tourNext').onclick=function(){if(idx>=steps.length-1)close();else{idx++;place()}};overlay.onclick=close;replay.onclick=start;window.fileshareStartTour=start;
+var seen=false;try{seen=localStorage.getItem(KEY)==='1'}catch(e){}if(!seen&&!matchMedia('(prefers-reduced-motion: reduce)').matches)setTimeout(start,900);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
