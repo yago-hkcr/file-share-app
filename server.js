@@ -612,7 +612,7 @@ app.put('/api/profile/avatar', requireAuth, wrap(async (req, res) => {
 
 // =================== ADMIN: USUÁRIOS ===================
 app.get('/api/admin/users', asAdmin, wrap(async (req, res) => {
-  res.json(await q(`SELECT id, username, email, role, status, avatar_color, created_at FROM users
+  res.json(await q(`SELECT id, username, email, role, status, avatar_color, avatar_image, created_at FROM users
     ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, created_at DESC`));
 }));
 
