@@ -1615,7 +1615,23 @@ img, video, canvas, svg { max-width: 100%; }
 .chat-compose { position: relative; z-index: 5; }
 .chat-compose input { position: relative; z-index: 6; pointer-events: auto !important; touch-action: manipulation; -webkit-user-select: text; user-select: text; -webkit-appearance: none; appearance: none; }
 @media (max-width: 600px) {
-  .chat-compose { position: sticky; bottom: 0; padding-bottom: calc(10px + var(--safe-b, 0px)); }
+  .chat-compose { position: relative; padding-bottom: calc(10px + var(--safe-b, 0px)); }
   .chat-compose input { min-height: 46px; font-size: 16px !important; }
   .chat-send { min-width: 48px; min-height: 46px; }
+}
+
+
+/* ===== CHAT MOBILE: teclado nativo ===== */
+@media (max-width: 600px) {
+  #roomModal .chat-compose,
+  #roomModal .chat-compose input {
+    -webkit-tap-highlight-color: transparent;
+  }
+  #roomModal .chat-compose input {
+    display: block;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto !important;
+    touch-action: manipulation;
+  }
 }
