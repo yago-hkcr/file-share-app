@@ -822,7 +822,7 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
 // 3) /files/register: o servidor confere o envio e grava o arquivo no banco
 // ---------------------------------------------------------------------------
 const MAX_DIRECT_BYTES = 100 * 1024 * 1024;
-const MAX_BLOB_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
+const MAX_BLOB_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024;
 const BLOB_PATH_RE = /^rooms\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
 
 app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
