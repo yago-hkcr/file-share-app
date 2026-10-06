@@ -33,25 +33,23 @@
     .profile-pill { display:flex; align-items:center; gap:8px; color:var(--gray-700); font-size:14px; }
     .avatar { flex:none; }
     .modal-content { max-width:720px; }
+    /* Chat novo: compositor permanece dentro do modal, sem mover o DOM. */
+    #roomModal .chat-compose { position:relative; z-index:20; }
+    #roomModal #messageInput {
+      display:block; position:relative; z-index:21; width:100%; min-width:0;
+      pointer-events:auto; touch-action:manipulation; -webkit-user-select:text; user-select:text;
+      -webkit-appearance:none; appearance:none;
+    }
+    #roomModal .chat-send { position:relative; z-index:21; pointer-events:auto; }
     @media (max-width:600px) {
-      .mobile-chat-dock {
-        position:fixed!important; left:0!important; right:0!important; bottom:0!important;
-        z-index:2147483000!important; display:flex!important; align-items:stretch!important;
-        gap:8px!important; width:100vw!important; margin:0!important;
-        padding:10px max(10px,env(safe-area-inset-left,0px)) calc(10px + env(safe-area-inset-bottom,0px))!important;
-        background:rgba(10,6,18,.97)!important; border-top:1px solid rgba(139,92,246,.55)!important;
-        box-shadow:0 -12px 32px rgba(0,0,0,.28)!important; backdrop-filter:blur(18px);
-        -webkit-backdrop-filter:blur(18px); pointer-events:auto!important;
+      #roomModal .chat-compose {
+        position:relative; display:flex; align-items:center; width:100%;
+        margin-top:8px; padding:8px; gap:8px;
+        background:rgba(10,6,18,.92); border:1px solid rgba(139,92,246,.28);
+        border-radius:16px; box-sizing:border-box;
       }
-      .mobile-chat-dock input#messageInput {
-        flex:1 1 auto!important; width:1px!important; min-width:0!important;
-        height:48px!important; min-height:48px!important; margin:0!important;
-        border-radius:14px!important; font-size:16px!important;
-        pointer-events:auto!important; touch-action:manipulation!important;
-        -webkit-user-select:text!important; user-select:text!important;
-      }
-      .mobile-chat-dock .chat-send { flex:0 0 50px!important; width:50px!important; height:48px!important; min-height:48px!important; border-radius:14px!important; }
-      #roomModal .chat-box { padding-bottom:78px; }
+      #roomModal #messageInput { flex:1 1 auto; height:48px; min-height:48px; font-size:16px!important; }
+      #roomModal .chat-send { flex:0 0 48px; width:48px; height:48px; min-height:48px; }
     }
     @media (max-width:640px) {
       .dashboard-content { padding:20px 14px; }
@@ -227,28 +225,7 @@
       document.getElementById('roomModalTitle').textContent = name; modal.style.display = 'flex';
       const lb = document.getElementById('leaveRoomBtn'); if (lb) lb.style.display = (me && me.role === 'admin') ? 'none' : '';
       if (canMorph) requestAnimationFrame(() => { if (token === roomTransition && currentRoom === id) playRoomMorph(roomOrigin, content.getBoundingClientRect(), token, false); });
-      // Não forçamos o teclado ao abrir a sala: navegadores móveis podem ignorar foco
-      // programático fora de um gesto do usuário. O próprio toque no campo trata o foco.
-
       try { await Promise.all([loadFiles(), loadMessages(), loadTyping()]); } catch (error) { toast(error.message, 'error'); }
-    }
-    // Mobile: o compositor de chat sai do scroll do modal e vira um dock nativo.
-    // Isso elimina conflitos de stacking/overflow e deixa o toque diretamente no campo.
-    const mobileChatHome = document.createComment('mobile-chat-home');
-    let mobileChatDocked = false;
-    function setMobileChatDocked(enabled) {
-      const form = document.getElementById('messageForm');
-      if (!form || !window.matchMedia('(max-width: 600px)').matches) return;
-      if (enabled && !mobileChatDocked) {
-        form.parentNode.insertBefore(mobileChatHome, form);
-        document.body.appendChild(form);
-        form.classList.add('mobile-chat-dock');
-        mobileChatDocked = true;
-      } else if (!enabled && mobileChatDocked) {
-        mobileChatHome.parentNode && mobileChatHome.parentNode.insertBefore(form, mobileChatHome.nextSibling);
-        form.classList.remove('mobile-chat-dock');
-        mobileChatDocked = false;
-      }
     }
 
     async function leaveCurrentRoom() { if (!currentRoom) return; if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${currentRoom}/leave`, { method:'POST' }); toast('Você saiu da sala'); closeRoom(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
@@ -260,7 +237,7 @@
       if (closingRoom) stopRoomTyping(closingRoom); currentRoom = null; filesRequestId++; lastRoomsSig = '';
       const token = ++roomTransition; cancelRoomAnimation();
       const finish = () => { if (token !== roomTransition) return; modal.style.display = 'none'; modal.classList.remove('room-morph-active'); content.style.transformOrigin = ''; content.style.transform = ''; roomOrigin = null; roomClosePending = false; };
-      if (destination && playRoomMorph(startRect, destination, token, true, () => { setMobileChatDocked(false); finish(); })) roomClosePending = true; else { setMobileChatDocked(false); finish(); }
+      if (destination && playRoomMorph(startRect, destination, token, true, finish)) roomClosePending = true; else finish();
     }
     async function loadFiles() { const roomId = currentRoom; if (!roomId) return; const requestId = ++filesRequestId; const rooms = await api('/api/rooms'); if (requestId !== filesRequestId || roomId !== currentRoom) return; const room = rooms.find(item => item.id === roomId); if (!room) { toast('Esta sala expirou ou foi removida', 'error'); closeRoom(); loadRooms(); return; } const sig = JSON.stringify(room.files); if (sig === lastFilesSig) return; lastFilesSig = sig; document.getElementById('fileCount').textContent = '(' + room.files.length + ')'; const list = document.getElementById('roomFiles'); list.innerHTML = room.files.length ? room.files.map(file => `<div class="file-row"><div class="file-main">${uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button>${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`).join('') : '<div class="empty-state"><i class="fas fa-inbox"></i><p>Nenhum arquivo nesta sala.</p></div>'; }
     async function deleteFile(id) { if (!confirm('Excluir este arquivo?')) return; try { await api('/api/files/' + id, { method:'DELETE' }); toast('Arquivo excluído'); lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
@@ -325,8 +302,17 @@
     document.getElementById('uploadForm').addEventListener('submit', event => event.preventDefault());
     document.getElementById('fileInput').addEventListener('change', event => { const files = Array.from(event.target.files); event.target.value = ''; sendFiles(files); });
     enableDrop(document.getElementById('roomModal'), '.drop-target', (el, files) => sendFiles(files));
-    document.getElementById('messageInput').addEventListener('input', updateRoomTyping);
-    document.getElementById('messageInput').addEventListener('blur', () => stopRoomTyping());
+    const messageInput = document.getElementById('messageInput');
+    const messageForm = document.getElementById('messageForm');
+    messageInput.addEventListener('input', updateRoomTyping);
+    messageInput.addEventListener('blur', () => stopRoomTyping());
+    messageInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        if (messageForm.requestSubmit) messageForm.requestSubmit();
+        else sendRoomMessage(event);
+      }
+    });
     let sendingRoomMessage = false;
     async function sendRoomMessage(event) {
       if (event) event.preventDefault();
