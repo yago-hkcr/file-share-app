@@ -1635,3 +1635,64 @@ img, video, canvas, svg { max-width: 100%; }
     touch-action: manipulation;
   }
 }
+
+/* ===== ROOM CHAT: compositor nativo, sem hacks de teclado ===== */
+#roomModal #roomComposerHost {
+  display:block;
+  width:100%;
+  position:relative;
+  z-index:30;
+  pointer-events:auto;
+}
+#roomModal #messageForm.chat-compose {
+  position:relative !important;
+  display:flex;
+  align-items:center;
+  width:100%;
+  z-index:31;
+  pointer-events:auto !important;
+  box-sizing:border-box;
+  isolation:isolate;
+}
+#roomModal #messageInput {
+  position:relative !important;
+  z-index:32;
+  flex:1 1 auto;
+  min-width:0;
+  width:1px;
+  pointer-events:auto !important;
+  touch-action:manipulation;
+  -webkit-user-select:text !important;
+  user-select:text !important;
+  -webkit-appearance:none;
+  appearance:none;
+}
+#roomModal #chatSendBtn {
+  position:relative;
+  z-index:32;
+  pointer-events:auto !important;
+  flex:0 0 auto;
+}
+@media (max-width:600px) {
+  #roomModal #messageForm.chat-compose {
+    position:relative !important;
+    margin-top:8px;
+    padding:8px;
+    gap:8px;
+    min-height:64px;
+    border-radius:16px;
+  }
+  #roomModal #messageInput {
+    height:48px;
+    min-height:48px;
+    font-size:16px !important;
+    line-height:48px;
+    padding:0 14px;
+  }
+  #roomModal #chatSendBtn {
+    width:48px;
+    min-width:48px;
+    height:48px;
+    min-height:48px;
+  }
+}
