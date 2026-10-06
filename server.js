@@ -828,14 +828,30 @@ app.post('/api/rooms/:id/upload-token', wrap(async (req, res) => {
   }
 
   try {
-    const { handleUpload } = await blobClientSdk();
-    const result = await handleUpload({
+    const { handleUploadPresigned } = await blobClientSdk();
+    const { issueSignedToken } = await blobSdk();
+    const result = await handleUploadPresigned({
       request: req,
       body: req.body,
-      onBeforeGenerateToken: async pathname => {
+      getSignedToken: async pathname => {
         const m = BLOB_PATH_RE.exec(pathname);
         if (!m || m[1] !== req.params.id) throw new Error('Caminho de arquivo inválido');
-        return { maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, addRandomSuffix: false };
+        const validUntil = Date.now() + 24 * 60 * 60 * 1000;
+        const token = await issueSignedToken({
+          pathname,
+          operations: ['put'],
+          maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES,
+          validUntil
+        });
+        return {
+          token,
+          urlOptions: {
+            maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES,
+            addRandomSuffix: false,
+            allowOverwrite: false,
+            validUntil
+          }
+        };
       },
       onUploadCompleted: async () => {}
     });
