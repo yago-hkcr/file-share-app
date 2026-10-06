@@ -94,7 +94,7 @@
     const copy = event.target.closest('[data-copy-text]');
     if (copy) {
       const text = copy.dataset.copyText || '';
-      navigator.clipboard?.writeText(text).then(() => { copy.innerHTML = '<i class="fas fa-check"></i><span>Copiado</span>'; setTimeout(() => { if (copy.isConnected) copy.innerHTML = '<i class="fas fa-copy"></i><span>Copiar</span>'; }, 1400); }).catch(() => toast('Não foi possível copiar a mensagem.', 'error'));
+      copyMessageText(text, copy);
       return;
     }
     const quote = event.target.closest('[data-jump-id]');
