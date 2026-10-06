@@ -1609,3 +1609,13 @@ img, video, canvas, svg { max-width: 100%; }
   border-radius: 999px;
   line-height: 18px;
 }
+
+
+/* ===== CHAT MOBILE: campo sempre tocável e focável ===== */
+.chat-compose { position: relative; z-index: 5; }
+.chat-compose input { position: relative; z-index: 6; pointer-events: auto !important; touch-action: manipulation; -webkit-user-select: text; user-select: text; -webkit-appearance: none; appearance: none; }
+@media (max-width: 600px) {
+  .chat-compose { position: sticky; bottom: 0; padding-bottom: calc(10px + var(--safe-b, 0px)); }
+  .chat-compose input { min-height: 46px; font-size: 16px !important; }
+  .chat-send { min-width: 48px; min-height: 46px; }
+}
