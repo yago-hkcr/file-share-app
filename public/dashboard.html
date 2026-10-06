@@ -104,7 +104,7 @@
           <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
           <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
           <form id="messageForm" class="chat-compose" autocomplete="off">
-            <input id="messageInput" type="text" placeholder="Escreva uma mensagem..." maxlength="1000" required>
+            <input id="messageInput" type="text" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" spellcheck="true" placeholder="Escreva uma mensagem..." maxlength="1000" required>
             <button id="chatSendBtn" class="btn btn-primary chat-send" type="submit" title="Enviar"><i class="fas fa-paper-plane"></i></button>
           </form>
         </div>
@@ -207,6 +207,8 @@
       document.getElementById('roomModalTitle').textContent = name; modal.style.display = 'flex';
       const lb = document.getElementById('leaveRoomBtn'); if (lb) lb.style.display = (me && me.role === 'admin') ? 'none' : '';
       if (canMorph) requestAnimationFrame(() => { if (token === roomTransition && currentRoom === id) playRoomMorph(roomOrigin, content.getBoundingClientRect(), token, false); });
+      // No celular, garante que o campo de chat seja realmente focável depois que a sala abrir.
+      setTimeout(() => { const input = document.getElementById('messageInput'); if (input && currentRoom === id && window.matchMedia('(pointer: coarse)').matches) { input.focus({ preventScroll: true }); } }, 180);
       try { await Promise.all([loadFiles(), loadMessages(), loadTyping()]); } catch (error) { toast(error.message, 'error'); }
     }
     async function leaveCurrentRoom() { if (!currentRoom) return; if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${currentRoom}/leave`, { method:'POST' }); toast('Você saiu da sala'); closeRoom(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
