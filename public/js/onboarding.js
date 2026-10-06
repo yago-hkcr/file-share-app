@@ -162,6 +162,11 @@ function boot(){
   if(!document.body.classList.contains('app-page')) return;
   ensureUI();
   window.fileshareStartTour = start;
+  const tutorialBtn = document.getElementById('tutorialBtn');
+  if (tutorialBtn && !tutorialBtn.dataset.tourBound) {
+    tutorialBtn.dataset.tourBound = '1';
+    tutorialBtn.addEventListener('click', function(e){ e.preventDefault(); start(); });
+  }
 
   fetch('/api/me')
     .then(r => r.ok ? r.json() : null)
