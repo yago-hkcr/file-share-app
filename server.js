@@ -695,7 +695,7 @@ async function loadRooms(user) {
     q(`SELECT f.id, f.room_id, f.uploaded_by, f.original_name, f.size, f.mime_type, f.uploaded_at, u.username AS uploader, u.role AS uploader_role
        FROM files f LEFT JOIN users u ON f.uploaded_by = u.id
        WHERE f.room_id IN (SELECT id FROM rooms WHERE ${cond}) ORDER BY f.uploaded_at DESC`, params),
-    q(`SELECT rm.room_id, u.id, u.username, u.avatar_color, rm.role, rm.joined_at
+    q(`SELECT rm.room_id, u.id, u.username, u.avatar_color, u.avatar_image, rm.role, rm.joined_at
        FROM room_members rm JOIN users u ON rm.user_id = u.id
        WHERE rm.room_id IN (SELECT id FROM rooms WHERE ${cond})`, params)
   ]);
@@ -1038,7 +1038,7 @@ app.post('/api/rooms/:id/typing', asMember, wrap(async (req, res) => {
 // =================== MENSAGENS ===================
 app.get('/api/rooms/:id/messages', requireAuth, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Sem permissão' });
-  const msgs = await q(`SELECT m.*, u.username, u.avatar_color, u.role, parent.content AS reply_content, parent_user.username AS reply_username
+  const msgs = await q(`SELECT m.*, u.username, u.avatar_color, u.avatar_image, u.role, parent.content AS reply_content, parent_user.username AS reply_username
     FROM messages m JOIN users u ON m.user_id = u.id LEFT JOIN messages parent ON parent.id = m.reply_to_id
     LEFT JOIN users parent_user ON parent_user.id = parent.user_id WHERE m.room_id = $1 ORDER BY m.created_at DESC LIMIT 200`, [req.params.id]);
   res.json(msgs.reverse());
@@ -1244,7 +1244,7 @@ async function directFriend(req, res) {
 
 app.get('/api/dm/conversations', asMember, wrap(async (req, res) => {
   const me = req.user.id;
-  const friends = await q(`SELECT u.id, u.username, u.role, u.avatar_color FROM friendships f
+  const friends = await q(`SELECT u.id, u.username, u.role, u.avatar_color, u.avatar_image FROM friendships f
     JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
     WHERE (f.requester_id = $1 OR f.addressee_id = $1) AND f.status = 'accepted' ORDER BY u.username`, [me]);
   const latestRows = await q(`SELECT id, sender_id, recipient_id, content, created_at FROM (
@@ -1266,7 +1266,7 @@ app.get('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
   const friend = await directFriend(req, res); if (!friend) return;
   const me = req.user.id;
   const msgs = await q(`SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.content, m.reply_to_id, m.created_at,
-    u.username, u.avatar_color, u.role, parent.content AS reply_content, parent_user.username AS reply_username
+    u.username, u.avatar_color, u.avatar_image, u.role, parent.content AS reply_content, parent_user.username AS reply_username
     FROM direct_messages m JOIN users u ON u.id = m.sender_id LEFT JOIN direct_messages parent ON parent.id = m.reply_to_id
     LEFT JOIN users parent_user ON parent_user.id = parent.sender_id
     WHERE (m.sender_id = $1 AND m.recipient_id = $2) OR (m.sender_id = $2 AND m.recipient_id = $1)
@@ -1402,7 +1402,7 @@ app.get('/api/admin/private-rooms', asAdmin, wrap(async (req, res) => {
   const rooms = await q(`SELECT r.id, r.name, r.slug, r.description, r.created_by, r.created_at, r.is_public, r.expires_at, ou.username AS owner_name,
     (SELECT COUNT(*) FROM files f WHERE f.room_id = r.id) AS files, (SELECT COUNT(*) FROM messages m WHERE m.room_id = r.id) AS msgs
     FROM rooms r LEFT JOIN users ou ON ou.id = r.created_by WHERE r.is_public = 0 ORDER BY r.created_at DESC`);
-  const members = await q('SELECT rm.room_id, u.id, u.username, u.role FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id IN (SELECT id FROM rooms WHERE is_public = 0)');
+  const members = await q('SELECT rm.room_id, u.id, u.username, u.avatar_color, u.avatar_image, u.role FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id IN (SELECT id FROM rooms WHERE is_public = 0)');
   res.json(rooms.map(r => ({ ...r, files: num(r.files), msgs: num(r.msgs), members: members.filter(m => m.room_id === r.id).map(({ room_id, ...m }) => m) })));
 }));
 app.post('/api/admin/rooms/:id/owner', asAdmin, wrap(async (req, res) => {
