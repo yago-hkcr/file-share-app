@@ -207,7 +207,24 @@ async function createTables() {
       room_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       content TEXT NOT NULL,
+      reply_to_id TEXT,
       created_at TEXT
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS direct_messages (
+      id TEXT PRIMARY KEY,
+      sender_id TEXT NOT NULL,
+      recipient_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      reply_to_id TEXT,
+      created_at TEXT NOT NULL
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id TEXT PRIMARY KEY,
+      theme TEXT DEFAULT 'dark',
+      compact_mode INTEGER DEFAULT 0,
+      reduced_motion INTEGER DEFAULT 0,
+      refresh_seconds INTEGER DEFAULT 2,
+      browser_notifications INTEGER DEFAULT 0
     )`),
     q(`CREATE TABLE IF NOT EXISTS room_typing (
       room_id TEXT NOT NULL,
@@ -226,7 +243,10 @@ async function createTables() {
     )`)
   ]);
   await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
-  for (const col of ['last_login', 'last_seen', 'last_ip', 'force_logout_at']) await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col} TEXT`);
+  for (const col of ['last_login', 'last_seen', 'last_ip', 'force_logout_at', 'avatar_image']) await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col} TEXT`);
+  await q('ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id TEXT');
+  await q('CREATE INDEX IF NOT EXISTS idx_dm_pair_created ON direct_messages (sender_id, recipient_id, created_at)');
+  await q('CREATE INDEX IF NOT EXISTS idx_dm_recipient_created ON direct_messages (recipient_id, sender_id, created_at)');
   await q(`CREATE TABLE IF NOT EXISTS activity_log (
     id TEXT PRIMARY KEY, user_id TEXT, username TEXT, role TEXT, action TEXT NOT NULL, detail TEXT, ip TEXT, user_agent TEXT, created_at TEXT
   )`);
@@ -272,7 +292,7 @@ app.set('trust proxy', 1);
 
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-app.use(express.json());
+app.use(express.json({ limit: '220kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon-48.png')));
@@ -555,9 +575,39 @@ app.post('/api/logout', wrap(async (req, res) => {
 }));
 
 app.get('/api/me', requireAuth, wrap(async (req, res) => {
-  const user = await one('SELECT id, username, email, role, status, avatar_color, created_at FROM users WHERE id = $1', [req.user.id]);
+  const user = await one('SELECT id, username, email, role, status, avatar_color, avatar_image, created_at FROM users WHERE id = $1', [req.user.id]);
   const unread = await one('SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND "read" = 0', [req.user.id]);
   res.json({ ...user, unread_notifications: num(unread && unread.count), max_upload_bytes: blobEnabled() ? MAX_BLOB_UPLOAD_BYTES : MAX_FILE_BYTES });
+}));
+
+app.get('/api/preferences', requireAuth, wrap(async (req, res) => {
+  const row = await one('SELECT theme, compact_mode, reduced_motion, refresh_seconds, browser_notifications FROM user_preferences WHERE user_id = $1', [req.user.id]);
+  res.json({ has_preferences: !!row, theme: row && row.theme === 'light' ? 'light' : 'dark', compact_mode: num(row && row.compact_mode) === 1, reduced_motion: num(row && row.reduced_motion) === 1, refresh_seconds: [2, 5, 10].includes(num(row && row.refresh_seconds)) ? num(row.refresh_seconds) : 2, browser_notifications: num(row && row.browser_notifications) === 1 });
+}));
+
+app.put('/api/preferences', requireAuth, wrap(async (req, res) => {
+  const b = req.body || {};
+  const theme = b.theme === 'light' ? 'light' : 'dark';
+  const compact = b.compact_mode ? 1 : 0, reduced = b.reduced_motion ? 1 : 0;
+  const refresh = [2, 5, 10].includes(Number(b.refresh_seconds)) ? Number(b.refresh_seconds) : 2;
+  const notifications = b.browser_notifications ? 1 : 0;
+  await q(`INSERT INTO user_preferences (user_id, theme, compact_mode, reduced_motion, refresh_seconds, browser_notifications)
+    VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (user_id) DO UPDATE SET theme = EXCLUDED.theme, compact_mode = EXCLUDED.compact_mode,
+    reduced_motion = EXCLUDED.reduced_motion, refresh_seconds = EXCLUDED.refresh_seconds, browser_notifications = EXCLUDED.browser_notifications`,
+    [req.user.id, theme, compact, reduced, refresh, notifications]);
+  res.json({ success: true, theme, compact_mode: !!compact, reduced_motion: !!reduced, refresh_seconds: refresh, browser_notifications: !!notifications });
+}));
+
+app.put('/api/profile/avatar', requireAuth, wrap(async (req, res) => {
+  const image = req.body && req.body.image;
+  if (image !== null && image !== '' && (typeof image !== 'string' || image.length > 140000 || !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/i.test(image))) {
+    return res.status(400).json({ error: 'Use uma imagem JPG, PNG ou WebP de até 100 KB.' });
+  }
+  if (typeof image === 'string' && image && Buffer.byteLength(image.slice(image.indexOf(',') + 1), 'base64') > 100 * 1024) {
+    return res.status(400).json({ error: 'A foto precisa ter até 100 KB depois da redução.' });
+  }
+  await q('UPDATE users SET avatar_image = $1 WHERE id = $2', [image || null, req.user.id]);
+  res.json({ success: true, avatar_image: image || null });
 }));
 
 // =================== ADMIN: USUÁRIOS ===================
@@ -988,8 +1038,9 @@ app.post('/api/rooms/:id/typing', asMember, wrap(async (req, res) => {
 // =================== MENSAGENS ===================
 app.get('/api/rooms/:id/messages', requireAuth, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Sem permissão' });
-  const msgs = await q(`SELECT m.*, u.username, u.avatar_color, u.role FROM messages m
-    JOIN users u ON m.user_id = u.id WHERE m.room_id = $1 ORDER BY m.created_at DESC LIMIT 200`, [req.params.id]);
+  const msgs = await q(`SELECT m.*, u.username, u.avatar_color, u.role, parent.content AS reply_content, parent_user.username AS reply_username
+    FROM messages m JOIN users u ON m.user_id = u.id LEFT JOIN messages parent ON parent.id = m.reply_to_id
+    LEFT JOIN users parent_user ON parent_user.id = parent.user_id WHERE m.room_id = $1 ORDER BY m.created_at DESC LIMIT 200`, [req.params.id]);
   res.json(msgs.reverse());
 }));
 
@@ -997,10 +1048,14 @@ app.post('/api/rooms/:id/messages', asMember, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Entre na sala para enviar mensagens' });
   const content = String((req.body && req.body.content) || '').trim().slice(0, 1000);
   if (!content) return res.status(400).json({ error: 'Mensagem vazia' });
+  const replyTo = String((req.body && req.body.reply_to_id) || '').trim() || null;
+  if (replyTo && !(await one('SELECT id FROM messages WHERE id = $1 AND room_id = $2', [replyTo, req.params.id]))) return res.status(400).json({ error: 'A mensagem escolhida para responder não está mais disponível.' });
   const id = uuidv4();
-  await q('INSERT INTO messages (id, room_id, user_id, content, created_at) VALUES ($1,$2,$3,$4,$5)',
-    [id, req.params.id, req.user.id, content, ts()]);
-  res.json(await one('SELECT m.*, u.username, u.avatar_color, u.role FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id = $1', [id]));
+  await q('INSERT INTO messages (id, room_id, user_id, content, reply_to_id, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, req.params.id, req.user.id, content, replyTo, ts()]);
+  res.json(await one(`SELECT m.*, u.username, u.avatar_color, u.role, parent.content AS reply_content, parent_user.username AS reply_username
+    FROM messages m JOIN users u ON m.user_id = u.id LEFT JOIN messages parent ON parent.id = m.reply_to_id
+    LEFT JOIN users parent_user ON parent_user.id = parent.user_id WHERE m.id = $1`, [id]));
 }));
 
 // =================== NOTIFICAÇÕES ===================
@@ -1164,19 +1219,76 @@ const usableUser = u => u && (u.status === 'approved' || u.role === 'admin');
 
 app.get('/api/friends', asMember, wrap(async (req, res) => {
   const me = req.user.id, online = agoTs(2 * 60000);
-  const rows = await q(`SELECT f.id, f.requester_id, f.addressee_id, f.status, f.created_at, u.id AS uid, u.username, u.avatar_color, u.role, u.status AS ustatus, u.last_seen
+  const avatarColumn = req.query.avatars === '1' ? ', u.avatar_image' : '';
+  const rows = await q(`SELECT f.id, f.requester_id, f.addressee_id, f.status, f.created_at, u.id AS uid, u.username, u.avatar_color${avatarColumn}, u.role, u.status AS ustatus, u.last_seen
     FROM friendships f JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
     WHERE f.requester_id = $1 OR f.addressee_id = $1 ORDER BY f.created_at DESC`, [me]);
   const out = { friends: [], incoming: [], outgoing: [] };
   for (const r of rows) {
     if (!usableUser({ status: r.ustatus, role: r.role })) continue;
-    const item = { id: r.id, user_id: r.uid, username: r.username, avatar_color: r.avatar_color, role: r.role, online: !!(r.last_seen && r.last_seen >= online), created_at: r.created_at };
+    const item = { id: r.id, user_id: r.uid, username: r.username, avatar_color: r.avatar_color, avatar_image: r.avatar_image || null, role: r.role, online: !!(r.last_seen && r.last_seen >= online), created_at: r.created_at };
     if (r.status === 'accepted') out.friends.push(item);
     else if (r.addressee_id === me) out.incoming.push(item);
     else out.outgoing.push(item);
   }
   out.friends.sort((a, b) => (b.online - a.online) || a.username.localeCompare(b.username));
   res.json(out);
+}));
+
+async function directFriend(req, res) {
+  const target = await one('SELECT id, username, role, status, avatar_color, avatar_image FROM users WHERE id = $1', [req.params.id]);
+  if (!target || !usableUser(target)) { res.status(404).json({ error: 'Amigo não encontrado.' }); return null; }
+  if (!(await areFriends(req.user.id, target.id))) { res.status(403).json({ error: 'A conversa direta só está disponível entre amigos.' }); return null; }
+  return target;
+}
+
+app.get('/api/dm/conversations', asMember, wrap(async (req, res) => {
+  const me = req.user.id;
+  const friends = await q(`SELECT u.id, u.username, u.role, u.avatar_color FROM friendships f
+    JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
+    WHERE (f.requester_id = $1 OR f.addressee_id = $1) AND f.status = 'accepted' ORDER BY u.username`, [me]);
+  const latestRows = await q(`SELECT id, sender_id, recipient_id, content, created_at FROM (
+    SELECT dm.*, ROW_NUMBER() OVER (PARTITION BY CASE WHEN dm.sender_id = $1 THEN dm.recipient_id ELSE dm.sender_id END ORDER BY dm.created_at DESC, dm.id DESC) AS rn
+    FROM direct_messages dm WHERE dm.sender_id = $1 OR dm.recipient_id = $1
+  ) latest WHERE rn = 1`, [me]);
+  const latestByFriend = new Map(latestRows.map(row => [row.sender_id === me ? row.recipient_id : row.sender_id, row]));
+  const conversations = [];
+  for (const friend of friends) {
+    if (!usableUser(friend)) continue;
+    const latest = latestByFriend.get(friend.id);
+    conversations.push({ ...friend, latest_content: latest && latest.content, latest_at: latest && latest.created_at, latest_from_me: !!(latest && latest.sender_id === me) });
+  }
+  conversations.sort((a, b) => String(b.latest_at || '').localeCompare(String(a.latest_at || '')) || a.username.localeCompare(b.username));
+  res.json(conversations);
+}));
+
+app.get('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
+  const friend = await directFriend(req, res); if (!friend) return;
+  const me = req.user.id;
+  const msgs = await q(`SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.content, m.reply_to_id, m.created_at,
+    u.username, u.avatar_color, u.role, parent.content AS reply_content, parent_user.username AS reply_username
+    FROM direct_messages m JOIN users u ON u.id = m.sender_id LEFT JOIN direct_messages parent ON parent.id = m.reply_to_id
+    LEFT JOIN users parent_user ON parent_user.id = parent.sender_id
+    WHERE (m.sender_id = $1 AND m.recipient_id = $2) OR (m.sender_id = $2 AND m.recipient_id = $1)
+    ORDER BY m.created_at DESC LIMIT 150`, [me, friend.id]);
+  res.json(msgs.reverse());
+}));
+
+app.post('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
+  const friend = await directFriend(req, res); if (!friend) return;
+  const content = String((req.body && req.body.content) || '').trim().slice(0, 1000);
+  if (!content) return res.status(400).json({ error: 'Mensagem vazia.' });
+  const me = req.user.id;
+  const replyTo = String((req.body && req.body.reply_to_id) || '').trim() || null;
+  if (replyTo && !(await one(`SELECT id FROM direct_messages WHERE id = $1 AND
+    ((sender_id = $2 AND recipient_id = $3) OR (sender_id = $3 AND recipient_id = $2))`, [replyTo, me, friend.id]))) {
+    return res.status(400).json({ error: 'A mensagem escolhida para responder não está mais disponível.' });
+  }
+  const id = uuidv4(), createdAt = ts();
+  await q('INSERT INTO direct_messages (id, sender_id, recipient_id, content, reply_to_id, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, me, friend.id, content, replyTo, createdAt]);
+  await notify(friend.id, 'Nova mensagem de ' + req.user.username, content.slice(0, 140), 'info');
+  res.json({ success: true, id, created_at: createdAt });
 }));
 
 app.post('/api/friends/request', asMember, wrap(async (req, res) => {
