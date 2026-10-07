@@ -1,4 +1,4 @@
-// FX: partículas, luz interativa, tilt 3D, ondinha e contador. Leve: 30 fps, pausa fora da tela e reduz efeitos em aparelhos simples.
+// FX cyber: rede holográfica, grid neon, pulsos de dados e interação magnética.
 (function () {
   const root = document.documentElement;
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) { root.classList.add('fx-off'); return; }
@@ -25,7 +25,7 @@
     addEventListener('pointermove', moveGlow, { passive:true }); addEventListener('pointerdown', moveGlow, { passive:true });
     addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && e.pointerType !== 'pen') glow.classList.remove('is-visible'); });
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    let W = 0, H = 0, N = mobile ? 22 : (weak ? 34 : 54), nodes = [], pulses = [], mx = -999, my = -999, rgb = '168,85,247';
+    let W = 0, H = 0, N = mobile ? 18 : (weak ? 30 : 46), nodes = [], pulses = [], mx = -999, my = -999, rgb = '99,102,241';
     const LINK = mobile ? 110 : 140;
     const rnd = (a, b) => a + Math.random() * (b - a);
     function size() { W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
@@ -39,6 +39,24 @@
     addEventListener('pointerleave', () => { mx = my = -999; });
     size(); seed(); color();
 
+    const GRID = mobile ? 46 : 58;
+    const drawCyberGrid = t => {
+      const ox = (t * .006) % GRID, oy = (t * .003) % GRID;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(' + rgb + ',.045)';
+      ctx.beginPath();
+      for (let x = -GRID + ox; x < W + GRID; x += GRID) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+      for (let y = -GRID + oy; y < H + GRID; y += GRID) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(' + rgb + ',.065)';
+      ctx.beginPath();
+      for (let y = ((t * .018) % 120) - 120; y < H + 120; y += 120) {
+        ctx.moveTo(0, y); ctx.lineTo(W, y);
+      }
+      ctx.stroke();
+    };
+
     let last = 0, running = true, slow = 0, count = 0, tick = 0, nextPulse = 0;
     function frame(t) {
       if (!running) return;
@@ -47,6 +65,7 @@
       const t0 = performance.now(); last = t;
       if (++tick % 90 === 0) color();
       ctx.clearRect(0, 0, W, H);
+      drawCyberGrid(t);
       for (const n of nodes) {
         n.x += n.vx; n.y += n.vy;
         if (n.x < -10) n.x = W + 10; else if (n.x > W + 10) n.x = -10;
