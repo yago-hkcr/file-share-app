@@ -1,16 +1,31 @@
 /* ===== FX: animações leves (só transform/opacity, sem blur animado). Desligam com "reduzir movimento". ===== */
-:root { --fx-rgb: 255,107,74; }
-html[data-theme="dark"] { --fx-rgb: 168,85,247; }
+:root { --fx-rgb: 79,70,229; }
+html[data-theme="dark"] { --fx-rgb: 99,102,241; }
+html[data-theme="dark"] body { --cy-rgb: 99,102,241; }
+html[data-theme="dark"] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(99,102,241,.055), transparent 38%),
+    linear-gradient(180deg, rgba(4,6,18,.18), rgba(4,6,18,.72));
+}
+
 body.auth-page { --fx-rgb: var(--cy-rgb, 168,85,247); }
 
 /* Fundo vivo: rede de partículas (canvas), luzes à deriva e brilho que acompanha o ponteiro/toque */
 .fx-pointer-glow { position:fixed; z-index:-1; left:0; top:0; width:min(62vmax,620px); aspect-ratio:1; border-radius:50%; pointer-events:none; opacity:0; background:radial-gradient(circle, rgba(var(--fx-rgb),.25) 0%, rgba(var(--fx-rgb),.10) 34%, rgba(var(--fx-rgb),0) 70%); mix-blend-mode:screen; transform:translate3d(var(--fx-pointer-x,-1000px),var(--fx-pointer-y,-1000px),0) translate(-50%,-50%); transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .38s ease; }
 .fx-pointer-glow.is-visible { opacity:.82; }
-#fxCanvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+#fxCanvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; opacity: .95; }
 .fx-orb { position: fixed; z-index: -1; width: 62vmax; height: 62vmax; border-radius: 50%; pointer-events: none; opacity: .2;
   background: radial-gradient(circle, rgba(var(--fx-rgb),.55) 0%, rgba(var(--fx-rgb),0) 62%); will-change: transform; }
 .fx-orb.a { top: -28vmax; left: -22vmax; animation: fxDriftA 26s ease-in-out infinite alternate; }
 .fx-orb.b { bottom: -30vmax; right: -24vmax; opacity: .16; animation: fxDriftB 32s ease-in-out infinite alternate; }
+.fx-orb.c { width: 42vmax; height: 42vmax; top: 28%; left: 42%; opacity: .07; animation: fxDriftC 20s ease-in-out infinite alternate; }
+.fx-scanlines { position:fixed; inset:0; z-index:-1; pointer-events:none; opacity:.18; background:repeating-linear-gradient(180deg, transparent 0 3px, rgba(99,102,241,.035) 4px, transparent 5px); mix-blend-mode:screen; }
+@keyframes fxDriftC { to { transform: translate3d(8vmax,-6vmax,0) scale(1.18); } }
 @keyframes fxDriftA { to { transform: translate3d(34vmax, 22vmax, 0) scale(1.25); } }
 @keyframes fxDriftB { to { transform: translate3d(-30vmax, -18vmax, 0) scale(1.2); } }
 
@@ -78,14 +93,14 @@ body.app-page .btn-primary:not(:disabled)::after, body.app-page .btn-green:not(:
 .room-card, .stat-card, .sala-file-card { transition: transform .18s ease-out, box-shadow .3s ease; will-change: transform; }
 .room-card { transform-origin:center; }
 #roomModal.room-morph-active .modal-content { animation:none !important; transform-origin:top left; will-change:transform,opacity; }
-.fx-tilt { box-shadow: 0 18px 40px rgba(var(--fx-rgb), .22), 0 0 0 1px rgba(var(--fx-rgb), .45) !important; transition: transform .06s linear, box-shadow .3s ease; }
+.fx-tilt { box-shadow: 0 18px 40px rgba(var(--fx-rgb), .22), 0 0 0 1px rgba(var(--fx-rgb), .45), 0 0 26px rgba(var(--fx-rgb), .10) !important; transition: transform .06s linear, box-shadow .3s ease; }
 .file-row, .nav-item { transition: transform .18s ease, background-color .2s ease; }
 .file-row:hover { transform: translate3d(4px, 0, 0); }
 .nav-item:hover { transform: translate3d(5px, 0, 0); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .001ms !important; }
-  #fxCanvas, .fx-orb, .fx-pointer-glow { display: none; }
+  #fxCanvas, .fx-orb, .fx-pointer-glow, .fx-scanlines { display: none; }
 }
 html.fx-lite .fx-orb { display: none; }
 @media (max-width: 700px) { .fx-orb { opacity: .14; } .fx-pointer-glow { width:min(92vw,430px); mix-blend-mode:normal; } }
