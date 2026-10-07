@@ -1,0 +1,14 @@
+/* ===== FX: anima√ß√µes leves (s√≥ transform/opacity, sem blur animado). Desligam com "reduzir movimento". ===== */
+:root { --fx-rgb: 255,107,74; }
+html[data-theme="dark"] { --fx-rgb: 168,85,247; }
+body.auth-page { --fx-rgb: var(--cy-rgb, 168,85,247); }
+
+/* Fundo vivo: rede de part√≠culas (canvas), luzes √† deriva e brilho que acompanha o ponteiro/toque */
+.fx-pointer-glow { position:fixed; z-index:-1; left:0; top:0; width:min(62vmax,620px); aspect-ratio:1; border-radius:50%; pointer-events:none; opacity:0; background:radial-gradient(circle, rgba(var(--fx-rgb),.25) 0%, rgba(var(--fx-rgb),.10) 34%, rgba(var(--fx-rgb),0) 70%); mix-blend-mode:screen; transform:translate3d(var(--fx-pointer-x,-1000px),var(--fx-pointer-y,-1000px),0) translate(-50%,-50%); transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .38s ease; }
+.fx-pointer-glow.is-visible { opacity:.82; }
+#fxCanvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+.fx-orb { position: fixed; z-index: -1; width: 62vmax; height: 62vmax; border-radius: 50%; pointer-events: none; opacity: .2;
+  background: radial-gradient(circle, rgba(var(--fx-rgb),.55) 0%, rgba(var(--fx-rgb),0) 62%); will-change: transform; }
+.fx-orb.a { top: -28vmax; left: -22vmax; animation: fxDriftA 26s ease-in-out infinite alternate; }
+.fx-orb.b { bottom: -30vmax; right: -24vmax; opacity: .16; animation: fxDriftB 32s ease-in-out infinite alternate; }
+@keyframes fxDriftA { to { transform: transla∂ªßq´^

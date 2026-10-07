@@ -1,0 +1,23 @@
+/* FileShare first-run film â€” editorial transitions with a lightweight CSS-only stage. */
+.login-intro {
+  --intro-violet: #a879ff;
+  --intro-cyan: #72e9f4;
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  overflow: hidden;
+  isolation: isolate;
+  color: #f8f6ff;
+  background: #07060c;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity .65s cubic-bezier(.22,1,.36,1), visibility .65s;
+}
+.login-intro.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.login-intro * { box-sizing: border-box; }
+.intro-atmosphere, .intro-atmosphere > * { position: absolute; inset: 0; pointer-events: none; }
+.intro-atmosphere { z-index: -1; overflow: hidden; background: radial-gradient(ellipse at 50% 48%, #181127 0%, #0b0911 42%, #07060c 76%); }
+.atmosphere-glow { inset: auto!important; width: min(65vw, 850px); aspect-ratio: 1; border-radius: 50%; filter: blur(90px); opacity: .17; will-change: transform; }
+.glow-a { top: -34%; left: -15%; background: #7238ea; animation: introDriftA 15s ease-in-out infinite alternate; }
+.glow-b { right: -18%; bottom: -45%; background: #087f9a; opacity: .15; animation: introDriftB 19s ease-in-out infinite alternate; }
+.atmosphere-grid { inset: -55% -25% -15%; opacity: .085; background-image: linear-gradient(#d6c4ff 1px, transparent 1px), linear-gradient(90deg, #d6c4ff 1px, transparent 1px); background-size: 74px 74px; transform: perspective(850px) rotateX(61deg) translateY(30%); transform-origin: center bottom; mask-image: linear-gradient¶»§q«^

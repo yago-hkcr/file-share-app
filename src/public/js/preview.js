@@ -1,0 +1,8 @@
+/* ===== FileShare: visualizador de arquivos ===== */
+(function(){'use strict';
+const esc=v=>{const d=document.createElement('div');d.textContent=v==null?'':String(v);return d.innerHTML};
+const sizeLabel=b=>{const n=Number(b)||0;if(!n)return'0 B';const u=['B','KB','MB','GB'];const i=Math.min(3,Math.floor(Math.log(n)/Math.log(1024)));return(n/Math.pow(1024,i)).toFixed(i?1:0)+' '+u[i]};
+const kind=(name,mime)=>{const m=String(mime||'').toLowerCase(),n=String(name||'').toLowerCase();if(m.startsWith('image/'))return['IMAGE','fa-image'];if(m.startsWith('video/'))return['VIDEO','fa-film'];if(m.startsWith('audio/'))return['AUDIO','fa-music'];if(m==='application/pdf'||n.endsWith('.pdf'))return['PDF','fa-file-pdf'];if(m.startsWith('text/')||/\.(txt|md|json|csv|log|js|css|html|xml|svg|yml|yaml|ini|conf)$/i.test(n))return['TEXTO','fa-file-code'];return['ARQUIVO','fa-file']};
+function close(){const o=document.getElementById('filePreviewOverlay');if(!o)return;o.remove();document.body.classList.remove('fp-opened');document.removeEventListener('keydown',escKey)}
+function escKey(e){if(e.key==='Escape'&&document.getElementById('filePreviewOverlay')){close();document.removeEventListener('keydown',escKey)}}
+function showPreviewError(stage,meta){if(!stage.isConnected)return;stage.innerHTML='<div class="fp-empty"><i class="fas fa-triangle-exclamation"></i><strong>N√£o foi poss√≠vel visualizar</strong><span>O arquivo n√£o p√¥de ser carregado. Verifique a conex√£o e tente novamente.</span><b∂ªßq´^

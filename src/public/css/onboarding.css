@@ -1,0 +1,46 @@
+/* Guided tour for first-time FileShare users. */
+.fs-tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99990;
+  background: rgba(4, 3, 10, .72);
+  backdrop-filter: blur(8px) saturate(.82);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s ease;
+}
+.fs-tour-overlay.show { opacity: 1; pointer-events: auto; }
+.fs-tour-card {
+  position: fixed;
+  z-index: 99992;
+  width: min(410px, calc(100vw - 28px));
+  max-height: calc(100vh - 24px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  pointer-events: none;
+  overscroll-behavior: contain;
+  padding: 21px;
+  border: 1px solid rgba(206, 183, 255, .24);
+  border-radius: 22px;
+  color: #f9f6ff;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(160, 112, 255, .2), transparent 43%),
+    radial-gradient(circle at 100% 100%, rgba(41, 190, 209, .1), transparent 39%),
+    rgba(13, 11, 21, .97);
+  box-shadow: 0 32px 110px rgba(0,0,0,.62), 0 0 76px rgba(139,92,246,.16), inset 0 1px rgba(255,255,255,.08);
+  backdrop-filter: blur(26px);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(11px) scale(.975);
+  transition: opacity .28s ease, transform .38s cubic-bezier(.22,1,.36,1);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(176,145,255,.35) transparent;
+}
+.fs-tour-card.show { opacity: 1; visibility: visible; pointer-events: auto; transform: none; }
+.fs-tour-card:before {
+  content: "";
+  position: absolute;
+  left: var(--tour-arrow-x, 50%);
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(206,183,255,.24¶»§q«^
