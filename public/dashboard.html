@@ -16,7 +16,8 @@
   <link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/onboarding.css?v=20261007a">
   <link rel="stylesheet" href="/css/social.css?v=20261006e">
   <link rel="stylesheet" href="/css/collections.css?v=20261007j">
-  <script src="/js/common.js?v=20261007a"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261007a" defer></script>
+  <link rel="stylesheet" href="/css/library.css?v=20261007a">
+  <script src="/js/common.js?v=20261007a"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261007b" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
     .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
@@ -91,6 +92,7 @@
     <nav class="dashboard-tabs" role="tablist" aria-label="Seções do FileShare">
       <button class="dashboard-tab is-active" id="roomsTab" type="button" role="tab" aria-selected="true"><i class="fas fa-door-open"></i> Salas</button>
       <button class="dashboard-tab" id="collectionsTab" type="button" role="tab" aria-selected="false"><i class="fas fa-inbox"></i> Coletas</button>
+      <button class="dashboard-tab" id="libraryTab" type="button" role="tab" aria-selected="false"><i class="fas fa-bookmark"></i> Meu Acervo</button>
     </nav>
     <section id="roomsPanel" role="tabpanel" aria-labelledby="roomsTab">
     <div class="dashboard-intro">
@@ -137,7 +139,37 @@
 
 
     </section>
+    <section id="libraryPanel" role="tabpanel" aria-labelledby="libraryTab" hidden>
+      <div class="dashboard-intro">
+        <div><h2><i class="fas fa-bookmark"></i> Meu Acervo</h2><p>Guarde o que importa, organize por prateleiras e encontre seus arquivos do seu jeito.</p></div>
+        <button id="refreshLibraryBtn" class="btn btn-outline" type="button"><i class="fas fa-sync-alt"></i> Atualizar</button>
+      </div>
+      <div class="library-toolbar">
+        <label class="library-search"><i class="fas fa-search" aria-hidden="true"></i><input id="librarySearch" type="search" maxlength="120" placeholder="Buscar por arquivo, sala, prateleira ou anotação" autocomplete="off" aria-label="Buscar no Meu Acervo"></label>
+        <label class="library-shelf-filter"><span>Prateleira</span><select id="libraryShelfFilter" aria-label="Filtrar por prateleira"><option value="">Todas</option></select></label>
+        <button id="libraryFavoritesFilter" class="btn btn-outline" type="button" aria-pressed="false"><i class="far fa-star"></i> Favoritos</button>
+      </div>
+      <div id="librarySummary" class="library-summary" aria-live="polite"></div>
+      <div id="libraryGrid" class="library-grid"><div class="loading"><i class="fas fa-spinner fa-spin"></i> Preparando seu Acervo...</div></div>
+    </section>
   </main>
+
+  <div id="libraryEditorModal" class="modal library-editor-modal" style="display:none;" aria-hidden="true">
+    <div class="modal-overlay" data-library-close></div>
+    <div class="modal-content library-editor-card" role="dialog" aria-modal="true" aria-labelledby="libraryEditorTitle">
+      <div class="modal-header"><h3 id="libraryEditorTitle"><i class="fas fa-bookmark"></i> Guardar no Meu Acervo</h3><button class="modal-close" type="button" data-library-close aria-label="Fechar">&times;</button></div>
+      <form id="libraryEditorForm">
+        <div class="modal-body">
+          <input id="libraryFileId" type="hidden"><input id="libraryItemId" type="hidden">
+          <div class="library-editor-file"><i class="fas fa-file-arrow-down"></i><span id="libraryEditorFileName"></span></div>
+          <label class="library-editor-field" for="libraryEditorShelf">Prateleira<input id="libraryEditorShelf" type="text" maxlength="50" placeholder="Ex.: Trabalho, documentos, ideias"></label>
+          <label class="library-editor-field" for="libraryEditorNote">Sua anotação<textarea id="libraryEditorNote" maxlength="500" rows="3" placeholder="Por que esse arquivo é importante? Adicione contexto para encontrar depois."></textarea><small>Privada: só você pode ver esta anotação.</small></label>
+          <label class="library-favorite-check"><input id="libraryEditorFavorite" type="checkbox"><span><i class="fas fa-star"></i> Marcar como importante</span></label>
+        </div>
+        <div class="modal-footer library-editor-actions"><button id="removeLibraryItem" class="btn btn-outline btn-danger" type="button" hidden><i class="fas fa-bookmark-slash"></i> Remover do Acervo</button><span class="library-editor-spacer"></span><button class="btn btn-outline" type="button" data-library-close>Cancelar</button><button id="saveLibraryItem" class="btn btn-primary" type="submit"><i class="fas fa-bookmark"></i> Guardar arquivo</button></div>
+      </form>
+    </div>
+  </div>
 
   <div id="roomModal" class="modal" style="display:none;">
     <div class="modal-overlay" onclick="closeRoom()"></div>
@@ -312,7 +344,7 @@
       if (destination && playRoomMorph(startRect, destination, token, true, finish)) roomClosePending = true; else finish();
     }
     function roomFileMarkup(file, insideCollection = false) {
-      return `<div class="file-row"><div class="file-main">${insideCollection ? '' : uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button>${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`;
+      return `<div class="file-row"><div class="file-main">${insideCollection ? '' : uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button><button class="btn btn-sm ${Number(file.in_library) ? 'btn-primary' : 'btn-outline'}" title="${Number(file.in_library) ? 'Editar no Meu Acervo' : 'Guardar no Meu Acervo'}" aria-label="${Number(file.in_library) ? 'Editar no Meu Acervo' : 'Guardar no Meu Acervo'}" onclick="openLibraryEditor(this.dataset.id,this.dataset.name,Number(this.dataset.saved))" data-id="${esc(file.id)}" data-name="${esc(file.original_name)}" data-saved="${Number(file.in_library) ? 1 : 0}"><i class="fas ${Number(file.in_library) ? 'fa-bookmark' : 'fa-bookmark'}"></i></button>${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`;
     }
     function renderRoomFiles(files) {
       const groups = new Map(), regular = [];
@@ -539,7 +571,8 @@
   <script src="/js/personal.js?v=20261007b"></script>
   <script src="/js/cursor.js"></script>
   <script src="/js/preview.js"></script>
-  <script src="/js/collections.js?v=20261007j"></script>
+  <script src="/js/collections.js?v=20261007k"></script>
+  <script src="/js/library.js?v=20261007a"></script>
   <script src="/js/announce.js"></script>
 </body>
 </html>

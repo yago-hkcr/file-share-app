@@ -178,16 +178,23 @@
     finally { collectionsLoading = false; }
   }
   function setTab(active) {
-    const isCollections = active === 'collections';
-    $('roomsPanel').hidden = isCollections; $('collectionsPanel').hidden = !isCollections;
-    $('roomsTab').classList.toggle('is-active', !isCollections); $('collectionsTab').classList.toggle('is-active', isCollections);
-    $('roomsTab').setAttribute('aria-selected', String(!isCollections)); $('collectionsTab').setAttribute('aria-selected', String(isCollections));
-    if (isCollections) { loadRoomsForSelect(); loadCollections(); }
+    const panels = { rooms: 'roomsPanel', collections: 'collectionsPanel', library: 'libraryPanel' };
+    const tabs = { rooms: 'roomsTab', collections: 'collectionsTab', library: 'libraryTab' };
+    Object.entries(panels).forEach(([key, panelId]) => {
+      const selected = key === active;
+      $(panelId).hidden = !selected;
+      $(tabs[key]).classList.toggle('is-active', selected);
+      $(tabs[key]).setAttribute('aria-selected', String(selected));
+    });
+    if (active === 'collections') { loadRoomsForSelect(); loadCollections(); }
+    if (active === 'library') window.loadLibrary?.();
   }
   $('roomsTab').addEventListener('click', () => setTab('rooms'));
   $('collectionsTab').addEventListener('click', () => setTab('collections'));
+  $('libraryTab').addEventListener('click', () => setTab('library'));
   $('refreshCollectionsBtn').addEventListener('click', loadCollections);
   setInterval(() => { if (!document.hidden && !$('collectionsPanel').hidden) loadCollections(true); }, 2000);
+  setInterval(() => { if (!document.hidden && !$('libraryPanel').hidden) window.loadLibrary?.(true); }, 2000);
 
   $('addCollectionItem').addEventListener('click', () => {
     const host = $('collectionItems');
