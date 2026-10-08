@@ -3,7 +3,21 @@
   const token = window.location.pathname.split('/').filter(Boolean).pop() || '';
   const base = '/api/coletas/enviar/' + encodeURIComponent(token);
   const COLLECTION_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
-  let collection = null, pendingFiles = [], reviewing = false, busy = false, senderName = '', nameConfirmed = false, collectionSignature = '', stateFetchPromise = null, statePollTimer = null, stateHeartbeatTimer = null;
+  const UPLOAD_STALE_MS = 90 * 1000;
+  const UPLOAD_STALL_TIMEOUT_MS = 90 * 1000;
+  const senderDraftKey = 'fs_collection_sender:' + token;
+  const initialSenderDraft = (() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(senderDraftKey) || '{}');
+      const name = String(saved.name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+      return { name, confirmed: Boolean(name && saved.confirmed) };
+    } catch (_) { return { name: '', confirmed: false }; }
+  })();
+  let collection = null, pendingFiles = [], reviewing = false, busy = false, senderName = initialSenderDraft.name, nameConfirmed = initialSenderDraft.confirmed, collectionSignature = '', stateFetchPromise = null, statePollTimer = null, stateHeartbeatTimer = null;
+  function persistSenderDraft(confirmed = nameConfirmed) {
+    try { sessionStorage.setItem(senderDraftKey, JSON.stringify({ name: senderName, confirmed: Boolean(confirmed && senderName) })); } catch (_) {}
+  }
+  function clearSenderDraft() { try { sessionStorage.removeItem(senderDraftKey); } catch (_) {} }
   const esc = value => { const div = document.createElement('div'); div.textContent = String(value == null ? '' : value); return div.innerHTML; };
   const sizeLabel = value => {
     const bytes = Number(value) || 0;
@@ -58,6 +72,7 @@
   function showClosed(message, state = 'closed') {
     stopStatePolling();
     stopAccessHeartbeat();
+    if (['submitted', 'suspended', 'expired', 'replaced', 'invalid', 'closed'].includes(state)) clearSenderDraft();
     root.classList.remove('is-name-gate');
     pendingFiles.forEach(entry => URL.revokeObjectURL(entry.previewUrl)); pendingFiles = [];
     const reasons = {
@@ -77,11 +92,16 @@
   function showMultiUseSuccess() {
     stopStatePolling(); stopAccessHeartbeat();
     pendingFiles.forEach(entry => URL.revokeObjectURL(entry.previewUrl)); pendingFiles = [];
+    clearSenderDraft();
     root.classList.remove('is-name-gate');
     root.innerHTML = '<div class="collection-complete is-submitted"><i class="fas fa-circle-check"></i><p class="collection-close-eyebrow">ENVIO RECEBIDO</p><h1>Obrigado, ' + esc(senderName) + '!</h1><p>Seus arquivos foram entregues. O link continua aberto até o prazo para outras pessoas enviarem os delas.</p><button class="btn btn-primary" type="button" data-next-sender><i class="fas fa-user-plus"></i> Preparar outro envio</button></div>';
     collection = null; collectionSignature = ''; reviewing = false; busy = false; nameConfirmed = false;
   }
   function readyUploads(itemId) { return (collection.uploads || []).filter(file => file.item_id === itemId && file.status === 'ready'); }
+  function uploadIsActive(file) {
+    const timestamp = new Date(String(file.uploaded_at || '').replace(' ', 'T') + (String(file.uploaded_at || '').endsWith('Z') ? '' : 'Z')).getTime();
+    return file.status === 'uploading' && Number.isFinite(timestamp) && Date.now() - timestamp < UPLOAD_STALE_MS;
+  }
   function selectedFiles(itemId) { return pendingFiles.map((entry, index) => ({ ...entry, index })).filter(entry => entry.itemId === itemId); }
   function itemFileCount(itemId) { return readyUploads(itemId).length + selectedFiles(itemId).length; }
   function requestedQuantity(item) { return Math.max(1, Number(item.quantity) || 1); }
@@ -103,7 +123,11 @@
     const current = Math.min(itemFileCount(item.id), quantity);
     return '<div class="collection-request-item" data-request-item="' + esc(item.id) + '"><div class="collection-request-item-head"><div><strong>' + esc(item.label) + '</strong><small class="collection-quantity-progress">' + current + ' de ' + quantity + ' selecionado' + (quantity === 1 ? '' : 's') + '</small></div><span class="' + (Number(item.required) ? 'collection-required' : 'collection-optional') + '">' + (Number(item.required) ? 'Obrigatório' : 'Opcional') + (quantity > 1 ? ' · ' + quantity + ' arquivos' : '') + '</span></div>' +
       '<label class="collection-drop-zone" data-drop-item="' + esc(item.id) + '"><i class="fas fa-cloud-arrow-up" aria-hidden="true"></i><span><strong>Arraste os arquivos aqui</strong><small>ou toque para escolher no celular</small></span><input type="file" multiple data-item-id="' + esc(item.id) + '" ' + (busy ? 'disabled' : '') + ' aria-label="Escolher arquivos para ' + esc(item.label) + '"></label>' +
-      '<div class="collection-selected-list">' + saved.map(file => '<div class="collection-saved-file"><i class="fas fa-file-circle-check" aria-hidden="true"></i><span>' + esc(file.original_name) + '<small>' + sizeLabel(file.size) + (file.status === 'uploading' ? ' · envio interrompido' : ' · pronto') + '</small></span><button type="button" data-remove-upload="' + esc(file.id) + '" title="Remover este arquivo" aria-label="Remover este arquivo" ' + (busy ? 'disabled' : '') + '><i class="fas fa-xmark"></i></button></div>').join('') +
+      '<div class="collection-selected-list">' + saved.map(file => {
+        const active = uploadIsActive(file);
+        const status = file.status === 'uploading' ? (active ? ' · envio em andamento em outra aba' : ' · envio interrompido') : ' · pronto';
+        return '<div class="collection-saved-file"><i class="fas fa-file-circle-check" aria-hidden="true"></i><span>' + esc(file.original_name) + '<small>' + sizeLabel(file.size) + status + '</small></span><button type="button" data-remove-upload="' + esc(file.id) + '" title="Remover este arquivo" aria-label="Remover este arquivo" ' + (busy || active ? 'disabled' : '') + '><i class="fas fa-xmark"></i></button></div>';
+      }).join('') +
       queued.map(entry => '<div class="collection-preview-card">' + previewMarkup(entry) + '<button type="button" data-remove-selected="' + entry.index + '" title="Remover da seleção" aria-label="Remover ' + esc(entry.file.name) + ' da seleção" ' + (busy ? 'disabled' : '') + '><i class="fas fa-xmark"></i></button></div>').join('') +
       '</div></div>';
   }
@@ -134,13 +158,19 @@
         (reviewing ? '<button class="btn btn-outline" type="button" data-back><i class="fas fa-arrow-left"></i> Voltar</button><button class="btn btn-primary" type="button" data-confirm ' + (requiredMissing.length || busy ? 'disabled' : '') + '><i class="fas fa-lock"></i> Confirmar envio</button>' : '<button class="btn btn-primary" type="button" data-review ' + (busy ? 'disabled' : '') + '><i class="fas fa-eye"></i> Revisar seleção ' + (savedCount ? '(' + savedCount + ' pronto' + (savedCount === 1 ? '' : 's') + ')' : '') + '</button>') +
       '</div>' + (requiredMissing.length ? '<div class="collection-public-meta collection-missing"><i class="fas fa-circle-exclamation"></i> Ainda faltam: ' + requiredMissing.map(item => esc(item.label) + (requestedQuantity(item) > 1 ? ' (' + itemFileCount(item.id) + '/' + requestedQuantity(item) + ')' : '')).join(', ') + '</div>' : '');
   }
-  function putWithProgress(url, file, onProgress) {
+  function putWithProgress(url, file, onProgress, signal) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest(); xhr.open('PUT', url);
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-      xhr.upload.onprogress = event => { if (event.lengthComputable && onProgress) onProgress(Math.round(event.loaded / event.total * 100)); };
+      xhr.upload.onprogress = event => { if (event.lengthComputable && onProgress) onProgress(event.loaded, event.total); };
       xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('Falha no envio (' + xhr.status + ').'));
       xhr.onerror = () => reject(new Error('Falha de rede durante o envio.'));
+      xhr.onabort = () => reject(new Error('O envio foi interrompido.'));
+      const abort = () => xhr.abort();
+      if (signal) {
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) { xhr.abort(); return; }
+      }
       xhr.send(file);
     });
   }
@@ -155,23 +185,58 @@
     const reserved = await api(base + '/reservar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       item_id: entry.itemId, name: entry.file.name, size: entry.file.size, mime: entry.file.type
     }) });
-    const heartbeat = () => api(base + '/upload-heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: reserved.id }) }).catch(() => {});
-    await heartbeat();
+    const abortController = new AbortController();
+    let lastProgressAt = Date.now(), lastLoaded = -1, stalled = false;
+    let heartbeatPending = false;
+    const heartbeat = async () => {
+      if (heartbeatPending || Date.now() - lastProgressAt > 30000) return;
+      heartbeatPending = true;
+      try {
+        await api(base + '/upload-heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: reserved.id }), signal: abortController.signal });
+      } catch (_) {
+      } finally {
+        heartbeatPending = false;
+      }
+    };
+    const reportProgress = (loaded, total) => {
+      if (Number(loaded) !== lastLoaded) { lastLoaded = Number(loaded); lastProgressAt = Date.now(); }
+      if (Number(total) > 0) onProgress(Math.min(100, Math.round(Number(loaded) / Number(total) * 100)));
+    };
     const heartbeatTimer = setInterval(heartbeat, 15000);
+    const stallTimer = setInterval(() => {
+      if (Date.now() - lastProgressAt <= UPLOAD_STALL_TIMEOUT_MS) return;
+      stalled = true;
+      abortController.abort();
+    }, 5000);
     try {
       if (reserved.multipart) {
         const { uploadPresigned } = await import('https://esm.sh/@vercel/blob@2.8.0/client?bundle');
         await uploadPresigned(reserved.pathname, entry.file, {
           access: 'private', handleUploadUrl: base + '/upload-token', clientPayload: JSON.stringify({ uploadId: reserved.id }), multipart: true,
-          onUploadProgress: event => onProgress(Math.round(Number(event.percentage || 0)))
+          abortSignal: abortController.signal,
+          onUploadProgress: event => reportProgress(event.loaded, event.total)
         });
       } else {
-        await putWithProgress(reserved.presignedUrl, entry.file, onProgress);
+        await putWithProgress(reserved.presignedUrl, entry.file, reportProgress, abortController.signal);
       }
+      lastProgressAt = Date.now();
+      await heartbeat();
+      return await api(base + '/registrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: reserved.id }) });
+    } catch (error) {
+      clearInterval(heartbeatTimer);
+      clearInterval(stallTimer);
+      abortController.abort();
+      const state = await api(base).catch(() => null);
+      const saved = state && Array.isArray(state.uploads) && state.uploads.find(file => file.id === reserved.id && file.status === 'ready');
+      if (saved) return { success: true, id: reserved.id, recovered: true };
+      const cancelled = await api(base + '/uploads/' + encodeURIComponent(reserved.id) + '/cancel', { method: 'POST' }).catch(() => null);
+      if (cancelled && cancelled.ready) return { success: true, id: reserved.id, recovered: true };
+      if (stalled) error.message = 'O envio ficou sem progresso e foi cancelado. Remova o arquivo e tente novamente.';
+      throw error;
     } finally {
       clearInterval(heartbeatTimer);
+      clearInterval(stallTimer);
     }
-    return api(base + '/registrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: reserved.id }) });
   }
   function addFiles(itemId, fileList) {
     if (!collection || busy) return;
@@ -253,7 +318,7 @@
     catch (error) { if (error.state) showClosed(error.message, error.state); }
   }
   root.addEventListener('input', event => {
-    if (event.target.id === 'collectionSenderName') senderName = event.target.value;
+    if (event.target.id === 'collectionSenderName') { senderName = event.target.value; persistSenderDraft(false); }
   });
   root.addEventListener('submit', event => {
     if (!event.target.matches('[data-sender-name-form]')) return;
@@ -261,6 +326,7 @@
     senderName = String(event.target.querySelector('#collectionSenderName')?.value || '').trim().replace(/\s+/g, ' ').slice(0, 80);
     if (!senderName) { showMessage('Informe seu nome para continuar.'); event.target.querySelector('#collectionSenderName')?.focus(); return; }
     nameConfirmed = true;
+    persistSenderDraft(true);
     render();
   });
   root.addEventListener('change', event => {
@@ -291,6 +357,7 @@
     }
     if (event.target.closest('[data-next-sender]')) {
       senderName = ''; nameConfirmed = false; collectionSignature = ''; collection = null;
+      clearSenderDraft();
       root.innerHTML = '<div class="collection-complete"><i class="fas fa-spinner fa-spin"></i><h1>Preparando o próximo envio</h1><p>Verificando se o link está disponível.</p></div>';
       try { await loadState(); startStatePolling(); }
       catch (error) { showClosed(error.message, error.state || 'closed'); }
@@ -302,7 +369,10 @@
     if (removeUpload) {
       removeUpload.disabled = true;
       try { await api(base + '/uploads/' + encodeURIComponent(removeUpload.dataset.removeUpload), { method: 'DELETE' }); await loadState(); }
-      catch (error) { if (error.state) showClosed(error.message, error.state); else showMessage(error.message); }
+      catch (error) {
+        if (error.state) showClosed(error.message, error.state);
+        else { removeUpload.disabled = false; showMessage(error.message); }
+      }
       return;
     }
     if (event.target.closest('[data-review]')) {
