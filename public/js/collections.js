@@ -21,7 +21,7 @@
     pending: ['Aguardando envio', ''], in_progress: ['Envio parcial', 'is-progress'], sending: ['Enviando agora', 'is-sending'],
     submitted: ['Enviado', 'is-submitted'], revoked: ['Suspenso pelo organizador', 'is-revoked'], expired: ['Prazo não cumprido', 'is-expired']
   };
-  let roomsCache = [], friendsCache = [], friendsLoaded = false, friendsLoading = false, participantNames = [], collectionsCache = [], collectionsSignature = '', collectionsLoading = false, historyOpen = false;
+  let roomsCache = [], friendsCache = [], friendsLoaded = false, friendsLoading = false, participantNames = [], collectionsCache = [], collectionsSignature = '', collectionsLoading = false, historyOpen = false, exclusiveBeforeMultiUse = false;
 
   async function copyText(text, button) {
     try {
@@ -40,8 +40,10 @@
     const box = $('collectionCreatedLinks');
     box.hidden = false;
     const single = collection ? collection.single_link : recipients.length === 1 && (!recipients[0].participant_name || recipients[0].participant_name === 'Link único');
+    const multiUse = !!(collection && collection.multi_use_link);
     box.innerHTML = '<h3><i class="fas fa-circle-check"></i> Links prontos</h3><p>' +
-      (single ? 'Compartilhe este link. Quem enviar deverá informar o próprio nome; o link será encerrado após a confirmação.' : 'Envie cada link apenas para a pessoa indicada. Ele será encerrado depois que o envio for confirmado.') + '</p>' +
+      (multiUse ? 'Compartilhe o mesmo link com várias pessoas. Cada uma informa o nome antes de enviar; o link continua aberto até o prazo.' : single ? 'Compartilhe este link. Quem enviar deverá informar o próprio nome; o link será encerrado após a confirmação.' : 'Envie cada link apenas para a pessoa indicada. Ele será encerrado depois que o envio for confirmado.') +
+      (collection && collection.exclusive_access ? (multiUse ? ' Uma pessoa pode enviar por vez; ao terminar, o link fica disponível para a próxima.' : ' Enquanto alguém estiver com o link aberto, outras pessoas serão bloqueadas. Se a página for fechada sem concluir, o acesso libera em até 2 minutos.') : '') + '</p>' +
       recipients.map(recipient => {
         const url = collectionUrl(recipient.token);
         const label = recipient.participant_name || 'Link único';
@@ -52,6 +54,11 @@
   function renderParticipants() {
     const host = $('collectionParticipantChips');
     host.innerHTML = participantNames.map((name, index) => '<span class="collection-participant-chip">' + esc(name) + '<button type="button" data-remove-participant="' + index + '" aria-label="Remover ' + esc(name) + '"><i class="fas fa-xmark"></i></button></span>').join('');
+  }
+  function updateCollectionSubmitLabel() {
+    const label = $('createCollectionSubmit')?.querySelector('span');
+    if (!label) return;
+    label.textContent = $('collectionMultiUseLink').checked ? 'Criar link multiuso' : $('collectionSingleLink').checked ? 'Criar link único' : 'Criar links de envio';
   }
   function participantExists(name) { return participantNames.some(existing => existing.toLocaleLowerCase() === String(name).toLocaleLowerCase()); }
   function renderFriendPicker(message) {
@@ -126,22 +133,25 @@
   }
   function collectionCardMarkup(collection) {
       const completedRecipients = collection.recipients.filter(recipient => recipient.status === 'submitted');
-      const completed = completedRecipients.length;
-      const allSubmitted = collection.recipients.length > 0 && completed === collection.recipients.length;
+      const multiUse = !!Number(collection.multi_use_link);
+      const submissions = collection.submissions || [];
+      const completed = multiUse ? submissions.length : completedRecipients.length;
+      const allSubmitted = !multiUse && collection.recipients.length > 0 && completed === collection.recipients.length;
       const allEnded = collection.recipients.length > 0 && collection.recipients.every(recipient => ['submitted', 'revoked', 'expired'].includes(recipient.status));
       const hasExpired = collection.recipients.some(recipient => recipient.status === 'expired');
       const hasSuspended = collection.recipients.some(recipient => recipient.status === 'revoked');
       const statusText = allSubmitted ? 'Todos enviaram' : hasExpired && allEnded ? 'Encerrada · prazo não cumprido' : hasSuspended && allEnded ? 'Encerrada · link suspenso' : allEnded ? 'Encerrada' : 'Coleta aberta';
       const statusClass = hasExpired ? 'is-expired' : allSubmitted ? 'is-submitted' : hasSuspended && allEnded ? 'is-revoked' : '';
       const items = collection.items.map(item => esc(item.label) + (Number(item.quantity) > 1 ? ' × ' + Number(item.quantity) : '') + (Number(item.required) ? ' *' : ' (opcional)')).join(' · ');
-      const mode = collection.single_link ? '<span class="collection-mode-badge"><i class="fas fa-link"></i> Link único</span>' : '<span class="collection-mode-badge"><i class="fas fa-users"></i> Links individuais</span>';
-      const senderNames = [...new Set(completedRecipients.map(recipient => recipient.participant_name || 'Participante'))];
+      const mode = multiUse ? '<span class="collection-mode-badge"><i class="fas fa-users"></i> Link multiuso</span>' : collection.single_link ? '<span class="collection-mode-badge"><i class="fas fa-link"></i> Link único</span>' : '<span class="collection-mode-badge"><i class="fas fa-users"></i> Links individuais</span>';
+      const accessMode = Number(collection.exclusive_access) ? '<span class="collection-mode-badge"><i class="fas fa-lock"></i> Uma pessoa por vez</span>' : '';
+      const senderNames = [...new Set((multiUse ? submissions.map(submission => submission.sender_name) : completedRecipients.map(recipient => recipient.participant_name)).filter(Boolean))];
       const senderLabel = senderNames.slice(0, 3).join(', ') + (senderNames.length > 3 ? ' +' + (senderNames.length - 3) : '');
       const tray = completed ? '<div class="collection-download-tray"><div class="collection-download-senders"><strong>Enviado por</strong><span title="' + esc(senderNames.join(', ')) + '">' + esc(senderLabel) + '</span></div><button class="btn btn-sm btn-green" type="button" data-download="' + esc(collection.id) + '"><i class="fas fa-file-zipper"></i> Baixar tudo · ZIP</button></div>' : '';
-      return '<div class="collection-card-wrap"><article class="collection-card"><div class="collection-card-head"><div><h3>' + esc(collection.title) + '</h3><div class="collection-card-meta"><i class="fas fa-folder"></i> ' + esc(collection.room_name) + ' · prazo ' + esc(dateLabel(collection.expires_at)) + '</div>' + mode + '</div><span class="collection-status ' + statusClass + '">' + esc(statusText) + '</span></div>' +
+      return '<div class="collection-card-wrap"><article class="collection-card"><div class="collection-card-head"><div><h3>' + esc(collection.title) + '</h3><div class="collection-card-meta"><i class="fas fa-folder"></i> ' + esc(collection.room_name) + ' · prazo ' + esc(dateLabel(collection.expires_at)) + '</div>' + mode + accessMode + '</div><span class="collection-status ' + statusClass + '">' + esc(statusText) + '</span></div>' +
         (collection.instructions ? '<p class="collection-card-meta collection-instructions">' + esc(collection.instructions) + '</p>' : '') +
-        '<p class="collection-card-meta">' + completed + ' de ' + collection.recipients.length + ' concluíram · ' + esc(items) + '</p>' +
-        '<div class="collection-participant-list">' + collection.recipients.map(recipient => participantMarkup(recipient, collection.id, collection.single_link)).join('') + '</div></article>' + tray + '</div>';
+        '<p class="collection-card-meta">' + (multiUse ? completed + (completed === 1 ? ' envio recebido' : ' envios recebidos') + ' · link ativo até o prazo' : completed + ' de ' + collection.recipients.length + ' concluíram') + ' · ' + esc(items) + '</p>' +
+        '<div class="collection-participant-list">' + collection.recipients.map(recipient => participantMarkup(multiUse ? { ...recipient, participant_name: 'Link multiuso' } : recipient, collection.id, collection.single_link)).join('') + '</div></article>' + tray + '</div>';
   }
   function renderCollections(collections) {
     const host = $('collectionsList');
@@ -212,13 +222,33 @@
     participantNames.splice(Number(button.dataset.removeParticipant), 1); renderParticipants(); renderFriendPicker();
   });
   $('collectionSingleLink').addEventListener('change', event => {
-    $('collectionParticipantsGroup').hidden = event.currentTarget.checked;
+    if (event.currentTarget.checked && $('collectionMultiUseLink').checked) {
+      $('collectionMultiUseLink').checked = false;
+      $('collectionExclusiveAccess').checked = exclusiveBeforeMultiUse;
+    }
+    $('collectionExclusiveAccess').disabled = $('collectionMultiUseLink').checked;
+    $('collectionParticipantsGroup').hidden = event.currentTarget.checked || $('collectionMultiUseLink').checked;
+    if (event.currentTarget.checked || $('collectionMultiUseLink').checked) { participantNames = []; renderParticipants(); $('collectionFriendPicker').hidden = true; $('collectionFriendsBtn').setAttribute('aria-expanded', 'false'); }
+    updateCollectionSubmitLabel();
+  });
+  $('collectionMultiUseLink').addEventListener('change', event => {
+    if (event.currentTarget.checked) {
+      exclusiveBeforeMultiUse = $('collectionExclusiveAccess').checked;
+      $('collectionSingleLink').checked = false;
+      $('collectionExclusiveAccess').checked = true;
+    } else {
+      $('collectionExclusiveAccess').checked = exclusiveBeforeMultiUse;
+    }
+    $('collectionExclusiveAccess').disabled = event.currentTarget.checked;
+    $('collectionParticipantsGroup').hidden = event.currentTarget.checked || $('collectionSingleLink').checked;
     if (event.currentTarget.checked) { participantNames = []; renderParticipants(); $('collectionFriendPicker').hidden = true; $('collectionFriendsBtn').setAttribute('aria-expanded', 'false'); }
+    updateCollectionSubmitLabel();
   });
   $('collectionForm').addEventListener('submit', async event => {
     event.preventDefault();
     const singleLink = $('collectionSingleLink').checked;
-    if (!singleLink && !participantNames.length) { toast('Adicione pelo menos um participante.', 'error'); $('collectionParticipantInput').focus(); return; }
+    const multiUseLink = $('collectionMultiUseLink').checked;
+    if (!singleLink && !multiUseLink && !participantNames.length) { toast('Adicione pelo menos um participante.', 'error'); $('collectionParticipantInput').focus(); return; }
     const items = Array.from($('collectionItems').querySelectorAll('.collection-item-input')).map(row => ({
       label: row.querySelector('input[type=text]').value.trim(),
       quantity: Math.max(1, Math.min(200, Number(row.querySelector('input[type=number]').value) || 1)),
@@ -233,10 +263,12 @@
       const created = await api('/api/coletas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         title: $('collectionTitle').value.trim(), room_id: $('collectionRoom').value,
         instructions: $('collectionInstructions').value.trim(), expires_at: deadline.toISOString(), items,
-        participants: singleLink ? [] : participantNames, single_link: singleLink
+        participants: singleLink || multiUseLink ? [] : participantNames, single_link: singleLink, multi_use_link: multiUseLink,
+        exclusive_access: multiUseLink || $('collectionExclusiveAccess').checked
       }) });
       showCreatedLinks(created, created.recipients);
-      $('collectionForm').reset(); participantNames = []; renderParticipants(); $('collectionParticipantsGroup').hidden = false;
+      $('collectionForm').reset(); $('collectionExclusiveAccess').disabled = false; exclusiveBeforeMultiUse = false; participantNames = []; renderParticipants(); $('collectionParticipantsGroup').hidden = false;
+      updateCollectionSubmitLabel();
       $('collectionItems').innerHTML = '<div class="collection-item-input"><input type="text" maxlength="120" placeholder="Ex.: Foto" required><label class="collection-quantity-label">Qtd.<input type="number" min="1" max="200" value="1" inputmode="numeric" aria-label="Quantidade solicitada"></label><label class="collection-required-label"><input type="checkbox" checked> Obrigatório</label><button class="btn btn-sm btn-outline collection-remove-item" type="button" title="Remover item" aria-label="Remover item"><i class="fas fa-xmark"></i></button></div>';
       $('collectionFriendPicker').hidden = true; $('collectionFriendsBtn').setAttribute('aria-expanded', 'false'); await loadCollections(); toast('Coleta criada e links gerados.');
     } catch (error) { toast(error.message, 'error'); }

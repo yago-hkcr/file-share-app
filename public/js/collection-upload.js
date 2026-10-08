@@ -3,7 +3,7 @@
   const token = window.location.pathname.split('/').filter(Boolean).pop() || '';
   const base = '/api/coletas/enviar/' + encodeURIComponent(token);
   const COLLECTION_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
-  let collection = null, pendingFiles = [], reviewing = false, busy = false, senderName = '', collectionSignature = '', stateFetchPromise = null, statePollTimer = null;
+  let collection = null, pendingFiles = [], reviewing = false, busy = false, senderName = '', nameConfirmed = false, collectionSignature = '', stateFetchPromise = null, statePollTimer = null, stateHeartbeatTimer = null;
   const esc = value => { const div = document.createElement('div'); div.textContent = String(value == null ? '' : value); return div.innerHTML; };
   const sizeLabel = value => {
     const bytes = Number(value) || 0;
@@ -28,23 +28,49 @@
   function stopStatePolling() {
     if (statePollTimer) { clearInterval(statePollTimer); statePollTimer = null; }
   }
+  function stopAccessHeartbeat() {
+    if (stateHeartbeatTimer) { clearInterval(stateHeartbeatTimer); stateHeartbeatTimer = null; }
+  }
+  function startAccessHeartbeat() {
+    if (!stateHeartbeatTimer) stateHeartbeatTimer = setInterval(refreshAccessLease, 30000);
+  }
+  function startStatePolling() {
+    if (!statePollTimer) statePollTimer = setInterval(pollState, 2000);
+  }
+  function renderNameGate() {
+    root.classList.add('is-name-gate');
+    root.innerHTML = '<section class="collection-name-gate" aria-labelledby="collectionNameHeading"><div class="collection-name-gate-icon"><i class="fas fa-user-pen" aria-hidden="true"></i></div><p class="collection-eyebrow">LINK MULTIUSO</p><h1 id="collectionNameHeading">Antes de começar, qual é o seu nome?</h1><p>Assim quem organizou a coleta saberá de quem são os arquivos.</p><form data-sender-name-form><label class="collection-sender-field"><span>Seu nome <b>obrigatório</b></span><input id="collectionSenderName" name="participant_name" type="text" maxlength="80" autocomplete="name" placeholder="Digite seu nome" value="' + esc(senderName) + '" required></label><button class="btn btn-primary" type="submit"><i class="fas fa-arrow-right"></i> Continuar</button></form><small>O mesmo link continuará disponível para as próximas pessoas até o prazo.</small></section>';
+  }
   function showSubmitting(message) {
     collection = null; collectionSignature = ''; busy = false;
+    root.classList.remove('is-name-gate');
     root.innerHTML = '<div class="collection-complete"><i class="fas fa-spinner fa-spin"></i><h1>Confirmando envio</h1><p>' + esc(message || 'O envio está sendo confirmado. A página será atualizada automaticamente.') + '</p></div>';
   }
   function showClosed(message, state = 'closed') {
     stopStatePolling();
+    stopAccessHeartbeat();
+    root.classList.remove('is-name-gate');
     pendingFiles.forEach(entry => URL.revokeObjectURL(entry.previewUrl)); pendingFiles = [];
     const reasons = {
       submitted: ['fa-circle-check', 'Envio concluído', 'Seus arquivos foram recebidos. Este link foi encerrado após o envio.'],
       suspended: ['fa-ban', 'Envio suspenso', 'O organizador suspendeu este link. Ele não aceita novos arquivos.'],
       expired: ['fa-clock', 'Prazo encerrado', 'O envio não foi concluído dentro do prazo.'],
       replaced: ['fa-link-slash', 'Link substituído', 'O organizador gerou outro link. Peça o endereço mais recente para enviar.'],
+      in_use: ['fa-user-lock', 'Link em uso', 'Outra pessoa está usando este link no momento. Tente novamente quando ela sair.'],
       invalid: ['fa-link-slash', 'Link indisponível', 'Este endereço está incompleto ou não é válido.'],
       closed: ['fa-link-slash', 'Link encerrado', 'Este link não aceita novos envios.']
     };
     const reason = reasons[state] || reasons.closed;
-    root.innerHTML = '<div class="collection-complete is-' + esc(state) + '"><i class="fas ' + reason[0] + '"></i><p class="collection-close-eyebrow">STATUS DO LINK</p><h1>' + reason[1] + '</h1><p>' + esc(message || reason[2]) + '</p></div>';
+    const retry = state === 'in_use' ? '<button class="btn btn-outline" type="button" data-retry-access><i class="fas fa-rotate"></i> Tentar novamente</button>' : '';
+    root.innerHTML = '<div class="collection-complete is-' + esc(state) + '"><i class="fas ' + reason[0] + '"></i><p class="collection-close-eyebrow">STATUS DO LINK</p><h1>' + reason[1] + '</h1><p>' + esc(message || reason[2]) + '</p>' + retry + '</div>';
+    if (state === 'in_use') startStatePolling();
+  }
+  function showMultiUseSuccess() {
+    stopStatePolling(); stopAccessHeartbeat();
+    pendingFiles.forEach(entry => URL.revokeObjectURL(entry.previewUrl)); pendingFiles = [];
+    root.classList.remove('is-name-gate');
+    root.innerHTML = '<div class="collection-complete is-submitted"><i class="fas fa-circle-check"></i><p class="collection-close-eyebrow">ENVIO RECEBIDO</p><h1>Obrigado, ' + esc(senderName) + '!</h1><p>Seus arquivos foram entregues. O link continua aberto até o prazo para outras pessoas enviarem os delas.</p><button class="btn btn-primary" type="button" data-next-sender><i class="fas fa-user-plus"></i> Preparar outro envio</button></div>';
+    collection = null; collectionSignature = ''; reviewing = false; busy = false; nameConfirmed = false;
   }
   function readyUploads(itemId) { return (collection.uploads || []).filter(file => file.item_id === itemId && file.status === 'ready'); }
   function selectedFiles(itemId) { return pendingFiles.map((entry, index) => ({ ...entry, index })).filter(entry => entry.itemId === itemId); }
@@ -79,16 +105,19 @@
       const names = saved.concat(queued);
       return '<li><strong>' + esc(item.label) + (requestedQuantity(item) > 1 ? ' · ' + names.length + '/' + requestedQuantity(item) : '') + ':</strong> ' + (names.length ? names.map(esc).join(', ') : '<span>nenhum arquivo' + (Number(item.required) ? ' · obrigatório' : ' · opcional') + '</span>') + '</li>';
     }).join('');
-    return '<div class="collection-review"><h2><i class="fas fa-clipboard-check"></i> Revise antes de confirmar</h2><p>Confira os arquivos. Depois da confirmação, este link será encerrado.</p><ul>' + groups + '</ul></div>';
+    return '<div class="collection-review"><h2><i class="fas fa-clipboard-check"></i> Revise antes de confirmar</h2><p>Confira os arquivos. ' + (collection.multi_use_link ? 'Depois da confirmação, este envio será registrado e o link continuará ativo até o prazo.' : 'Depois da confirmação, este link será encerrado.') + '</p><ul>' + groups + '</ul></div>';
   }
   function render() {
     if (!collection) return;
+    root.classList.remove('is-name-gate');
+    if (collection.multi_use_link && !nameConfirmed) return renderNameGate();
     const requiredMissing = missingRequired();
     const savedCount = (collection.uploads || []).length;
     const senderField = collection.single_link
       ? '<label class="collection-sender-field"><span>Seu nome <b>obrigatório</b></span><input id="collectionSenderName" type="text" maxlength="80" autocomplete="name" placeholder="Como devemos identificar seu envio?" value="' + esc(senderName) + '" ' + (busy ? 'disabled' : '') + ' required><small>Seu nome aparecerá junto aos arquivos na sala de destino.</small></label>' : '';
     root.innerHTML = '<div class="collection-title-row"><span class="collection-title-icon"><i class="fas fa-inbox"></i></span><div><p class="collection-eyebrow">ENVIO SEGURO</p><h1>' + esc(collection.title) + '</h1></div></div>' +
-      (collection.single_link ? '<p class="collection-public-intro">Este link aceita um envio. Informe seu nome para identificar os arquivos.</p>' : '<p class="collection-public-intro">Olá, ' + esc(collection.participant_name) + '. Prepare os arquivos solicitados abaixo.</p>') +
+      (collection.multi_use_link ? '<p class="collection-public-intro">Olá, ' + esc(senderName) + '. Envie os arquivos solicitados abaixo.</p>' : collection.single_link ? '<p class="collection-public-intro">Este link aceita um envio. Informe seu nome para identificar os arquivos.</p>' : '<p class="collection-public-intro">Olá, ' + esc(collection.participant_name) + '. Prepare os arquivos solicitados abaixo.</p>') +
+      (collection.exclusive_access ? '<p class="collection-exclusive-notice"><i class="fas fa-user-lock" aria-hidden="true"></i> Acesso exclusivo: enquanto você estiver usando este link, outras pessoas não poderão entrar.</p>' : '') +
       senderField +
       (collection.instructions ? '<section class="collection-request-instructions" aria-label="Instruções de quem pediu"><div><i class="fas fa-circle-info" aria-hidden="true"></i><strong>Instruções de quem pediu</strong></div><p>' + esc(collection.instructions) + '</p></section>' : '') +
       '<div class="collection-deadline"><i class="fas fa-clock"></i><span>Prazo <strong>' + esc(dateLabel(collection.expires_at)) + '</strong></span><span class="collection-deadline-separator"></span><span>Limite <strong>' + sizeLabel(collection.max_upload_bytes) + '</strong> por arquivo</span></div>' +
@@ -156,7 +185,7 @@
     if (busy) return;
     const missing = missingRequired();
     if (missing.length) { showMessage('Selecione a quantidade solicitada para: ' + missing.map(item => item.label + ' (' + itemFileCount(item.id) + '/' + requestedQuantity(item) + ')').join(', ')); return; }
-    if (collection.single_link) {
+    if (collection.single_link || collection.multi_use_link) {
       senderName = String(document.getElementById('collectionSenderName')?.value || senderName).trim().replace(/\s+/g, ' ');
       if (!senderName) { showMessage('Informe seu nome para continuar.'); document.getElementById('collectionSenderName')?.focus(); return; }
     }
@@ -174,8 +203,10 @@
         URL.revokeObjectURL(entry.previewUrl);
       }
       const progress = document.getElementById('collectionUploadProgress'); if (progress) progress.textContent = 'Confirmando o envio…';
+      stopAccessHeartbeat();
       await api(base + '/finalizar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participant_name: senderName }) });
-      showClosed('Seus arquivos foram recebidos e o link foi encerrado após o envio.', 'submitted');
+      if (collection.multi_use_link) showMultiUseSuccess();
+      else showClosed('Seus arquivos foram recebidos e o link foi encerrado após o envio.', 'submitted');
     } catch (error) {
       if (error.state === 'submitted') return showClosed(error.message, 'submitted');
       if (error.state === 'submitting') { busy = false; return loadState(); }
@@ -193,17 +224,31 @@
       if (data.state === 'submitting') { showSubmitting(data.message); return; }
       const signature = JSON.stringify(data);
       if (signature !== collectionSignature) { collectionSignature = signature; collection = data; if (!busy) render(); }
+      if (data.exclusive_access) startAccessHeartbeat();
     })();
     try { await stateFetchPromise; }
     finally { stateFetchPromise = null; }
   }
   async function pollState() {
-    if (document.hidden || busy || stateFetchPromise) return;
+    if (!statePollTimer || document.hidden || busy || stateFetchPromise) return;
     try { await loadState(); }
+    catch (error) { if (error.state) showClosed(error.message, error.state); }
+  }
+  async function refreshAccessLease() {
+    if (!collection || !collection.exclusive_access) return;
+    try { await api(base + '/heartbeat', { method: 'POST' }); }
     catch (error) { if (error.state) showClosed(error.message, error.state); }
   }
   root.addEventListener('input', event => {
     if (event.target.id === 'collectionSenderName') senderName = event.target.value;
+  });
+  root.addEventListener('submit', event => {
+    if (!event.target.matches('[data-sender-name-form]')) return;
+    event.preventDefault();
+    senderName = String(event.target.querySelector('#collectionSenderName')?.value || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+    if (!senderName) { showMessage('Informe seu nome para continuar.'); event.target.querySelector('#collectionSenderName')?.focus(); return; }
+    nameConfirmed = true;
+    render();
   });
   root.addEventListener('change', event => {
     const input = event.target.closest('input[type=file][data-item-id]');
@@ -225,6 +270,19 @@
     event.preventDefault(); zone.classList.remove('is-dragging'); addFiles(zone.dataset.dropItem, event.dataTransfer.files);
   });
   root.addEventListener('click', async event => {
+    if (event.target.closest('[data-retry-access]')) {
+      collectionSignature = '';
+      root.innerHTML = '<div class="collection-complete"><i class="fas fa-spinner fa-spin"></i><h1>Verificando acesso</h1><p>Aguarde enquanto verificamos se o link está disponível.</p></div>';
+      loadState().then(startStatePolling).catch(error => showClosed(error.message, error.state || 'closed'));
+      return;
+    }
+    if (event.target.closest('[data-next-sender]')) {
+      senderName = ''; nameConfirmed = false; collectionSignature = ''; collection = null;
+      root.innerHTML = '<div class="collection-complete"><i class="fas fa-spinner fa-spin"></i><h1>Preparando o próximo envio</h1><p>Verificando se o link está disponível.</p></div>';
+      try { await loadState(); startStatePolling(); }
+      catch (error) { showClosed(error.message, error.state || 'closed'); }
+      return;
+    }
     const removeSelected = event.target.closest('[data-remove-selected]');
     if (removeSelected) { const [removed] = pendingFiles.splice(Number(removeSelected.dataset.removeSelected), 1); if (removed) URL.revokeObjectURL(removed.previewUrl); render(); return; }
     const removeUpload = event.target.closest('[data-remove-upload]');
@@ -235,7 +293,7 @@
       return;
     }
     if (event.target.closest('[data-review]')) {
-      if (collection.single_link) {
+      if (collection.single_link || collection.multi_use_link) {
         senderName = String(document.getElementById('collectionSenderName')?.value || senderName).trim().replace(/\s+/g, ' ');
         if (!senderName) { showMessage('Informe seu nome para continuar.'); document.getElementById('collectionSenderName')?.focus(); return; }
       }
@@ -248,6 +306,6 @@
   });
   if (!COLLECTION_TOKEN_RE.test(token)) return showClosed('O endereço do link está incompleto ou inválido.', 'invalid');
   loadState().catch(error => showClosed(error.message, error.state || 'closed'));
-  statePollTimer = setInterval(pollState, 2000);
+  startStatePolling();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pollState(); });
 })();
