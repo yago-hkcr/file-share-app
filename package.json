@@ -1,0 +1,24 @@
+{
+  "name": "file-share-app",
+  "version": "1.0.0",
+  "description": "File sharing web application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "node --check server.js && node --check api/index.js",
+    "local:install": "npm install && npm --prefix local-runtime install",
+    "local:start": "node local-runtime/start.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0",
+    "@vercel/blob": "^2.3.0",
+    "bcryptjs": "^2.4.3",
+    "cookie-session": "^2.1.0",
+    "express": "^4.21.1",
+    "multer": "^2.4.0",
+    "uuid": "^11.0.2"
+  }
+}
