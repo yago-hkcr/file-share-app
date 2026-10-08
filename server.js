@@ -276,6 +276,13 @@ async function createTables() {
       updated_at TEXT NOT NULL,
       UNIQUE(user_id, file_id)
     )`),
+    q(`CREATE TABLE IF NOT EXISTS personal_library_shelves (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(user_id, name)
+    )`),
     q(`CREATE TABLE IF NOT EXISTS room_typing (
       room_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
@@ -294,6 +301,8 @@ async function createTables() {
   ]);
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_user_updated ON personal_library_items (user_id, updated_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_file ON personal_library_items (file_id)');
+  await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_library_shelves_user_name ON personal_library_shelves (user_id, LOWER(name))');
+  await q('CREATE INDEX IF NOT EXISTS idx_personal_library_shelves_user_created ON personal_library_shelves (user_id, created_at)');
   await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
   await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_change_required INTEGER DEFAULT 0');
   await q(`CREATE TABLE IF NOT EXISTS file_collections (
@@ -1290,7 +1299,7 @@ app.get('/api/library', asMember, wrap(async (req, res) => {
   res.set('Cache-Control', 'private, no-store');
   const access = isAdmin(req.user) ? '1=1' : 'EXISTS (SELECT 1 FROM room_members rm WHERE rm.room_id = f.room_id AND rm.user_id = $2)';
   const params = isAdmin(req.user) ? [req.user.id] : [req.user.id, req.user.id];
-  const items = await q(`SELECT li.id, li.file_id, li.shelf, li.note, li.is_favorite, li.created_at AS saved_at, li.updated_at,
+  const [items, savedSpaces] = await Promise.all([q(`SELECT li.id, li.file_id, li.shelf, li.note, li.is_favorite, li.created_at AS saved_at, li.updated_at,
       f.room_id, f.original_name, f.size, f.mime_type, f.uploaded_at, r.name AS room_name,
       u.username AS uploader, u.role AS uploader_role
     FROM personal_library_items li
@@ -1298,9 +1307,26 @@ app.get('/api/library', asMember, wrap(async (req, res) => {
     JOIN rooms r ON r.id = f.room_id
     LEFT JOIN users u ON u.id = f.uploaded_by
     WHERE li.user_id = $1 AND ${access}
-    ORDER BY li.updated_at DESC, li.created_at DESC`, params);
-  const shelves = [...new Set(items.map(item => item.shelf).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  res.json({ items: items.map(item => ({ ...item, size: num(item.size), is_favorite: Boolean(item.is_favorite) })), shelves });
+    ORDER BY li.updated_at DESC, li.created_at DESC`, params), q(`SELECT id, name, created_at
+    FROM personal_library_shelves WHERE user_id = $1 ORDER BY LOWER(name), created_at`, [req.user.id])]);
+  const shelves = [...new Set([...savedSpaces.map(space => space.name), ...items.map(item => item.shelf)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  res.json({ items: items.map(item => ({ ...item, size: num(item.size), is_favorite: Boolean(item.is_favorite) })), shelves, spaces: savedSpaces });
+}));
+
+app.post('/api/library/spaces', asMember, wrap(async (req, res) => {
+  const name = String((req.body && req.body.name) || '').replace(/[\\/\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!name || name.length > 50) return res.status(400).json({ error: 'Dê um nome de até 50 caracteres para o espaço.' });
+  const existing = await one('SELECT id, name FROM personal_library_shelves WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [req.user.id, name]);
+  if (existing) return res.status(409).json({ error: 'Você já tem um espaço com esse nome.' });
+  let space;
+  try {
+    space = await one(`INSERT INTO personal_library_shelves (id, user_id, name, created_at)
+      VALUES ($1, $2, $3, $4) RETURNING id, name, created_at`, [uuidv4(), req.user.id, name, ts()]);
+  } catch (error) {
+    if (isUnique(error)) return res.status(409).json({ error: 'Você já tem um espaço com esse nome.' });
+    throw error;
+  }
+  res.status(201).json(space);
 }));
 
 app.post('/api/library', asMember, wrap(async (req, res) => {
