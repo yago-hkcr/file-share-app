@@ -22,7 +22,7 @@
   <link rel="stylesheet" href="/css/adaptive.css?v=20261005a">
   <script src="/js/fx.js" defer></script>
   <link rel="stylesheet" href="/css/preview.css">
-  <link rel="stylesheet" href="/css/admin-select.css?v=20261005a">
+  <link rel="stylesheet" href="/css/admin-select.css?v=20261006a">
 </head>
 <body class="app-page">
   <header class="header">
@@ -300,7 +300,7 @@
         <h4>Membros atuais (${room.members.length})</h4>
         ${room.members.length?room.members.map(m=>`
           <div class="card-row" style="padding:8px 0;">
-            <div class="avatar avatar-sm" style="background:${m.avatar_color}">${m.username[0].toUpperCase()}</div>
+            <div class="avatar avatar-sm" style="background:${m.avatar_color}">${m.avatar_image?`<img src="${esc(m.avatar_image)}" alt="">`:m.username[0].toUpperCase()}</div>
             <span><strong>${esc(m.username)}</strong></span>
             <button class="btn btn-sm btn-danger" onclick="removeMember('${roomId}','${m.id}')"><i class="fas fa-times"></i></button>
           </div>
@@ -309,7 +309,7 @@
         <h4>Adicionar Membro</h4>
         ${approvedUsers.filter(u=>!memberIds.includes(u.id)).map(u=>`
           <div class="card-row" style="padding:8px 0;">
-            <div class="avatar avatar-sm" style="background:${u.avatar_color}">${u.username[0].toUpperCase()}</div>
+            <div class="avatar avatar-sm" style="background:${u.avatar_color}">${u.avatar_image?`<img src="${esc(u.avatar_image)}" alt="">`:u.username[0].toUpperCase()}</div>
             <span>${esc(u.username)}</span>
             <button class="btn btn-sm btn-success" onclick="addMember('${roomId}','${u.id}')"><i class="fas fa-plus"></i></button>
           </div>
@@ -318,12 +318,21 @@
       document.getElementById('membersModal').style.display='flex';
     }
     async function addMember(roomId, userId) {
-      await fetch('/api/rooms/'+roomId+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId})});
-      showToast('Membro adicionado!'); showMembers(roomId); loadRooms();
+      try {
+        const res = await fetch('/api/rooms/'+encodeURIComponent(roomId)+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId})});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Não foi possível adicionar o membro');
+        showToast('Membro adicionado!'); showMembers(roomId); loadRooms();
+      } catch (e) { showToast(e.message || 'Não foi possível adicionar o membro', 'error'); }
     }
     async function removeMember(roomId, userId) {
-      await fetch('/api/rooms/'+roomId+'/members/'+userId,{method:'DELETE'});
-      showToast('Membro removido'); showMembers(roomId); loadRooms();
+      if (!confirm('Remover este membro da sala?')) return;
+      try {
+        const res = await fetch('/api/rooms/'+encodeURIComponent(roomId)+'/members/'+encodeURIComponent(userId),{method:'DELETE'});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Não foi possível remover o membro');
+        showToast('Membro removido'); showMembers(roomId); loadRooms();
+      } catch (e) { showToast(e.message || 'Não foi possível remover o membro', 'error'); }
     }
 
     // Create room

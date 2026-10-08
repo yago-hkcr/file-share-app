@@ -13,9 +13,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/social.css?v=20261005b">
-  <script src="/js/common.js?v=20261005b"></script>
+  <link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/onboarding.css?v=20261007a">
+  <link rel="stylesheet" href="/css/social.css?v=20261006e">
+  <link rel="stylesheet" href="/css/collections.css?v=20261007f">
+  <script src="/js/common.js?v=20261005b"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261007a" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
     .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
@@ -33,6 +34,20 @@
     .profile-pill { display:flex; align-items:center; gap:8px; color:var(--gray-700); font-size:14px; }
     .avatar { flex:none; }
     .modal-content { max-width:720px; }
+    /* Rodapé da criação de sala: área de toque isolada no mobile. */
+    #createRoomModal .modal-footer {
+      position: relative !important;
+      z-index: 50 !important;
+      pointer-events: auto !important;
+      isolation: isolate;
+    }
+    #createRoomModal #createRoomSubmit {
+      position: relative;
+      z-index: 51;
+      pointer-events: auto !important;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
     @media (max-width:640px) {
       .dashboard-content { padding:20px 14px; }
       .dashboard-intro { align-items:flex-start; flex-direction:column; }
@@ -55,7 +70,7 @@
       .form-row .btn { width:auto; }
     }
   </style>
-  <link rel="stylesheet" href="/css/mobile.css">
+  <link rel="stylesheet" href="/css/mobile.css?v=20261006e">
   <script src="/js/mobile.js" defer></script>
   <link rel="stylesheet" href="/css/fx.css">
   <link rel="stylesheet" href="/css/adaptive.css?v=20261005a">
@@ -67,17 +82,60 @@
     <div class="header-left"><i class="fas fa-share-alt header-logo"></i><h1>FileShare</h1><span class="badge">Salas</span></div>
     <div class="header-right">
       <span class="profile-pill"><span class="avatar" id="userAvatar"></span><span id="userName">Carregando...</span></span>
-      <button class="btn btn-sm btn-outline" onclick="showPasswordModal()" title="Alterar senha"><i class="fas fa-key"></i></button>
+      <button id="tutorialBtn" class="btn btn-sm btn-outline" type="button" title="Abrir tutorial" aria-label="Abrir tutorial"><i class="fas fa-compass"></i></button><button class="btn btn-sm btn-outline" onclick="showPasswordModal()" title="Alterar senha"><i class="fas fa-key"></i></button>
       <button class="btn btn-sm btn-danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
     </div>
   </header>
 
   <main class="dashboard-content">
+    <nav class="dashboard-tabs" role="tablist" aria-label="Seções do FileShare">
+      <button class="dashboard-tab is-active" id="roomsTab" type="button" role="tab" aria-selected="true"><i class="fas fa-door-open"></i> Salas</button>
+      <button class="dashboard-tab" id="collectionsTab" type="button" role="tab" aria-selected="false"><i class="fas fa-inbox"></i> Coletas</button>
+    </nav>
+    <section id="roomsPanel" role="tabpanel" aria-labelledby="roomsTab">
     <div class="dashboard-intro">
       <div><h2><i class="fas fa-door-open"></i> Suas salas</h2><p>Entre em uma sala para compartilhar e encontrar arquivos.</p></div>
       <div class="intro-actions"><button id="newRoomBtn" class="btn btn-green" onclick="showCreateRoom()"><i class="fas fa-plus"></i> Sala temporária</button><button class="btn btn-outline" onclick="loadRooms()"><i class="fas fa-sync-alt"></i> Atualizar</button></div>
     </div>
     <div id="roomsGrid" class="rooms-grid"><div class="loading"><i class="fas fa-spinner fa-spin"></i> Carregando salas...</div></div>
+
+    </section>
+    <section id="collectionsPanel" role="tabpanel" aria-labelledby="collectionsTab" hidden>
+      <div class="dashboard-intro">
+        <div><h2><i class="fas fa-inbox"></i> Coletas</h2><p>Peça arquivos por links individuais e acompanhe cada envio.</p></div>
+        <button id="refreshCollectionsBtn" class="btn btn-outline" type="button"><i class="fas fa-sync-alt"></i> Atualizar</button>
+      </div>
+      <div class="collections-layout">
+        <form id="collectionForm" class="card collection-form">
+          <h3><i class="fas fa-wand-magic-sparkles"></i> Criar uma coleta</h3>
+          <div class="form-group"><label for="collectionTitle">Título</label><input id="collectionTitle" maxlength="100" placeholder="Ex.: Documentos da equipe" required></div>
+          <div class="form-group"><label for="collectionRoom">Sala de destino</label><select id="collectionRoom" required><option value="">Carregando salas...</option></select></div>
+          <div class="form-group"><label for="collectionInstructions">Instruções</label><textarea id="collectionInstructions" maxlength="2000" rows="3" placeholder="Explique como preparar ou nomear os arquivos"></textarea><small>Essa orientação aparece para a pessoa ao abrir o link de envio.</small></div>
+          <div class="form-group"><label for="collectionDeadline">Prazo para envio</label><input id="collectionDeadline" type="datetime-local" required></div>
+          <div class="collection-field-head"><strong>Arquivos solicitados</strong><span>Até 30 itens</span></div>
+          <div id="collectionItems" class="collection-items">
+            <div class="collection-item-input"><input type="text" maxlength="120" placeholder="Ex.: Foto" required><label class="collection-quantity-label">Qtd.<input type="number" min="1" max="200" value="1" inputmode="numeric" aria-label="Quantidade solicitada"></label><label class="collection-required-label"><input type="checkbox" checked> Obrigatório</label><button class="btn btn-sm btn-outline collection-remove-item" type="button" title="Remover item" aria-label="Remover item"><i class="fas fa-xmark"></i></button></div>
+          </div>
+          <button id="addCollectionItem" class="btn btn-sm btn-outline collection-add-item" type="button"><i class="fas fa-plus"></i> Adicionar item</button>
+          <label class="collection-single-toggle"><input id="collectionSingleLink" type="checkbox"><span><strong>Link único</strong><small>Uma pessoa usa o link e informa o próprio nome ao enviar.</small></span></label>
+          <div id="collectionParticipantsGroup" class="form-group collection-participants">
+            <label for="collectionParticipantInput">Participantes</label>
+            <div class="collection-participant-entry"><input id="collectionParticipantInput" maxlength="80" placeholder="Digite um nome" autocomplete="off"><button id="collectionFriendsBtn" class="btn btn-sm btn-outline" type="button" aria-expanded="false" aria-controls="collectionFriendPicker"><i class="fas fa-user-group"></i> Membros</button><button id="addCollectionParticipant" class="btn btn-sm btn-outline" type="button"><i class="fas fa-plus"></i> Adicionar</button></div>
+            <div id="collectionFriendPicker" class="collection-friend-picker" hidden><div id="collectionFriendNames" class="collection-friend-names" aria-live="polite"></div></div>
+            <div id="collectionParticipantChips" class="collection-participant-chips" aria-live="polite"></div>
+            <small>Escolha uma amizade adicionada ou digite outro nome. Cada pessoa recebe um link individual.</small>
+          </div>
+          <button class="btn btn-primary btn-full" type="submit"><i class="fas fa-link"></i> Criar links de envio</button>
+        </form>
+        <div class="collection-results">
+          <div id="collectionCreatedLinks" class="collection-created-links" hidden></div>
+          <div id="collectionsList" class="collections-list"><div class="loading"><i class="fas fa-spinner fa-spin"></i> Carregando coletas...</div></div>
+        </div>
+      </div>
+
+
+
+    </section>
   </main>
 
   <div id="roomModal" class="modal" style="display:none;">
@@ -90,7 +148,7 @@
           <label class="dropzone" for="fileInput">
             <i class="fas fa-cloud-arrow-up dz-icon"></i>
             <span class="dz-title"><span class="drop-hint-desktop">Arraste os arquivos aqui ou <u>clique para escolher</u></span><u class="touch-only">Toque para escolher os arquivos</u></span>
-            <span class="dz-limit"><i class="fas fa-triangle-exclamation"></i> Limite de <b class="limit-note">…</b> por arquivo · <i class="fas fa-paste"></i> Ctrl+V cola imagem</span>
+            <span class="dz-limit"><i class="fas fa-triangle-exclamation"></i> Limite máximo de <b class="limit-note">50 GB</b> por arquivo · <i class="fas fa-paste"></i> Ctrl+V cola imagem</span>
             <span class="dz-progress" id="uploadBar" style="display:none;"><span class="dz-bar" id="uploadBarFill"></span></span>
             <span id="uploadStatus" class="dz-status"></span>
             <input id="fileInput" type="file" multiple hidden>
@@ -104,8 +162,10 @@
           <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
           <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
           <form id="messageForm" class="chat-compose" autocomplete="off">
-            <input id="messageInput" type="text" placeholder="Escreva uma mensagem..." maxlength="1000" required>
-            <button class="btn btn-primary chat-send" type="submit" title="Enviar"><i class="fas fa-paper-plane"></i></button>
+            <input id="messageInput" type="text" inputmode="text" enterkeyhint="send" autocapitalize="sentences" autocomplete="off" spellcheck="true" placeholder="Escreva uma mensagem..." maxlength="1000" required>
+            <input id="ocrFileInput" type="file" accept="image/*" hidden>
+            <button id="ocrButton" class="btn btn-outline ocr-button" type="button" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button>
+            <button id="chatSendBtn" class="btn btn-primary chat-send" type="submit" title="Enviar"><i class="fas fa-paper-plane"></i></button>
           </form>
         </div>
       </div>
@@ -120,13 +180,13 @@
         <div class="form-group"><label>Duração</label><div class="duration-pick" id="durationPick"><button type="button" data-m="5" class="active">5 min</button><button type="button" data-m="10">10 min</button><button type="button" data-m="30">30 min</button></div></div>
         <p class="text-muted" style="font-size:13px"><i class="fas fa-globe"></i> A sala é pública e é apagada sozinha (com arquivos e chat) quando o tempo acabar.</p>
       </div>
-      <div class="modal-footer"><button class="btn btn-green" onclick="createTempRoom()">Criar sala</button></div></div>
+      <div class="modal-footer" id="createRoomFooter"><button id="createRoomSubmit" class="btn btn-green" type="button"><i class="fas fa-check"></i> Criar sala</button></div></div>
   </div>
   <div id="passwordModal" class="modal" style="display:none;">
     <div class="modal-overlay" onclick="closePasswordModal()"></div>
     <div class="modal-content"><div class="modal-header"><h3>Alterar senha</h3><button class="modal-close" onclick="closePasswordModal()">&times;</button></div><div class="modal-body"><div class="form-group"><label>Senha atual</label><input id="currentPassword" type="password" required></div><div class="form-group"><label>Nova senha</label><input id="newPassword" type="password" required minlength="4"></div></div><div class="modal-footer"><button class="btn btn-primary" onclick="changePassword()">Salvar</button></div></div>
   </div>
-  <div id="toastContainer" class="toast-container"></div>
+  <div id="toastContainer" class="toast-container"></div><div id="imageTextModal" class="modal image-text-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="imageTextModalTitle"><div class="modal-overlay" id="imageTextOverlay"></div><div class="modal-content"><div class="modal-header"><h3 id="imageTextModalTitle"><i class="fas fa-copy"></i> Copiar texto da imagem</h3><button class="modal-close" type="button" id="imageTextClose" aria-label="Fechar">&times;</button></div><div class="modal-body"><p class="image-text-hint">Selecione com o mouse ou toque exatamente a parte que deseja copiar.</p><textarea id="imageTextSelection" class="image-text-selection" spellcheck="false" aria-label="Texto reconhecido da imagem"></textarea></div><div class="modal-footer image-text-actions"><button class="btn btn-outline" type="button" id="imageTextAll">Selecionar tudo</button><button class="btn btn-primary" type="button" id="imageTextCopy"><i class="fas fa-copy"></i> Copiar seleção</button></div></div></div>
 
   <script src="/js/upload.js?v=20261005a"></script>
   <script>
@@ -135,6 +195,36 @@
     let lastRoomsSig = '', lastFilesSig = '', lastChatSig = '', filesRequestId = 0;
     let chatSeenIds = new Set(), lastTypingSig = '', typingActive = false, typingLastSentAt = 0, typingRoomId = null, typingTimer = null, typingRequestQueue = Promise.resolve();
     const esc = value => { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; };
+    window.transcribeImage = async function(file, onProgress) {
+      if (!file || !/^image\//i.test(file.type)) throw new Error('Selecione uma imagem válida.');
+      if (!window.Tesseract) throw new Error('O recurso de transcrição ainda está carregando. Tente novamente em alguns segundos.');
+      if (file.size > 15 * 1024 * 1024) throw new Error('A imagem deve ter no máximo 15 MB.');
+      const result = await Tesseract.recognize(file, 'por+eng', {
+        logger: info => {
+          if (typeof onProgress !== 'function') return;
+          const progress = Math.round(Number(info.progress || 0) * 100);
+          if (info.status === 'recognizing text') onProgress('Lendo texto… ' + progress + '%');
+          else if (info.status === 'loading language traineddata') onProgress('Carregando idioma… ' + progress + '%');
+        }
+      });
+      const text = String(result && result.data && result.data.text || '').replace(/[ \t]+$/gm, '').trim();
+      if (!text) throw new Error('Não encontrei texto legível nessa imagem.');
+      return text;
+    };
+    async function copyMessageText(text, button) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+        else {
+          const area = document.createElement('textarea'); area.value = text; area.style.position = 'fixed'; area.style.opacity = '0';
+          document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
+        }
+        if (button) {
+          const old = button.innerHTML; button.innerHTML = '<i class="fas fa-check"></i><span>Copiado</span>';
+          setTimeout(() => { if (button.isConnected) button.innerHTML = old; }, 1400);
+        }
+        toast('Mensagem copiada');
+      } catch (error) { toast('Não foi possível copiar a mensagem.', 'error'); }
+    }
     const formatSize = bytes => { if (!bytes) return '0 B'; const units = ['B','KB','MB','GB']; const i = Math.floor(Math.log(bytes) / Math.log(1024)); return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`; };
     function toast(message, type='success') { const item = document.createElement('div'); item.className = `toast toast-${type} show`; item.textContent = message; document.getElementById('toastContainer').appendChild(item); setTimeout(() => item.remove(), type === 'error' ? 7000 : 3000); }
     async function api(url, options) { const response = await fetch(url, options); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação'); return data; }
@@ -220,13 +310,53 @@
       const finish = () => { if (token !== roomTransition) return; modal.style.display = 'none'; modal.classList.remove('room-morph-active'); content.style.transformOrigin = ''; content.style.transform = ''; roomOrigin = null; roomClosePending = false; };
       if (destination && playRoomMorph(startRect, destination, token, true, finish)) roomClosePending = true; else finish();
     }
-    async function loadFiles() { const roomId = currentRoom; if (!roomId) return; const requestId = ++filesRequestId; const rooms = await api('/api/rooms'); if (requestId !== filesRequestId || roomId !== currentRoom) return; const room = rooms.find(item => item.id === roomId); if (!room) { toast('Esta sala expirou ou foi removida', 'error'); closeRoom(); loadRooms(); return; } const sig = JSON.stringify(room.files); if (sig === lastFilesSig) return; lastFilesSig = sig; document.getElementById('fileCount').textContent = '(' + room.files.length + ')'; const list = document.getElementById('roomFiles'); list.innerHTML = room.files.length ? room.files.map(file => `<div class="file-row"><div class="file-main">${uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button>${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`).join('') : '<div class="empty-state"><i class="fas fa-inbox"></i><p>Nenhum arquivo nesta sala.</p></div>'; }
+    function roomFileMarkup(file, insideCollection = false) {
+      return `<div class="file-row"><div class="file-main">${insideCollection ? '' : uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button>${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`;
+    }
+    function renderRoomFiles(files) {
+      const groups = new Map(), regular = [];
+      const collectionFiles = [];
+      files.forEach(file => {
+        if (!file.collection_sender || !file.collection_recipient_id) { regular.push(file); return; }
+        collectionFiles.push(file);
+      });
+      const uploadedTime = value => {
+        const text = String(value || '');
+        return new Date(text.replace(' ', 'T') + (text.endsWith('Z') ? '' : 'Z')).getTime();
+      };
+      collectionFiles.sort((a, b) => uploadedTime(a.uploaded_at) - uploadedTime(b.uploaded_at) || String(a.id).localeCompare(String(b.id)));
+      collectionFiles.forEach(file => {
+        const normalizedName = String(file.collection_sender).trim().replace(/\s+/g, ' ').normalize('NFKC').toLocaleLowerCase('pt-BR');
+        const key = normalizedName || String(file.collection_recipient_id);
+        if (!groups.has(key)) groups.set(key, { name: file.collection_sender, files: [] });
+        groups.get(key).files.push(file);
+      });
+      const folders = Array.from(groups.values()).map(group => `<section class="room-submission-folder"><button class="room-submission-folder-toggle" type="button" data-room-folder aria-expanded="true"><i class="fas fa-folder-open" aria-hidden="true"></i><strong>${esc(group.name)}</strong><small>${group.files.length} arquivo${group.files.length === 1 ? '' : 's'}</small><i class="fas fa-chevron-down folder-chevron" aria-hidden="true"></i></button><div class="room-submission-folder-content">${group.files.map(file => roomFileMarkup(file, true)).join('')}</div></section>`).join('');
+      const rows = regular.map(file => roomFileMarkup(file)).join('');
+      return folders + rows || '<div class="empty-state"><i class="fas fa-inbox"></i><p>Nenhum arquivo nesta sala.</p></div>';
+    }
+    async function loadFiles() {
+      const roomId = currentRoom; if (!roomId) return;
+      const requestId = ++filesRequestId; const rooms = await api('/api/rooms');
+      if (requestId !== filesRequestId || roomId !== currentRoom) return;
+      const room = rooms.find(item => item.id === roomId);
+      if (!room) { toast('Esta sala expirou ou foi removida', 'error'); closeRoom(); loadRooms(); return; }
+      const sig = JSON.stringify(room.files); if (sig === lastFilesSig) return; lastFilesSig = sig;
+      document.getElementById('fileCount').textContent = '(' + room.files.length + ')';
+      const list = document.getElementById('roomFiles'); list.innerHTML = renderRoomFiles(room.files);
+      list.querySelectorAll('[data-room-folder]').forEach(button => button.addEventListener('click', () => {
+        const content = button.nextElementSibling, expanded = button.getAttribute('aria-expanded') === 'true';
+        button.setAttribute('aria-expanded', String(!expanded)); content.hidden = expanded;
+      }));
+    }
     async function deleteFile(id) { if (!confirm('Excluir este arquivo?')) return; try { await api('/api/files/' + id, { method:'DELETE' }); toast('Arquivo excluído'); lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
     let newRoomMinutes = 5;
     function showCreateRoom() { document.getElementById('createRoomModal').style.display = 'flex'; document.getElementById('newRoomName').focus(); }
     function closeCreateRoom() { document.getElementById('createRoomModal').style.display = 'none'; }
     document.getElementById('durationPick').addEventListener('click', e => { const b = e.target.closest('button[data-m]'); if (!b) return; newRoomMinutes = Number(b.dataset.m); document.querySelectorAll('#durationPick button').forEach(x => x.classList.toggle('active', x === b)); });
-    async function createTempRoom() { const name = document.getElementById('newRoomName').value.trim(); if (!name) { toast('Dê um nome para a sala', 'error'); return; } try { const room = await api('/api/rooms', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ name, duration_minutes:newRoomMinutes }) }); document.getElementById('newRoomName').value = ''; closeCreateRoom(); toast('Sala criada! Ela some em ' + newRoomMinutes + ' min'); lastRoomsSig = ''; await loadRooms(); openRoom(room.id, room.name); } catch (error) { toast(error.message, 'error'); } }
+    async function createTempRoom() { const button = document.getElementById('createRoomSubmit'); const name = document.getElementById('newRoomName').value.trim(); if (!name) { toast('Dê um nome para a sala', 'error'); document.getElementById('newRoomName').focus(); return; } if (button) { button.disabled = true; button.classList.add('is-loading'); } try { const room = await api('/api/rooms', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ name, duration_minutes:newRoomMinutes }) }); document.getElementById('newRoomName').value = ''; closeCreateRoom(); toast('Sala criada! Ela some em ' + newRoomMinutes + ' min'); lastRoomsSig = ''; await loadRooms(); openRoom(room.id, room.name); } catch (error) { toast(error.message, 'error'); } finally { if (button) { button.disabled = false; button.classList.remove('is-loading'); } } }
+    window.createTempRoom = createTempRoom;
+    document.getElementById('createRoomSubmit').addEventListener('click', event => { event.preventDefault(); createTempRoom(); });
     function tickExpiry() { document.querySelectorAll('.room-exp').forEach(el => { const left = new Date(el.dataset.exp.replace(' ', 'T') + 'Z') - Date.now(); el.lastElementChild.textContent = left > 0 ? 'expira em ' + Math.floor(left / 60000) + ':' + String(Math.floor(left / 1000) % 60).padStart(2, '0') : 'expirando...'; }); }
     setInterval(tickExpiry, 1000);
     enablePaste(files => { if (currentRoom && document.getElementById('roomModal').style.display !== 'none') sendFiles(files); });
@@ -244,8 +374,8 @@
         const cont = prev && prev.user_id === m.user_id; prev = m;
         const animateNew = !first && m.id && !chatSeenIds.has(m.id); if (m.id) chatSeenIds.add(m.id);
         const quote = m.reply_to_id ? `<button class="reply-quote" type="button" data-jump-id="${esc(m.reply_to_id)}"><b>${esc(m.reply_username || 'Mensagem respondida')}</b><span>${esc(m.reply_content || 'Mensagem indisponível')}</span></button>` : '';
-        const messageAvatar = mine && me && me.avatar_image ? `<img src="${esc(me.avatar_image)}" alt="">` : esc(m.username[0].toUpperCase());
-        return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || '#8b5cf6')}">${messageAvatar}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}${quote}<div class="msg-text">${linkify(m.content)}</div><button class="msg-reply-trigger" type="button" data-reply-id="${esc(m.id)}" data-reply-name="${esc(m.username)}" data-reply-text="${esc(m.content)}" aria-label="Responder ${esc(m.username)}"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></div></div>`;
+        const messageAvatar = m.avatar_image ? `<img src="${esc(m.avatar_image)}" alt="">` : esc(m.username[0].toUpperCase());
+        return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || '#8b5cf6')}">${messageAvatar}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}${quote}<div class="msg-text">${linkify(m.content)}</div><button class="msg-copy-trigger" type="button" data-copy-text="${esc(m.content)}" aria-label="Copiar mensagem" title="Copiar mensagem"><i class="fas fa-copy" aria-hidden="true"></i><span>Copiar</span></button><button class="msg-reply-trigger" type="button" data-reply-id="${esc(m.id)}" data-reply-name="${esc(m.username)}" data-reply-text="${esc(m.content)}" aria-label="Responder ${esc(m.username)}"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></div></div>`;
       }).join('') : '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
       if (first || forceBottom || atBottom) box.scrollTop = box.scrollHeight;
     }
@@ -259,6 +389,8 @@
     function cancelRoomReply() { roomReplyTo = null; const preview = document.getElementById('roomReplyPreview'); if (preview) preview.hidden = true; }
     window.cancelRoomReply = cancelRoomReply;
     document.getElementById('chatList').addEventListener('click', event => {
+      const copy = event.target.closest('[data-copy-text]');
+      if (copy) { copyMessageText(copy.dataset.copyText || '', copy); return; }
       const quote = event.target.closest('[data-jump-id]');
       if (quote) { const target = document.querySelector('#chatList [data-message-id="' + CSS.escape(quote.dataset.jumpId) + '"]'); if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); target.classList.add('msg-highlight'); setTimeout(() => target.classList.remove('msg-highlight'), 1300); } return; }
       const button = event.target.closest('[data-reply-id]'); if (!button) return;
@@ -283,18 +415,108 @@
     document.getElementById('uploadForm').addEventListener('submit', event => event.preventDefault());
     document.getElementById('fileInput').addEventListener('change', event => { const files = Array.from(event.target.files); event.target.value = ''; sendFiles(files); });
     enableDrop(document.getElementById('roomModal'), '.drop-target', (el, files) => sendFiles(files));
-    document.getElementById('messageInput').addEventListener('input', updateRoomTyping);
-    document.getElementById('messageInput').addEventListener('blur', () => stopRoomTyping());
-    document.getElementById('messageForm').addEventListener('submit', async event => {
-      event.preventDefault(); const input = document.getElementById('messageInput'), content = input.value.trim(); if (!currentRoom || !content) return;
-      stopRoomTyping();
-      try { await api('/api/rooms/' + currentRoom + '/messages', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content, reply_to_id:roomReplyTo && roomReplyTo.id}) }); input.value = ''; cancelRoomReply(); loadMessages(true); } catch (error) { toast(error.message, 'error'); }
+    const messageInput = document.getElementById('messageInput');
+    const focusChatInput = () => {
+      if (!currentRoom || !messageInput || messageInput.disabled) return;
+      messageInput.focus({ preventScroll: true });
+      requestAnimationFrame(() => messageInput.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+    };
+    messageInput.addEventListener('input', updateRoomTyping);
+    messageInput.addEventListener('blur', () => stopRoomTyping());
+    // Mobile: force native focus on the actual touch/pointer target. This avoids
+    // browsers/WebViews swallowing the first tap inside a scrolling modal.
+    messageInput.addEventListener('pointerdown', () => {
+      if (window.matchMedia('(max-width: 600px)').matches) setTimeout(focusChatInput, 0);
     });
+    messageInput.addEventListener('touchstart', () => {
+      if (window.matchMedia('(max-width: 600px)').matches) setTimeout(focusChatInput, 0);
+    }, { passive: true });
+    messageInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        document.getElementById('messageForm').requestSubmit();
+      }
+    });
+    let sendingRoomMessage = false;
+    async function sendRoomMessage(event) {
+      if (event) event.preventDefault();
+      const input = document.getElementById('messageInput');
+      const button = document.getElementById('chatSendBtn');
+      const roomId = currentRoom;
+      const content = input ? input.value.trim() : '';
+      if (!roomId || !content || sendingRoomMessage) return;
+      sendingRoomMessage = true;
+      if (button) { button.disabled = true; button.classList.add('is-loading'); }
+      stopRoomTyping();
+      try {
+        await api('/api/rooms/' + encodeURIComponent(roomId) + '/messages', {
+          method:'POST',
+          credentials:'same-origin',
+          headers:{'Content-Type':'application/json','Accept':'application/json'},
+          body:JSON.stringify({content, reply_to_id:roomReplyTo && roomReplyTo.id})
+        });
+        input.value = '';
+        cancelRoomReply();
+        lastChatSig = '';
+        await loadMessages(true);
+      } catch (error) {
+        toast(error && error.message ? error.message : 'Não foi possível enviar a mensagem. Tente novamente.', 'error');
+      } finally {
+        sendingRoomMessage = false;
+        if (button) { button.disabled = false; button.classList.remove('is-loading'); }
+        if (input) input.focus();
+      }
+    }
+    document.getElementById('messageForm').addEventListener('submit', sendRoomMessage);
+    const imageTextModal = document.getElementById('imageTextModal');
+    const imageTextSelection = document.getElementById('imageTextSelection');
+    const imageTextCopy = document.getElementById('imageTextCopy');
+    function closeImageTextModal() { if (imageTextModal) imageTextModal.style.display = 'none'; }
+    async function copySelectedImageText() {
+      const value = imageTextSelection ? imageTextSelection.value : '';
+      const start = imageTextSelection ? imageTextSelection.selectionStart : 0;
+      const end = imageTextSelection ? imageTextSelection.selectionEnd : 0;
+      const selected = value.slice(Math.min(start, end), Math.max(start, end)).trim();
+      if (!selected) { toast('Selecione o trecho que deseja copiar.', 'error'); imageTextSelection?.focus(); return; }
+      await copyMessageText(selected, imageTextCopy);
+    }
+    window.copyTextFromImage = async function(file, button) {
+      if (!file) return;
+      if (button) { button.disabled = true; button.classList.add('is-loading'); }
+      try {
+        const text = await window.transcribeImage(file, status => { if (button) button.title = status; });
+        imageTextSelection.value = text;
+        imageTextModal.style.display = 'flex';
+        setTimeout(() => { imageTextSelection.focus(); imageTextSelection.setSelectionRange(0, 0); }, 50);
+      } catch (error) {
+        toast(error.message || 'Não foi possível ler o texto da imagem.', 'error');
+      } finally {
+        if (button) { button.disabled = false; button.classList.remove('is-loading'); button.title = 'Copiar texto da imagem'; }
+      }
+    };
+    document.getElementById('imageTextClose')?.addEventListener('click', closeImageTextModal);
+    document.getElementById('imageTextOverlay')?.addEventListener('click', closeImageTextModal);
+    document.getElementById('imageTextAll')?.addEventListener('click', () => { imageTextSelection?.focus(); imageTextSelection?.select(); });
+    imageTextCopy?.addEventListener('click', copySelectedImageText);
+    imageTextSelection?.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'enter') copySelectedImageText(); });
+    const ocrButton = document.getElementById('ocrButton'), ocrFileInput = document.getElementById('ocrFileInput');
+    if (ocrButton && ocrFileInput) {
+      ocrButton.addEventListener('click', () => ocrFileInput.click());
+      ocrFileInput.addEventListener('change', async event => {
+        const file = event.target.files && event.target.files[0]; event.target.value = '';
+        if (!file) return;
+        await window.copyTextFromImage(file, ocrButton);
+      });
+    }
+    // The button is type=submit; the form handler is the single send path.
+    // Keeping a second click handler here caused duplicate submits on some mobile browsers.
     function showPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
     function closePasswordModal() { document.getElementById('passwordModal').style.display = 'none'; }
     async function changePassword() { try { await api('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ currentPassword:document.getElementById('currentPassword').value, newPassword:document.getElementById('newPassword').value }) }); closePasswordModal(); toast('Senha alterada'); } catch (error) { toast(error.message, 'error'); } }
-    async function logout() { await fetch('/api/logout', { method:'POST' }); window.location.href = '/'; }
-    document.querySelector('.btn-danger').addEventListener('click', logout);
+    async function logout() {
+      try { await fetch('/api/logout', { method:'POST' }); }
+      finally { window.location.href = '/'; }
+    }
     loadUser(); loadRooms(); fillLimitNotes();
 
     // Atualização automática a cada 2 s (sem recarregar a página, para não atrapalhar quem está digitando)
@@ -312,10 +534,11 @@
     window.setDashboardRefresh = seconds => { clearInterval(window.dashboardRefreshTimer); window.dashboardRefreshTimer = setInterval(autoRefresh, Math.max(2, Number(seconds) || 2) * 1000); };
     document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
   </script>
-  <script src="/js/social.js?v=20261005b"></script>
-  <script src="/js/personal.js?v=20261005b"></script>
+  <script src="/js/social.js?v=20261006a"></script>
+  <script src="/js/personal.js?v=20261006a"></script>
   <script src="/js/cursor.js"></script>
   <script src="/js/preview.js"></script>
+  <script src="/js/collections.js?v=20261007f"></script>
   <script src="/js/announce.js"></script>
 </body>
 </html>
