@@ -122,8 +122,8 @@
     <div class="modal-content">
       <div class="modal-header"><h3><i class="fas fa-key"></i> Alterar Senha</h3><button class="modal-close" onclick="closeModal('passwordModal')">&times;</button></div>
       <div class="modal-body">
-        <div class="form-group"><label>Senha Atual</label><input type="password" id="curPass"></div>
-        <div class="form-group"><label>Nova Senha</label><input type="password" id="newPass"></div>
+        <div class="form-group"><label>Senha Atual</label><input type="password" id="curPass" autocomplete="current-password" maxlength="1024"></div>
+        <div class="form-group"><label>Nova Senha (mínimo 15 caracteres)</label><input type="password" id="newPass" autocomplete="new-password" required minlength="15" maxlength="1024"></div>
       </div>
       <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('passwordModal')">Cancelar</button><button class="btn btn-primary" onclick="changePassword()">Salvar</button></div>
     </div>

@@ -34,7 +34,7 @@ const LOCAL_DATA_DIR = path.resolve(process.env.FILESHARE_DATA_DIR || path.join(
 const LOCAL_LAN_PORT = Number(process.env.FILESHARE_LAN_PORT || Number(process.env.PORT || 3000) + 1);
 let localLanServer = null;
 let localLanStartPromise = null;
-const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (LOCAL_MODE ? crypto.randomBytes(9).toString('base64url') : '');
+const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (LOCAL_MODE ? crypto.randomBytes(24).toString('base64url') : '');
 function sessionSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
   if (!LOCAL_MODE) throw new Error('Defina SESSION_SECRET antes de iniciar o FileShare fora do modo local.');
@@ -44,6 +44,43 @@ function sessionSecret() {
   const secret = crypto.randomBytes(48).toString('hex');
   fs.writeFileSync(secretPath, secret, { mode: 0o600 });
   return secret;
+}
+
+const PASSWORD_HASH_PREFIX = 'bcrypt-sha256$';
+const PASSWORD_HASH_COST = 12;
+const MIN_PASSWORD_LENGTH = 15;
+const MAX_PASSWORD_LENGTH = 1024;
+const MAX_PASSWORD_BYTES = 4096;
+const normalizePassword = value => String(value == null ? '' : value).normalize('NFKC');
+function passwordIsStrong(value) {
+  const password = normalizePassword(value);
+  const length = Array.from(password).length;
+  return length >= MIN_PASSWORD_LENGTH && length <= MAX_PASSWORD_LENGTH && Buffer.byteLength(password, 'utf8') <= MAX_PASSWORD_BYTES;
+}
+function bcryptPasswordInput(value) {
+  return crypto.createHash('sha256').update(normalizePassword(value), 'utf8').digest('base64');
+}
+function hashPassword(value) {
+  return new Promise((resolve, reject) => {
+    bcrypt.hash(bcryptPasswordInput(value), PASSWORD_HASH_COST, (error, hash) => {
+      if (error) return reject(error);
+      resolve(PASSWORD_HASH_PREFIX + hash);
+    });
+  });
+}
+const DUMMY_PASSWORD_HASH = hashPassword(crypto.randomBytes(32).toString('hex'));
+async function verifyPassword(value, storedHash) {
+  if (typeof storedHash !== 'string') return { matches: false, needsUpgrade: false };
+  if (Buffer.byteLength(String(value == null ? '' : value), 'utf8') > MAX_PASSWORD_BYTES) return { matches: false, needsUpgrade: false };
+  const versioned = storedHash.startsWith(PASSWORD_HASH_PREFIX);
+  const hash = versioned ? storedHash.slice(PASSWORD_HASH_PREFIX.length) : storedHash;
+  if (!/^\$2[aby]\$\d{2}\$/.test(hash)) return { matches: false, needsUpgrade: false };
+  const input = versioned ? bcryptPasswordInput(value) : String(value == null ? '' : value);
+  const matches = await new Promise((resolve, reject) => {
+    bcrypt.compare(input, hash, (error, same) => error ? reject(error) : resolve(same));
+  });
+  const cost = Number(hash.split('$')[2]);
+  return { matches, needsUpgrade: matches && (!versioned || cost < PASSWORD_HASH_COST) };
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +203,7 @@ async function createTables() {
       username TEXT UNIQUE NOT NULL,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      password_change_required INTEGER DEFAULT 0,
       role TEXT DEFAULT 'user',
       status TEXT DEFAULT 'pending',
       avatar_color TEXT DEFAULT '#4f46e5',
@@ -244,6 +282,7 @@ async function createTables() {
     )`)
   ]);
   await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
+  await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_change_required INTEGER DEFAULT 0');
   await q(`CREATE TABLE IF NOT EXISTS file_collections (
     id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, room_id TEXT NOT NULL, title TEXT NOT NULL,
     single_link INTEGER DEFAULT 0,
@@ -321,6 +360,13 @@ async function createTables() {
     expires_at TEXT NOT NULL,
     user_agent TEXT
   )`);
+  await q(`CREATE TABLE IF NOT EXISTS auth_rate_limits (
+    bucket_hash TEXT PRIMARY KEY,
+    attempt_count INTEGER NOT NULL,
+    window_started_at TEXT NOT NULL,
+    blocked_until TEXT
+  )`);
+  await q('CREATE INDEX IF NOT EXISTS idx_auth_rate_limits_window ON auth_rate_limits (window_started_at)');
 }
 
 async function initDatabase() {
@@ -334,7 +380,8 @@ async function initDatabase() {
   const admin = await one("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
   if (!admin) {
     if (!INITIAL_ADMIN_PASSWORD) throw new Error('Defina ADMIN_PASSWORD antes de criar a conta administrativa inicial.');
-    const hash = bcrypt.hashSync(INITIAL_ADMIN_PASSWORD, 10);
+    if (!passwordIsStrong(INITIAL_ADMIN_PASSWORD)) throw new Error(`A senha inicial do administrador precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`);
+    const hash = await hashPassword(INITIAL_ADMIN_PASSWORD);
     await q(`INSERT INTO users (id, username, email, password_hash, role, status, avatar_color, created_at)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
       [uuidv4(), 'admin', 'admin@fileshare.com', hash, 'admin', 'approved', '#ef4444', ts()]);
@@ -347,18 +394,53 @@ async function initDatabase() {
 // App
 // ---------------------------------------------------------------------------
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', IS_VERCEL ? 1 : false);
 
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+const SESSION_COOKIE = IS_VERCEL ? '__Host-fileshare_session' : 'fileshare_session';
+const REMEMBER_COOKIE = IS_VERCEL ? '__Host-fs_remember' : 'fs_remember';
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  "form-action 'self'",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://esm.sh",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
+  "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  "connect-src 'self' https://cdn.jsdelivr.net https://esm.sh https://*.blob.vercel-storage.com",
+  "frame-src 'self' blob:",
+  "worker-src 'self' blob: https://cdn.jsdelivr.net"
+].join('; ') + (IS_VERCEL ? '; upgrade-insecure-requests' : '');
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/') || ['/admin', '/dashboard', '/change-password'].includes(req.path) || req.path.startsWith('/sala/') || req.path.startsWith('/enviar/')) {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+  if (IS_VERCEL && req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
 app.use(express.json({ limit: '220kb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: false, limit: '50kb', parameterLimit: 100 }));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon-48.png')));
 app.use(cookieSession({
-  name: 'fileshare_session',
+  name: SESSION_COOKIE,
   keys: [sessionSecret()],
-  maxAge: 30 * 24 * 60 * 60 * 1000,
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: '/',
   httpOnly: true,
   secure: IS_VERCEL,
   sameSite: 'lax'
@@ -366,9 +448,8 @@ app.use(cookieSession({
 app.use(wrap(async (req, res, next) => { await ensureDatabase(); next(); }));
 
 // ===== Login persistente ("lembrar de mim") =====
-// Além do cookie de sessão, guardamos um token longo (1 ano) no navegador; só o hash dele fica no banco.
-const REMEMBER_COOKIE = 'fs_remember';
-const REMEMBER_DAYS = 365;
+// Além do cookie de sessão, guardamos um token de 30 dias no navegador; só o hash dele fica no banco.
+const REMEMBER_DAYS = 30;
 const hashToken = t => crypto.createHash('sha256').update(String(t)).digest('hex');
 function readCookie(req, name) {
   const raw = req.headers.cookie || '';
@@ -389,24 +470,42 @@ async function issueRememberToken(req, res, userId) {
 }
 app.use(wrap(async (req, res, next) => {
   if (req.method === 'GET' && /\.(css|js|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(req.path)) return next();
-  if (req.session && req.session.userId) {
-    req.session.nowInMinutes = Math.floor(Date.now() / 60000); // renova o cookie de sessão a cada visita
-    return next();
-  }
+  if (req.session && req.session.userId) return next();
   const token = readCookie(req, REMEMBER_COOKIE);
   if (token && /^[a-f0-9]{64}$/.test(token)) {
     try {
-      const row = await one('SELECT a.user_id, a.expires_at, u.username, u.role, u.status FROM auth_tokens a JOIN users u ON u.id = a.user_id WHERE a.token_hash = $1', [hashToken(token)]);
-      if (row && row.expires_at > ts() && row.status !== 'rejected' && row.status !== 'banned') {
+      const row = await one('SELECT a.user_id, a.created_at, a.expires_at, u.username, u.role, u.status FROM auth_tokens a JOIN users u ON u.id = a.user_id WHERE a.token_hash = $1', [hashToken(token)]);
+      const issuedAt = row && Date.parse(String(row.created_at || '').replace(' ', 'T') + 'Z');
+      const rememberIsFresh = Number.isFinite(issuedAt) && Date.now() - issuedAt < REMEMBER_DAYS * 86400000;
+      if (row && row.expires_at > ts() && rememberIsFresh && row.status !== 'rejected' && row.status !== 'banned') {
         req.session.at = Date.now();
         req.session.userId = row.user_id; req.session.username = row.username; req.session.role = row.role; req.session.status = row.status;
-      } else if (!row || row.expires_at <= ts()) {
+      } else {
+        if (row) await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]);
         res.clearCookie(REMEMBER_COOKIE, { path: '/' });
       }
     } catch (e) { console.error('remember:', e && e.message); }
   }
   next();
 }));
+
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/') || ['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const fetchSite = String(req.get('sec-fetch-site') || '').toLowerCase();
+  if (fetchSite === 'cross-site') return res.status(403).json({ error: 'Origem da solicitação não permitida.' });
+  const origin = req.get('origin');
+  if (origin) {
+    try {
+      const expected = new URL(`${req.protocol}://${req.get('host')}`).origin;
+      if (new URL(origin).origin !== expected) return res.status(403).json({ error: 'Origem da solicitação não permitida.' });
+    } catch (error) {
+      return res.status(403).json({ error: 'Origem da solicitação não permitida.' });
+    }
+    return next();
+  }
+  if (fetchSite !== 'same-origin') return res.status(403).json({ error: 'Origem da solicitação não permitida.' });
+  next();
+});
 
 // Salas temporárias: apaga a sala, arquivos e mensagens quando o tempo acaba
 let lastPurge = 0;
@@ -429,7 +528,7 @@ app.use(wrap(async (req, res, next) => { if (req.path.startsWith('/api/') || req
 
 // Arquivos ficam no próprio Postgres. Na Vercel o corpo da requisição é limitado a ~4,5 MB.
 const MAX_FILE_BYTES = IS_VERCEL ? 4 * 1024 * 1024 : 50 * 1024 * 1024;
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES, files: 20 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES, files: 1 } });
 const collectionUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES, files: 1 } });
 
 // ---------------------------------------------------------------------------
@@ -437,11 +536,14 @@ const collectionUpload = multer({ storage: multer.memoryStorage(), limits: { fil
 // ---------------------------------------------------------------------------
 const requireAuth = wrap(async (req, res, next) => {
   if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
-  const user = await one('SELECT id, username, role, status, last_seen, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
+  const user = await one('SELECT id, username, role, status, last_seen, force_logout_at, password_change_required FROM users WHERE id = $1', [req.session.userId]);
   if (!user) { req.session = null; return res.status(401).json({ error: 'Não autorizado' }); }
-  if (user.status === 'banned' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
+  if (user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
     req.session = null; res.clearCookie(REMEMBER_COOKIE, { path: '/' });
-    return res.status(401).json({ error: user.status === 'banned' ? 'Conta suspensa' : 'Sessão encerrada pelo administrador' });
+    return res.status(401).json({ error: user.status === 'banned' ? 'Conta suspensa' : user.status === 'rejected' ? 'Conta sem acesso' : 'Sessão encerrada pelo administrador' });
+  }
+  if (Number(user.password_change_required) && !['/api/change-password', '/api/logout'].includes(req.path)) {
+    return res.status(428).json({ state: 'password_change_required', error: 'Atualize sua senha para continuar.' });
   }
   if (!user.last_seen || user.last_seen < agoTs(45000)) { q('UPDATE users SET last_seen = $1 WHERE id = $2', [ts(), user.id]).catch(() => {}); }
   req.user = user;
@@ -762,7 +864,7 @@ function notify(userId, title, message, type) {
 
 // =================== ADMIN+: log de atividade, configurações, segurança ===================
 const agoTs = ms => new Date(Date.now() - ms).toISOString().slice(0, 19).replace('T', ' ');
-const clientIp = req => String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim().slice(0, 64);
+const clientIp = req => String(req.ip || req.socket && req.socket.remoteAddress || 'unknown').slice(0, 64);
 async function logAct(req, action, detail, who) {
   try {
     const u = who || req.user || {};
@@ -782,16 +884,37 @@ async function setSetting(key, value) {
   await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, String(value)]);
   settingsCache.at = 0;
 }
-// Anti força-bruta (memória do servidor; melhor esforço)
-const loginFails = new Map();
-function failKey(req, id) { return clientIp(req) + '|' + String(id).toLowerCase().slice(0, 60); }
-function tooManyFails(req, id) {
-  const r = loginFails.get(failKey(req, id));
-  return !!(r && r.n >= 8 && Date.now() - r.t < 10 * 60000);
+// Limitação compartilhada no banco para funcionar entre instâncias serverless.
+async function consumeRateLimit(key, maxAttempts, windowMs, cooldownMs = windowMs) {
+  const now = ts();
+  const resetBefore = new Date(Date.now() - windowMs).toISOString().slice(0, 19).replace('T', ' ');
+  const blockedUntil = new Date(Date.now() + cooldownMs).toISOString().slice(0, 19).replace('T', ' ');
+  const bucketHash = hashToken('rate-limit:' + key);
+  const row = await one(`INSERT INTO auth_rate_limits (bucket_hash, attempt_count, window_started_at, blocked_until)
+      VALUES ($1, 1, $2, NULL)
+      ON CONFLICT (bucket_hash) DO UPDATE SET
+        attempt_count = CASE
+          WHEN auth_rate_limits.blocked_until > $2 THEN auth_rate_limits.attempt_count
+          WHEN auth_rate_limits.window_started_at <= $3 THEN 1
+          ELSE auth_rate_limits.attempt_count + 1 END,
+        window_started_at = CASE
+          WHEN auth_rate_limits.blocked_until > $2 THEN auth_rate_limits.window_started_at
+          WHEN auth_rate_limits.window_started_at <= $3 THEN $2
+          ELSE auth_rate_limits.window_started_at END,
+        blocked_until = CASE
+          WHEN auth_rate_limits.blocked_until > $2 THEN auth_rate_limits.blocked_until
+          WHEN auth_rate_limits.window_started_at <= $3 THEN NULL
+          WHEN auth_rate_limits.attempt_count + 1 >= $4 THEN $5
+          ELSE NULL END
+      RETURNING attempt_count, blocked_until`, [bucketHash, now, resetBefore, maxAttempts, blockedUntil]);
+  if (Math.random() < 0.02) {
+    q('DELETE FROM auth_rate_limits WHERE window_started_at <= $1 AND (blocked_until IS NULL OR blocked_until <= $2)', [agoTs(48 * 60 * 60 * 1000), now]).catch(() => {});
+  }
+  return !!(row && row.blocked_until && row.blocked_until > now);
 }
-function addFail(req, id) {
-  const k = failKey(req, id); const r = loginFails.get(k);
-  if (!r || Date.now() - r.t > 10 * 60000) loginFails.set(k, { n: 1, t: Date.now() }); else { r.n++; r.t = Date.now(); }
+function rateLimitHash(key) { return hashToken('rate-limit:' + key); }
+async function clearLoginRateLimits(ipKey, accountKey) {
+  await q('DELETE FROM auth_rate_limits WHERE bucket_hash = $1 OR bucket_hash = $2', [rateLimitHash(ipKey), rateLimitHash(accountKey)]);
 }
 // Registra ações de usuários (uploads, salas, arquivos) antes de responder — seguro em serverless
 function classifyAct(req) {
@@ -834,16 +957,28 @@ app.get('/', wrap(async (req, res) => {
 app.get('/register', (req, res) => res.sendFile(page('register.html')));
 app.get('/admin', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
-  const user = await one('SELECT role FROM users WHERE id = $1', [req.session.userId]);
+  const user = await one('SELECT role, status, password_change_required, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
+  if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) { req.session = null; return res.redirect('/'); }
+  if (Number(user.password_change_required)) return res.redirect('/change-password');
   if (!user || user.role !== 'admin') return res.redirect('/');
   res.sendFile(page('admin.html'));
 }));
 app.get('/dashboard', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
-  const user = await one('SELECT role, status FROM users WHERE id = $1', [req.session.userId]);
+  const user = await one('SELECT role, status, password_change_required, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
   if (!user) return res.redirect('/');
+  if (user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) { req.session = null; return res.redirect('/'); }
+  if (Number(user.password_change_required)) return res.redirect('/change-password');
   if (!isApproved(user)) return res.sendFile(page('pending.html'));
   res.sendFile(page('dashboard.html'));
+}));
+app.get('/change-password', wrap(async (req, res) => {
+  if (!req.session || !req.session.userId) return res.redirect('/');
+  const user = await one('SELECT role, status, password_change_required, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
+  if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) { req.session = null; res.clearCookie(REMEMBER_COOKIE, { path: '/' }); return res.redirect('/'); }
+  if (!Number(user.password_change_required)) return res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(page('change-password.html'));
 }));
 app.get('/enviar/:token', (req, res) => {
   if (!COLLECTION_TOKEN_RE.test(String(req.params.token || ''))) return res.status(404).send('Link de envio inválido');
@@ -852,8 +987,9 @@ app.get('/enviar/:token', (req, res) => {
 });
 app.get('/sala/:slug', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
-  const user = await one('SELECT id, role, status FROM users WHERE id = $1', [req.session.userId]);
+  const user = await one('SELECT id, role, status, password_change_required FROM users WHERE id = $1', [req.session.userId]);
   if (!user || !isApproved(user)) return res.redirect('/dashboard');
+  if (Number(user.password_change_required)) return res.redirect('/change-password');
   const room = await one('SELECT id FROM rooms WHERE slug = $1', [req.params.slug]);
   if (!room) return res.status(404).send('Sala não encontrada');
   if (!(await canUseRoom(user, room.id))) return res.status(403).send('Entre na sala para acessar seus arquivos');
@@ -862,23 +998,25 @@ app.get('/sala/:slug', wrap(async (req, res) => {
 
 // =================== AUTH API ===================
 app.post('/api/register', wrap(async (req, res) => {
-  const username = String(req.body.username || '').trim();
-  const email = String(req.body.email || '').trim().toLowerCase();
-  const password = String(req.body.password || '');
+  const body = req.body || {};
+  const username = String(body.username || '').trim();
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  if (await consumeRateLimit('register-ip:' + clientIp(req), 10, 60 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas de cadastro. Tente novamente mais tarde.' });
   if (!username || !email || !password) return res.status(400).json({ error: 'Preencha todos os campos' });
+  if (username.length < 3 || username.length > 60 || email.length > 254) return res.status(400).json({ error: 'Confira o tamanho do nome e do email.' });
   const regMode = await getSetting('registration_mode', 'approval');
   if (regMode === 'closed') return res.status(403).json({ error: 'Os cadastros estão fechados no momento.' });
-  if (password.length < 4) return res.status(400).json({ error: 'Senha mínima: 4 caracteres' });
-  if (await one('SELECT id FROM users WHERE username = $1', [username])) return res.status(400).json({ error: 'Usuário já existe' });
-  if (await one('SELECT id FROM users WHERE email = $1', [email])) return res.status(400).json({ error: 'Email já cadastrado' });
+  if (!passwordIsStrong(password)) return res.status(400).json({ error: `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres (até ${MAX_PASSWORD_LENGTH}).` });
+  if (await one('SELECT id FROM users WHERE username = $1 OR email = $2', [username, email])) return res.status(400).json({ error: 'Não foi possível criar a conta com esses dados.' });
 
   const colors = ['#4f46e5', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
   try {
     await q('INSERT INTO users (id, username, email, password_hash, avatar_color, created_at, status) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [uuidv4(), username, email, bcrypt.hashSync(password, 10), colors[Math.floor(Math.random() * colors.length)], ts(), regMode === 'auto' ? 'approved' : 'pending']);
+      [uuidv4(), username, email, await hashPassword(password), colors[Math.floor(Math.random() * colors.length)], ts(), regMode === 'auto' ? 'approved' : 'pending']);
     await logAct(req, 'cadastro', username, { username });
   } catch (e) {
-    if (isUnique(e)) return res.status(400).json({ error: 'Usuário ou email já cadastrado' });
+    if (isUnique(e)) return res.status(400).json({ error: 'Não foi possível criar a conta com esses dados.' });
     throw e;
   }
   const admins = await q("SELECT id FROM users WHERE role = 'admin'");
@@ -887,18 +1025,29 @@ app.post('/api/register', wrap(async (req, res) => {
 }));
 
 app.post('/api/login', wrap(async (req, res) => {
-  const identifier = String(req.body.username || '').trim();
-  const password = String(req.body.password || '');
-  const user = await one('SELECT * FROM users WHERE username = $1 OR email = $2', [identifier, identifier.toLowerCase()]);
-  if (tooManyFails(req, identifier)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde 10 minutos.' });
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-    addFail(req, identifier);
+  const body = req.body || {};
+  const identifier = String(body.username || '').trim().slice(0, 254);
+  const password = String(body.password || '');
+  const ipKey = 'login-ip:' + clientIp(req);
+  const accountKey = 'login-account:' + identifier.toLocaleLowerCase();
+  if (await consumeRateLimit(ipKey, 60, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
+  if (await consumeRateLimit(accountKey, 8, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
+  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) return res.status(401).json({ error: 'Credenciais inválidas' });
+  const user = await one('SELECT id, username, email, password_hash, role, status, password_change_required FROM users WHERE username = $1 OR email = $2', [identifier, identifier.toLowerCase()]);
+  const verification = await verifyPassword(password, user ? user.password_hash : await DUMMY_PASSWORD_HASH);
+  if (!verification.matches) {
     await logAct(req, 'login_falhou', identifier.slice(0, 60), { username: user ? user.username : null, id: user ? user.id : null, role: user ? user.role : null });
     return res.status(401).json({ error: 'Credenciais inválidas' });
   }
   if (user.status === 'rejected') return res.status(403).json({ error: 'Sua conta foi rejeitada pelo administrador' });
   if (user.status === 'banned') { await logAct(req, 'login_bloqueado', 'conta suspensa', user); return res.status(403).json({ error: 'Sua conta está suspensa. Fale com o administrador.' }); }
-  loginFails.delete(failKey(req, identifier));
+  if (verification.needsUpgrade) {
+    const upgradedHash = await hashPassword(password);
+    await q('UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash = $3', [upgradedHash, user.id, user.password_hash]);
+  }
+  const passwordChangeRequired = Number(user.password_change_required) === 1 || !passwordIsStrong(password);
+  if (passwordChangeRequired) await q('UPDATE users SET password_change_required = 1 WHERE id = $1', [user.id]);
+  await clearLoginRateLimits(ipKey, accountKey);
   await q('UPDATE users SET last_login = $1, last_seen = $1, last_ip = $2 WHERE id = $3', [ts(), clientIp(req), user.id]);
   await logAct(req, 'login', '', user);
   req.session.at = Date.now();
@@ -906,8 +1055,9 @@ app.post('/api/login', wrap(async (req, res) => {
   req.session.username = user.username;
   req.session.role = user.role;
   req.session.status = user.status;
+  req.session.passwordChangeRequired = passwordChangeRequired;
   try { await issueRememberToken(req, res, user.id); } catch (e) { console.error('issue token:', e && e.message); }
-  res.json({ success: true, role: user.role, status: user.status });
+  res.json({ success: true, role: user.role, status: user.status, password_change_required: passwordChangeRequired });
 }));
 
 app.post('/api/logout', wrap(async (req, res) => {
@@ -1134,7 +1284,7 @@ app.delete('/api/rooms/:roomId/members/:userId', asAdmin, wrap(async (req, res) 
 
 // =================== ARQUIVOS ===================
 app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
-  upload.array('files', 20)(req, res, err => {
+  upload.array('files', 1)(req, res, err => {
     if (!err) return next();
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({ error: `Arquivo grande demais (máximo ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB por arquivo)` });
@@ -1220,11 +1370,12 @@ app.post('/api/rooms/:id/upload-token', wrap(async (req, res) => {
   const action = req.body && req.body.type;
   if (action === 'blob.generate-presigned-url') {
     if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
-    const user = await one('SELECT id, username, role, status, last_seen, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
-    if (!user || user.status === 'banned' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
+    const user = await one('SELECT id, username, role, status, last_seen, force_logout_at, password_change_required FROM users WHERE id = $1', [req.session.userId]);
+    if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
       req.session = null;
       return res.status(401).json({ error: 'Não autorizado' });
     }
+    if (Number(user.password_change_required)) return res.status(428).json({ state: 'password_change_required', error: 'Atualize sua senha para continuar.' });
     if (!isApproved(user)) return res.status(403).json({ error: 'Conta aguardando aprovação' });
     const room = await one('SELECT id FROM rooms WHERE id = $1', [req.params.id]);
     if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
@@ -1447,6 +1598,9 @@ app.post('/api/coletas/:id/participantes/:recipientId/reemitir', asMember, wrap(
 
 const publicCollectionAccess = wrap(async (req, res, next) => {
   let recipient = await getCollectionRecipient(req.params.token);
+  if (!recipient && await consumeRateLimit('collection-invalid:' + clientIp(req), 120, 60 * 1000)) {
+    return res.status(429).json({ error: 'Muitas tentativas para acessar links de envio. Aguarde e tente novamente.' });
+  }
   if (!recipient && COLLECTION_TOKEN_RE.test(String(req.params.token || ''))) {
     const replaced = await one('SELECT closed_reason FROM file_collection_closed_tokens WHERE token_hash = $1', [hashToken(req.params.token)]);
     if (replaced && replaced.closed_reason === 'replaced') {
@@ -1921,11 +2075,14 @@ app.get('/preview/:fileId', asMember, wrap(async (req, res) => {
   const file = await one('SELECT id, room_id, original_name, mime_type, stored_name FROM files WHERE id = $1', [req.params.fileId]);
   if (!file) return res.status(404).send('Arquivo não encontrado');
   if (!(await canUseRoom(req.user, file.room_id))) return res.status(403).send('Sem permissão para visualizar este arquivo');
-  const mime = file.mime_type || 'application/octet-stream';
+  const declaredMime = String(file.mime_type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+  const safeMediaMime = /^(image\/(png|jpeg|gif|webp|avif|bmp)|video\/(mp4|webm|ogg|quicktime)|audio\/(mpeg|mp4|ogg|wav|webm|aac))$/.test(declaredMime);
+  const textMime = declaredMime.startsWith('text/') || ['application/json', 'application/xml', 'application/yaml', 'application/x-yaml'].includes(declaredMime);
+  const mime = safeMediaMime ? declaredMime : textMime ? 'text/plain; charset=utf-8' : 'application/octet-stream';
   const ascii = String(file.original_name || 'arquivo').replace(/[^a-zA-Z0-9._ -]/g, '_');
-  res.set('Content-Disposition', 'inline; filename="' + ascii + '"');
+  res.set('Content-Disposition', (safeMediaMime || textMime ? 'inline' : 'attachment') + '; filename="' + ascii + '"');
   res.set('Cache-Control', 'private, no-store');
-  res.type(mime);
+  res.set('Content-Type', mime);
   if (isBlobPath(file.stored_name)) {
     const { get } = await blobSdk();
     const result = await get(file.stored_name, { access: 'private' });
@@ -2091,8 +2248,8 @@ app.post('/api/admin/users/:id/logout', asAdmin, adminTarget, wrap(async (req, r
 }));
 app.post('/api/admin/users/:id/reset-password', asAdmin, adminTarget, wrap(async (req, res) => {
   const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  const temp = Array.from(crypto.randomBytes(10), b => chars[b % chars.length]).join('');
-  await q('UPDATE users SET password_hash = $1 WHERE id = $2', [bcrypt.hashSync(temp, 10), req.target.id]);
+  const temp = Array.from(crypto.randomBytes(24), b => chars[b % chars.length]).join('');
+  await q('UPDATE users SET password_hash = $1, password_change_required = 1 WHERE id = $2', [await hashPassword(temp), req.target.id]);
   await forceLogout(req.target.id);
   await logAct(req, 'senha_redefinida', req.target.username);
   res.json({ success: true, password: temp });
@@ -2415,7 +2572,7 @@ app.get('/api/live', wrap(async (req, res) => {
   const out = { v: BUILD_ID, auth: false };
   if (req.session && req.session.userId) {
     const u = await one('SELECT id, username, role, status, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
-    if (u && u.status !== 'banned' && !(u.force_logout_at && Number(req.session.at || 0) <= Number(u.force_logout_at))) {
+    if (u && u.status !== 'banned' && u.status !== 'rejected' && !(u.force_logout_at && Number(req.session.at || 0) <= Number(u.force_logout_at))) {
       out.auth = true; out.role = u.role; out.status = u.status;
       out.ann = { text: await getSetting('announcement', ''), type: await getSetting('announcement_type', 'info') };
       out.unread = num((await one('SELECT COUNT(*) AS c FROM notifications WHERE user_id = $1 AND "read" = 0', [u.id])).c);
@@ -2526,13 +2683,19 @@ app.get('/api/admin/stats', asAdmin, wrap(async (req, res) => {
 
 app.post('/api/change-password', requireAuth, wrap(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
+  if (await consumeRateLimit('change-password:' + req.user.id, 8, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas para alterar a senha. Aguarde e tente novamente.' });
   const user = await one('SELECT id, password_hash FROM users WHERE id = $1', [req.user.id]);
-  if (!bcrypt.compareSync(String(currentPassword || ''), user.password_hash)) return res.status(400).json({ error: 'Senha atual incorreta' });
-  if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ error: 'Mínimo 4 caracteres' });
-  await q('UPDATE users SET password_hash = $1 WHERE id = $2', [bcrypt.hashSync(String(newPassword), 10), user.id]);
-  // Trocar a senha encerra o login persistente em todos os aparelhos; este aparelho recebe um token novo
-  try { await q('DELETE FROM auth_tokens WHERE user_id = $1', [user.id]); await issueRememberToken(req, res, user.id); } catch (e) { console.error('revoke tokens:', e && e.message); }
-  res.json({ success: true });
+  const currentVerification = await verifyPassword(String(currentPassword || ''), user.password_hash);
+  if (!currentVerification.matches) return res.status(400).json({ error: 'Senha atual incorreta' });
+  if (!passwordIsStrong(newPassword)) return res.status(400).json({ error: `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres (até ${MAX_PASSWORD_LENGTH}).` });
+  await q('UPDATE users SET password_hash = $1, password_change_required = 0 WHERE id = $2', [await hashPassword(newPassword), user.id]);
+  // Encerra sessões e tokens antigos; mantém somente a sessão que acabou de trocar a senha.
+  const loggedOutAt = Date.now();
+  await q('UPDATE users SET force_logout_at = $1 WHERE id = $2', [String(loggedOutAt), user.id]);
+  await q('DELETE FROM auth_tokens WHERE user_id = $1', [user.id]);
+  req.session.at = loggedOutAt + 1;
+  try { await issueRememberToken(req, res, user.id); } catch (e) { console.error('revoke tokens:', e && e.message); }
+  res.json({ success: true, role: req.user.role });
 }));
 
 // ===== Servidor da sala (somente modo local e somente ADM) =====
@@ -2569,7 +2732,8 @@ app.post('/api/admin/local-server/stop', asAdmin, wrap(async (req, res) => {
 
 // =================== ERROS ===================
 app.use((err, req, res, next) => {
-  console.error('Erro em', req.method, req.originalUrl, '-', err && err.stack || err);
+  const safePath = String(req.path || '').replace(/(\/enviar\/)[^/]+/g, '$1[redacted]');
+  console.error('Erro em', req.method, safePath, '-', err && err.stack || err);
   if (res.headersSent) return next(err);
   const message = 'Erro interno do servidor. Tente novamente.';
   if (req.originalUrl.startsWith('/api/')) return res.status(500).json({ error: message });
