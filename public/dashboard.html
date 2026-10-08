@@ -13,10 +13,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/onboarding.css?v=20261007a">
+  <link rel="stylesheet" href="/css/style.css?v=20261008c"><link rel="stylesheet" href="/css/onboarding.css?v=20261007a">
   <link rel="stylesheet" href="/css/social.css?v=20261006e">
-  <link rel="stylesheet" href="/css/collections.css?v=20261007j">
-  <link rel="stylesheet" href="/css/library.css?v=20261008b">
+  <link rel="stylesheet" href="/css/collections.css?v=20261008k">
+  <link rel="stylesheet" href="/css/library.css?v=20261008c">
   <script src="/js/common.js?v=20261007a"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261008b" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
@@ -141,7 +141,7 @@
     </section>
     <section id="libraryPanel" role="tabpanel" aria-labelledby="libraryTab" hidden>
       <div class="dashboard-intro">
-        <div><h2><i class="fas fa-bookmark"></i> Meu Acervo</h2><p>Guarde o que importa, crie espaços pessoais e encontre seus arquivos do seu jeito.</p></div>
+        <div><h2><i class="fas fa-bookmark"></i> Meu Acervo</h2><p>Crie espaços pessoais, organize seus arquivos em prateleiras e encontre tudo do seu jeito.</p></div>
         <div class="library-intro-actions"><button id="createLibrarySpaceBtn" class="btn btn-primary" type="button"><i class="fas fa-folder-plus"></i> Criar espaço</button><button id="refreshLibraryBtn" class="btn btn-outline" type="button"><i class="fas fa-sync-alt"></i> Atualizar</button></div>
       </div>
       <div class="library-toolbar">
@@ -151,6 +151,10 @@
       </div>
       <div class="library-spaces-heading"><h3><i class="fas fa-layer-group" aria-hidden="true"></i> Seus espaços</h3><span>Toque para filtrar</span></div>
       <div id="librarySpaces" class="library-spaces" aria-label="Espaços pessoais"></div>
+      <div id="libraryBookcasesPanel" class="library-bookcases-panel" hidden>
+        <div class="library-spaces-heading library-bookcases-heading"><h3 id="libraryBookcasesTitle"><i class="fas fa-books" aria-hidden="true"></i> Prateleiras</h3><button id="createLibraryBookcaseBtn" class="btn btn-sm btn-outline" type="button"><i class="fas fa-plus"></i> Criar prateleira</button></div>
+        <div id="libraryBookcases" class="library-bookcases" aria-label="Prateleiras deste espaço"></div>
+      </div>
       <div id="librarySummary" class="library-summary" aria-live="polite"></div>
       <div id="libraryGrid" class="library-grid"><div class="loading"><i class="fas fa-spinner fa-spin"></i> Preparando seu Acervo...</div></div>
     </section>
@@ -161,7 +165,7 @@
     <div class="modal-content library-space-card" role="dialog" aria-modal="true" aria-labelledby="librarySpaceTitle">
       <div class="modal-header"><h3 id="librarySpaceTitle"><i class="fas fa-folder-plus"></i> Criar espaço pessoal</h3><button class="modal-close" type="button" data-library-space-close aria-label="Fechar">&times;</button></div>
       <form id="librarySpaceForm">
-        <div class="modal-body"><label class="library-editor-field" for="librarySpaceName">Nome do espaço<input id="librarySpaceName" type="text" maxlength="50" placeholder="Ex.: Trabalho, documentos, viagens" required autocomplete="off"><small>Use espaços para separar arquivos por assunto. Só você vê sua organização pessoal.</small></label></div>
+        <div class="modal-body"><label class="library-editor-field" for="librarySpaceName"><span id="librarySpaceNameLabel">Nome do espaço</span><input id="librarySpaceName" type="text" maxlength="50" placeholder="Ex.: Trabalho, documentos, viagens" required autocomplete="off"><small id="librarySpaceHelp">Cada espaço pode ter suas próprias prateleiras. Só você vê esta organização.</small></label></div>
         <div class="modal-footer library-space-actions"><button class="btn btn-outline" type="button" data-library-space-close>Cancelar</button><button id="saveLibrarySpace" class="btn btn-primary" type="submit"><i class="fas fa-folder-plus"></i> Criar espaço</button></div>
       </form>
     </div>
@@ -175,7 +179,11 @@
         <div class="modal-body">
           <input id="libraryFileId" type="hidden"><input id="libraryItemId" type="hidden">
           <div class="library-editor-file"><i class="fas fa-file-arrow-down"></i><span id="libraryEditorFileName"></span></div>
-          <div class="library-editor-space-row"><label class="library-editor-field" for="libraryEditorShelf">Espaço<select id="libraryEditorShelf"></select></label><button id="libraryCreateSpaceFromEditor" class="btn btn-sm btn-outline" type="button"><i class="fas fa-folder-plus"></i> Novo espaço</button></div>
+          <div class="library-editor-location">
+            <label class="library-editor-field" for="libraryEditorSpace">Espaço<select id="libraryEditorSpace"></select></label>
+            <label class="library-editor-field" for="libraryEditorShelf">Prateleira<select id="libraryEditorShelf"></select></label>
+            <div class="library-editor-location-actions"><button id="libraryCreateSpaceFromEditor" class="btn btn-sm btn-outline" type="button"><i class="fas fa-folder-plus"></i> Novo espaço</button><button id="libraryCreateBookcaseFromEditor" class="btn btn-sm btn-outline" type="button"><i class="fas fa-plus"></i> Nova prateleira</button></div>
+          </div>
           <label class="library-editor-field" for="libraryEditorNote">Sua anotação<textarea id="libraryEditorNote" maxlength="500" rows="3" placeholder="Por que esse arquivo é importante? Adicione contexto para encontrar depois."></textarea><small>Privada: só você pode ver esta anotação.</small></label>
           <label class="library-favorite-check"><input id="libraryEditorFavorite" type="checkbox"><span><i class="fas fa-star"></i> Marcar como importante</span></label>
         </div>
@@ -585,7 +593,7 @@
   <script src="/js/cursor.js"></script>
   <script src="/js/preview.js"></script>
   <script src="/js/collections.js?v=20261007k"></script>
-  <script src="/js/library.js?v=20261008b"></script>
+  <script src="/js/library.js?v=20261008c"></script>
   <script src="/js/announce.js"></script>
 </body>
 </html>

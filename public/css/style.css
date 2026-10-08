@@ -922,8 +922,8 @@ a:hover {
   --muted: #718096;
   --surface: rgba(255, 255, 255, 0.88);
   --line: rgba(23, 32, 51, 0.1);
-  --accent: #ff6b4a;
-  --accent-dark: #e65335;
+  --accent: #7251d3;
+  --accent-dark: #5936b1;
   --mint: #c8f3e5;
 }
 
@@ -1106,7 +1106,7 @@ body.auth-page::after { bottom: -110px; left: 8%; animation-delay: -4s; transfor
 .sala-left { display: flex; align-items: center; gap: 12px; }
 
 /* ===================== QUEM ENVIOU + RENOMEAR ===================== */
-.uploader-tag { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 10px 2px 3px; border-radius: 99px; font-size: 12px; font-weight: 600; color: var(--accent-dark); background: rgba(255,107,74,.1); border: 1px solid rgba(255,107,74,.28); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uploader-tag { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 10px 2px 3px; border-radius: 99px; font-size: 12px; font-weight: 600; color: var(--accent-dark); background: rgba(var(--cy-rgb),.1); border: 1px solid rgba(var(--cy-rgb),.28); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .uploader-dot { width: 18px; height: 18px; flex: none; display: inline-grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 10px; }
 .file-main { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex: 1; }
 .file-main .file-row-name { max-width: 100%; }
@@ -1256,23 +1256,23 @@ body.auth-page .pending-icon { font-size: 44px; }
 
 /* =====================================================================
    INTERIOR CIBERNÉTICO — vale para painel, admin e salas
-   (claro = laranja, escuro = roxo; as cores vêm de --cy / --cy-rgb)
+   (claro e escuro usam a identidade violeta do FileShare)
    ===================================================================== */
 :root {
-  --cy: #ff6b4a; --cy2: #ffb36b; --cy-rgb: 255,107,74;
-  --bg1: #f6f7fb; --bg2: #eceff5; --bubble: #ffffff; --field: #ffffff;
+  --cy: #7251d3; --cy2: #535ed6; --cy-rgb: 114,81,211;
+  --bg1: #f8f6fc; --bg2: #efebf7; --bubble: #ffffff; --field: #ffffff;
   --mono: 'Share Tech Mono', ui-monospace, monospace; --disp: 'Orbitron', 'Inter', sans-serif; --ui: 'Rajdhani', 'Inter', sans-serif;
   --hex: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
 }
 html[data-theme="dark"] { --cy: #a855f7; --cy2: #7c8bff; --cy-rgb: 168,85,247; --bg1: #0d0818; --bg2: #150f2b; --bubble: rgba(255,255,255,.06); --field: #120d22; }
 
-/* fundo: grade técnica + linhas de varredura bem leves */
+/* Fundo com grade discreta, mantendo texto e arquivos em primeiro plano. */
 :root body.app-page, :root body.sala-page {
   background-color: var(--bg1);
-  background-image: linear-gradient(rgba(var(--cy-rgb),.07) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--cy-rgb),.07) 1px, transparent 1px), linear-gradient(135deg, var(--bg1), var(--bg2));
+  background-image: linear-gradient(rgba(var(--cy-rgb),.035) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--cy-rgb),.035) 1px, transparent 1px), linear-gradient(135deg, var(--bg1), var(--bg2));
   background-size: 46px 46px, 46px 46px, auto; background-attachment: fixed;
 }
-body.app-page::after, body.sala-page::after { content: ''; position: fixed; inset: 0; z-index: 900; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.025) 0 1px, transparent 1px 3px); }
+body.app-page::after, body.sala-page::after { content: none; }
 
 /* cabeçalho: linha de neon correndo na base */
 .header { position: sticky; }

@@ -15,12 +15,13 @@
   };
 
   let items = [];
-  let shelves = [];
   let spaces = [];
   let loading = false;
   let favoritesOnly = false;
   let signature = '';
   let reloadQueued = false;
+  let modalMode = 'space';
+  let modalSpaceId = '';
 
   function normalize(value) {
     return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
@@ -54,44 +55,106 @@
     return 'fa-file-lines';
   }
 
-  function renderShelves() {
+  function allBookcases() {
+    return spaces.flatMap(space => (space.shelves || []).map(bookcase => ({ ...bookcase, space_id: space.id, space_name: space.name })));
+  }
+
+  function selectedSpaceId() {
+    const value = $('libraryShelfFilter').value;
+    if (value.startsWith('space:')) return value.slice(6);
+    if (value.startsWith('bookcase:')) return allBookcases().find(bookcase => bookcase.id === value.slice(9))?.space_id || '';
+    return '';
+  }
+
+  function renderFilterOptions() {
     const select = $('libraryShelfFilter');
     const current = select.value;
-    const editor = $('libraryEditorShelf');
-    const editorCurrent = editor.value;
-    const names = [...new Set([...shelves, ...spaces.map(space => space.name), ...items.map(item => item.shelf)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    select.innerHTML = '<option value="">Todos os espaços</option>' + names.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
-    if (names.includes(current)) select.value = current;
-    editor.innerHTML = (names.includes('Guardados') ? '' : '<option value="Guardados">Guardados</option>') + names.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
-    if (names.includes(editorCurrent) || editorCurrent === 'Guardados') editor.value = editorCurrent;
-    else editor.value = names[0] || 'Guardados';
-    return names;
+    select.innerHTML = '<option value="">Todos os espaços</option>' + spaces.map(space => {
+      const shelvesOptions = (space.shelves || []).map(bookcase => `<option value="bookcase:${esc(bookcase.id)}">　↳ ${esc(bookcase.name)}</option>`).join('');
+      return `<optgroup label="${esc(space.name)}"><option value="space:${esc(space.id)}">${esc(space.name)} · espaço</option>${shelvesOptions}</optgroup>`;
+    }).join('');
+    const validSpace = current.startsWith('space:') && spaces.some(space => space.id === current.slice(6));
+    const validBookcase = current.startsWith('bookcase:') && allBookcases().some(bookcase => bookcase.id === current.slice(9));
+    select.value = validSpace || validBookcase ? current : '';
+  }
+
+  function renderEditorBookcases(preferredId = $('libraryEditorShelf').value) {
+    const spaceId = $('libraryEditorSpace').value;
+    const space = spaces.find(entry => entry.id === spaceId);
+    const bookcases = space?.shelves || [];
+    $('libraryEditorShelf').innerHTML = bookcases.length
+      ? bookcases.map(bookcase => `<option value="${esc(bookcase.id)}">${esc(bookcase.name)}</option>`).join('')
+      : '<option value="">Crie uma prateleira</option>';
+    if (bookcases.some(bookcase => bookcase.id === preferredId)) $('libraryEditorShelf').value = preferredId;
+    else if (bookcases.length) $('libraryEditorShelf').value = bookcases[0].id;
+    $('libraryCreateBookcaseFromEditor').disabled = !space;
+  }
+
+  function renderEditorLocations() {
+    const select = $('libraryEditorSpace');
+    const current = select.value;
+    select.innerHTML = spaces.map(space => `<option value="${esc(space.id)}">${esc(space.name)}</option>`).join('');
+    if (spaces.some(space => space.id === current)) select.value = current;
+    else if (spaces.length) select.value = spaces[0].id;
+    renderEditorBookcases();
+  }
+
+  function renderShelves() {
+    renderFilterOptions();
+    renderEditorLocations();
+    return spaces;
   }
 
   function filteredItems() {
     const query = normalize($('librarySearch').value.trim());
-    const shelf = $('libraryShelfFilter').value;
+    const filter = $('libraryShelfFilter').value;
     return items.filter(item => {
       if (favoritesOnly && !item.is_favorite) return false;
-      if (shelf && item.shelf !== shelf) return false;
+      if (filter.startsWith('space:') && item.space_id !== filter.slice(6)) return false;
+      if (filter.startsWith('bookcase:') && item.bookcase_id !== filter.slice(9)) return false;
       if (!query) return true;
-      const text = normalize([item.original_name, item.room_name, item.uploader, item.shelf, item.note].join(' '));
+      const text = normalize([item.original_name, item.room_name, item.uploader, item.space_name, item.bookcase_name, item.note].join(' '));
       return text.includes(query);
     });
   }
 
-  function render() {
-    const names = renderShelves();
-    const spaceCounts = new Map();
-    items.forEach(item => spaceCounts.set(item.shelf || 'Guardados', (spaceCounts.get(item.shelf || 'Guardados') || 0) + 1));
-    $('librarySpaces').innerHTML = `<button class="library-space-tile ${$('libraryShelfFilter').value ? '' : 'is-active'}" type="button" data-library-space="" aria-pressed="${!$('libraryShelfFilter').value}"><span class="library-space-icon"><i class="fas fa-layer-group" aria-hidden="true"></i></span><span class="library-space-copy"><strong>Todos</strong><small>${items.length} ${items.length === 1 ? 'arquivo' : 'arquivos'}</small></span></button>` + names.map(name => {
-      const count = spaceCounts.get(name) || 0;
-      const active = $('libraryShelfFilter').value === name;
-      return `<button class="library-space-tile ${active ? 'is-active' : ''}" type="button" data-library-space="${esc(name)}" aria-pressed="${active}"><span class="library-space-icon"><i class="fas fa-folder" aria-hidden="true"></i></span><span class="library-space-copy"><strong>${esc(name)}</strong><small>${count} ${count === 1 ? 'arquivo' : 'arquivos'}</small></span></button>`;
+  function renderSpaceTiles() {
+    const current = $('libraryShelfFilter').value;
+    const counts = new Map();
+    items.forEach(item => counts.set(item.space_id, (counts.get(item.space_id) || 0) + 1));
+    $('librarySpaces').innerHTML = `<button class="library-space-tile ${current ? '' : 'is-active'}" type="button" data-library-space="" aria-pressed="${!current}"><span class="library-space-icon"><i class="fas fa-layer-group" aria-hidden="true"></i></span><span class="library-space-copy"><strong>Todos</strong><small>${items.length} ${items.length === 1 ? 'arquivo' : 'arquivos'}</small></span></button>` + spaces.map(space => {
+      const count = counts.get(space.id) || 0;
+      const active = selectedSpaceId() === space.id;
+      const shelfCount = (space.shelves || []).length;
+      return `<button class="library-space-tile ${active ? 'is-active' : ''}" type="button" data-library-space="${esc(space.id)}" aria-pressed="${active}"><span class="library-space-icon"><i class="fas fa-folder" aria-hidden="true"></i></span><span class="library-space-copy"><strong>${esc(space.name)}</strong><small>${count} ${count === 1 ? 'arquivo' : 'arquivos'} · ${shelfCount} ${shelfCount === 1 ? 'prateleira' : 'prateleiras'}</small></span></button>`;
     }).join('');
+  }
+
+  function renderBookcaseTiles() {
+    const spaceId = selectedSpaceId();
+    const space = spaces.find(entry => entry.id === spaceId);
+    const panel = $('libraryBookcasesPanel');
+    panel.hidden = !space;
+    if (!space) return;
+    $('libraryBookcasesTitle').innerHTML = `<i class="fas fa-books" aria-hidden="true"></i> Prateleiras de ${esc(space.name)}`;
+    const current = $('libraryShelfFilter').value;
+    const counts = new Map();
+    items.filter(item => item.space_id === space.id).forEach(item => counts.set(item.bookcase_id, (counts.get(item.bookcase_id) || 0) + 1));
+    const spaceItemCount = items.filter(item => item.space_id === space.id).length;
+    $('libraryBookcases').innerHTML = `<button class="library-bookcase-tile ${current === `space:${space.id}` ? 'is-active' : ''}" type="button" data-library-bookcase="space:${esc(space.id)}" aria-pressed="${current === `space:${space.id}`}"><i class="fas fa-layer-group" aria-hidden="true"></i><span><strong>Todas as prateleiras</strong><small>${spaceItemCount} ${spaceItemCount === 1 ? 'arquivo' : 'arquivos'}</small></span></button>` + (space.shelves || []).map(bookcase => {
+      const count = counts.get(bookcase.id) || 0;
+      const active = current === `bookcase:${bookcase.id}`;
+      return `<button class="library-bookcase-tile ${active ? 'is-active' : ''}" type="button" data-library-bookcase="bookcase:${esc(bookcase.id)}" aria-pressed="${active}"><i class="fas fa-bookmark" aria-hidden="true"></i><span><strong>${esc(bookcase.name)}</strong><small>${count} ${count === 1 ? 'arquivo' : 'arquivos'}</small></span></button>`;
+    }).join('');
+  }
+
+  function render() {
+    renderShelves();
+    renderSpaceTiles();
+    renderBookcaseTiles();
     const filtered = filteredItems();
     const summary = $('librarySummary');
-    summary.innerHTML = `<span><strong>${filtered.length}</strong> ${filtered.length === 1 ? 'arquivo' : 'arquivos'} encontrados</span><span><i class="fas fa-folder-open" aria-hidden="true"></i> ${names.length} ${names.length === 1 ? 'espaço' : 'espaços'}</span>`;
+    summary.innerHTML = `<span><strong>${filtered.length}</strong> ${filtered.length === 1 ? 'arquivo' : 'arquivos'} encontrados</span><span><i class="fas fa-folder-open" aria-hidden="true"></i> ${spaces.length} ${spaces.length === 1 ? 'espaço' : 'espaços'}</span>`;
     $('libraryFavoritesFilter').classList.toggle('is-active', favoritesOnly);
     $('libraryFavoritesFilter').setAttribute('aria-pressed', String(favoritesOnly));
     $('librarySearchClear').hidden = !$('librarySearch').value;
@@ -99,14 +162,12 @@
       const hasFilters = Boolean($('librarySearch').value || $('libraryShelfFilter').value || favoritesOnly);
       $('libraryGrid').innerHTML = hasFilters
         ? '<div class="library-empty"><i class="fas fa-magnifying-glass"></i><h3>Nenhum arquivo encontrado</h3><p>Tente outro termo ou limpe os filtros para ver seu Acervo.</p><button class="btn btn-outline" type="button" data-library-clear-filters><i class="fas fa-filter-circle-xmark"></i> Limpar filtros</button></div>'
-        : names.length
-          ? '<div class="library-empty"><span class="library-empty-icon"><i class="fas fa-folder-open"></i></span><h3>Seus espaços já estão prontos</h3><p>Guarde arquivos das salas e escolha em qual espaço pessoal quer organizá-los.</p><button class="btn btn-outline" type="button" data-library-go-rooms><i class="fas fa-door-open"></i> Explorar salas</button></div>'
-          : '<div class="library-empty"><span class="library-empty-icon"><i class="fas fa-box-open"></i></span><h3>Seu Acervo começa aqui</h3><p>Crie um espaço para separar seus arquivos. Depois, abra uma sala e toque no marcador de um arquivo para guardá-lo no seu Acervo.</p><button class="btn btn-outline" type="button" data-library-create-space><i class="fas fa-folder-plus"></i> Criar meu primeiro espaço</button><button class="btn btn-outline" type="button" data-library-go-rooms><i class="fas fa-door-open"></i> Explorar salas</button></div>';
+        : '<div class="library-empty"><span class="library-empty-icon"><i class="fas fa-box-open"></i></span><h3>Seu Acervo está pronto</h3><p>Crie espaços e prateleiras para organizar seus arquivos. Depois, guarde arquivos das salas no espaço certo.</p><button class="btn btn-outline" type="button" data-library-create-space><i class="fas fa-folder-plus"></i> Criar espaço</button><button class="btn btn-outline" type="button" data-library-go-rooms><i class="fas fa-door-open"></i> Explorar salas</button></div>';
       return;
     }
     $('libraryGrid').innerHTML = filtered.map((item, index) => `
       <article class="library-card" style="--library-order:${Math.min(index, 10)}">
-        <div class="library-card-top"><span class="library-shelf"><i class="fas fa-layer-group" aria-hidden="true"></i> ${esc(item.shelf || 'Guardados')}</span><button type="button" class="library-star ${item.is_favorite ? 'is-active' : ''}" data-library-favorite="${esc(item.id)}" aria-label="${item.is_favorite ? 'Remover dos importantes' : 'Marcar como importante'}" aria-pressed="${Boolean(item.is_favorite)}"><i class="fas fa-star"></i></button></div>
+        <div class="library-card-top"><span class="library-shelf"><i class="fas fa-folder-tree" aria-hidden="true"></i> ${esc(item.space_name || 'Guardados')} <span aria-hidden="true">/</span> ${esc(item.bookcase_name || item.shelf || 'Geral')}</span><button type="button" class="library-star ${item.is_favorite ? 'is-active' : ''}" data-library-favorite="${esc(item.id)}" aria-label="${item.is_favorite ? 'Remover dos importantes' : 'Marcar como importante'}" aria-pressed="${Boolean(item.is_favorite)}"><i class="fas fa-star"></i></button></div>
         <div class="library-file-heading"><span class="library-file-icon"><i class="fas ${fileIcon(item)}" aria-hidden="true"></i></span><div class="library-file-copy"><h3 title="${esc(item.original_name)}">${esc(item.original_name)}</h3><p>${formatSize(item.size)} <span aria-hidden="true">·</span> guardado ${formatDate(item.saved_at)}</p></div></div>
         <div class="library-source"><i class="fas fa-folder-open" aria-hidden="true"></i><span>${esc(item.room_name || 'Sala')}</span><span class="library-source-separator">·</span><span>Enviado por ${esc(item.uploader || 'participante')}</span></div>
         ${item.note ? `<p class="library-note"><i class="fas fa-quote-left" aria-hidden="true"></i>${esc(item.note)}</p>` : '<p class="library-note library-note-empty">Adicione uma anotação pessoal para guardar o contexto.</p>'}
@@ -121,24 +182,19 @@
     try {
       const result = await api('/api/library');
       const nextItems = Array.isArray(result.items) ? result.items : [];
-      const nextShelves = Array.isArray(result.shelves) ? result.shelves : [];
       const nextSpaces = Array.isArray(result.spaces) ? result.spaces : [];
-      const nextSignature = JSON.stringify([nextItems, nextShelves, nextSpaces]);
+      const nextSignature = JSON.stringify([nextItems, nextSpaces]);
       if (nextSignature !== signature) {
         signature = nextSignature;
         items = nextItems;
-        shelves = nextShelves;
-        spaces = nextSpaces;
+        spaces = nextSpaces.map(space => ({ ...space, shelves: Array.isArray(space.shelves) ? space.shelves : [] }));
         render();
       }
     } catch (error) {
       if (!silent) $('libraryGrid').innerHTML = `<div class="library-empty library-error"><i class="fas fa-triangle-exclamation"></i><h3>Não foi possível carregar seu Acervo</h3><p>${esc(error.message)}</p><button class="btn btn-outline" type="button" data-library-retry><i class="fas fa-rotate-right"></i> Tentar novamente</button></div>`;
     } finally {
       loading = false;
-      if (reloadQueued) {
-        reloadQueued = false;
-        loadLibrary(true);
-      }
+      if (reloadQueued) { reloadQueued = false; loadLibrary(true); }
     }
   }
 
@@ -148,9 +204,19 @@
     modal.setAttribute('aria-hidden', 'true');
   }
 
-  function openSpaceModal() {
-    const modal = $('librarySpaceModal');
+  function openSpaceModal(mode = 'space', spaceId = '') {
+    modalMode = mode;
+    modalSpaceId = spaceId || selectedSpaceId() || $('libraryEditorSpace').value || '';
+    const isBookcase = mode === 'bookcase';
+    const space = spaces.find(entry => entry.id === modalSpaceId);
+    if (isBookcase && !space) { window.toast?.('Escolha um espaço primeiro.', 'error'); return; }
     $('librarySpaceForm').reset();
+    $('librarySpaceTitle').innerHTML = isBookcase ? '<i class="fas fa-books"></i> Criar prateleira' : '<i class="fas fa-folder-plus"></i> Criar espaço pessoal';
+    $('librarySpaceNameLabel').textContent = isBookcase ? 'Nome da prateleira' : 'Nome do espaço';
+    $('librarySpaceName').placeholder = isBookcase ? 'Ex.: Para ler, Receitas, Viagens' : 'Ex.: Trabalho, documentos, viagens';
+    $('librarySpaceHelp').textContent = isBookcase ? `Esta prateleira ficará dentro de “${space.name}”.` : 'Cada espaço pode ter suas próprias prateleiras. Só você vê esta organização.';
+    $('saveLibrarySpace').innerHTML = isBookcase ? '<i class="fas fa-plus"></i> Criar prateleira' : '<i class="fas fa-folder-plus"></i> Criar espaço';
+    const modal = $('librarySpaceModal');
     modal.style.display = 'flex';
     modal.setAttribute('aria-hidden', 'false');
     window.setTimeout(() => $('librarySpaceName').focus(), 40);
@@ -169,7 +235,9 @@
     $('libraryFileId').value = String(fileId);
     $('libraryItemId').value = item ? item.id : '';
     $('libraryEditorFileName').textContent = item ? item.original_name : String(fileName || 'Arquivo');
-    $('libraryEditorShelf').value = item ? item.shelf : ($('libraryShelfFilter').value || 'Guardados');
+    const currentSpace = item?.space_id || selectedSpaceId() || spaces[0]?.id || '';
+    $('libraryEditorSpace').value = currentSpace;
+    renderEditorBookcases(item?.bookcase_id || '');
     $('libraryEditorNote').value = item ? item.note : '';
     $('libraryEditorFavorite').checked = Boolean(item && item.is_favorite);
     $('removeLibraryItem').hidden = !item;
@@ -178,7 +246,7 @@
     const modal = $('libraryEditorModal');
     modal.style.display = 'flex';
     modal.setAttribute('aria-hidden', 'false');
-    window.setTimeout(() => $('libraryEditorShelf').focus(), 40);
+    window.setTimeout(() => $('libraryEditorSpace').focus(), 40);
   }
 
   window.openLibraryEditor = openEditor;
@@ -187,14 +255,17 @@
   $('librarySearch').addEventListener('input', render);
   $('librarySearchClear').addEventListener('click', () => { $('librarySearch').value = ''; render(); $('librarySearch').focus(); });
   $('libraryShelfFilter').addEventListener('change', render);
+  $('libraryEditorSpace').addEventListener('change', () => renderEditorBookcases());
   $('libraryFavoritesFilter').addEventListener('click', () => { favoritesOnly = !favoritesOnly; render(); });
-  $('createLibrarySpaceBtn').addEventListener('click', openSpaceModal);
-  $('libraryCreateSpaceFromEditor').addEventListener('click', openSpaceModal);
+  $('createLibrarySpaceBtn').addEventListener('click', () => openSpaceModal('space'));
+  $('createLibraryBookcaseBtn').addEventListener('click', () => openSpaceModal('bookcase'));
+  $('libraryCreateSpaceFromEditor').addEventListener('click', () => openSpaceModal('space'));
+  $('libraryCreateBookcaseFromEditor').addEventListener('click', () => openSpaceModal('bookcase', $('libraryEditorSpace').value));
   $('refreshLibraryBtn').addEventListener('click', () => loadLibrary());
   $('libraryGrid').addEventListener('click', async event => {
     const goRooms = event.target.closest('[data-library-go-rooms]');
     if (goRooms) { $('roomsTab').click(); return; }
-    if (event.target.closest('[data-library-create-space]')) { openSpaceModal(); return; }
+    if (event.target.closest('[data-library-create-space]')) { openSpaceModal('space'); return; }
     if (event.target.closest('[data-library-clear-filters]')) {
       $('librarySearch').value = '';
       $('libraryShelfFilter').value = '';
@@ -223,7 +294,14 @@
   $('librarySpaces').addEventListener('click', event => {
     const tile = event.target.closest('[data-library-space]');
     if (!tile) return;
-    $('libraryShelfFilter').value = tile.dataset.librarySpace;
+    $('libraryShelfFilter').value = tile.dataset.librarySpace ? `space:${tile.dataset.librarySpace}` : '';
+    render();
+  });
+
+  $('libraryBookcases').addEventListener('click', event => {
+    const tile = event.target.closest('[data-library-bookcase]');
+    if (!tile) return;
+    $('libraryShelfFilter').value = tile.dataset.libraryBookcase;
     render();
   });
 
@@ -244,17 +322,30 @@
     if (!name) { $('librarySpaceName').focus(); return; }
     button.disabled = true;
     try {
-      const created = await api('/api/library/spaces', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-      $('libraryShelfFilter').value = created.name;
-      spaces = [...spaces.filter(space => space.name.toLocaleLowerCase('pt-BR') !== created.name.toLocaleLowerCase('pt-BR')), created];
-      shelves = [...new Set([...shelves, created.name])];
+      let created;
+      if (modalMode === 'bookcase') {
+        created = await api(`/api/library/spaces/${encodeURIComponent(modalSpaceId)}/shelves`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+        spaces = spaces.map(space => space.id === modalSpaceId ? { ...space, shelves: [...space.shelves, created] } : space);
+        $('libraryShelfFilter').value = `bookcase:${created.id}`;
+        if ($('libraryEditorModal').getAttribute('aria-hidden') === 'false') {
+          $('libraryEditorSpace').value = modalSpaceId;
+          renderEditorBookcases(created.id);
+        }
+      } else {
+        created = await api('/api/library/spaces', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+        spaces = [...spaces.filter(space => space.id !== created.id), { ...created, shelves: created.shelves || [] }];
+        $('libraryShelfFilter').value = `space:${created.id}`;
+        if ($('libraryEditorModal').getAttribute('aria-hidden') === 'false') {
+          renderEditorLocations();
+          $('libraryEditorSpace').value = created.id;
+          renderEditorBookcases(created.shelves?.[0]?.id || '');
+        }
+      }
       signature = '';
       render();
       await loadLibrary(true);
-      renderShelves();
-      if ($('libraryEditorModal').getAttribute('aria-hidden') === 'false') $('libraryEditorShelf').value = created.name;
       closeSpaceModal();
-      window.toast?.(`Espaço “${created.name}” criado.`);
+      window.toast?.(modalMode === 'bookcase' ? `Prateleira “${created.name}” criada.` : `Espaço “${created.name}” criado.`);
     } catch (error) { window.toast?.(error.message, 'error'); }
     finally { button.disabled = false; }
   });
@@ -274,13 +365,18 @@
     const button = $('saveLibraryItem');
     const itemId = $('libraryItemId').value;
     const fileId = $('libraryFileId').value;
+    if (!$('libraryEditorSpace').value || !$('libraryEditorShelf').value) {
+      window.toast?.('Escolha ou crie uma prateleira para guardar este arquivo.', 'error');
+      return;
+    }
     button.disabled = true;
     try {
-      const body = JSON.stringify({ shelf: $('libraryEditorShelf').value, note: $('libraryEditorNote').value, is_favorite: $('libraryEditorFavorite').checked });
+      const placement = { space_id: $('libraryEditorSpace').value, bookcase_id: $('libraryEditorShelf').value };
+      const common = { ...placement, note: $('libraryEditorNote').value, is_favorite: $('libraryEditorFavorite').checked };
       await api(itemId ? '/api/library/' + encodeURIComponent(itemId) : '/api/library', {
         method: itemId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: itemId ? body : JSON.stringify({ file_id: fileId, shelf: $('libraryEditorShelf').value, note: $('libraryEditorNote').value, is_favorite: $('libraryEditorFavorite').checked })
+        body: JSON.stringify(itemId ? common : { file_id: fileId, ...common })
       });
       closeEditor();
       signature = '';

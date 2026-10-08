@@ -185,6 +185,84 @@ const num = v => Number(v) || 0;
 const ts = () => new Date().toISOString().slice(0, 19).replace('T', ' '); // UTC "YYYY-MM-DD HH:MM:SS"
 const isUnique = e => e && (e.code === '23505' || /unique|duplicate/i.test(String(e.message)));
 
+function cleanPersonalLibraryName(value) {
+  return String(value || '').replace(/[\\/\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function ensurePersonalLibrarySpace(userId, name, createdAt = ts()) {
+  const safeName = cleanPersonalLibraryName(name).slice(0, 50) || 'Guardados';
+  let space = await one('SELECT id, user_id, name, created_at FROM personal_library_spaces WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [userId, safeName]);
+  if (space) return space;
+  try {
+    space = await one(`INSERT INTO personal_library_spaces (id, user_id, name, created_at)
+      VALUES ($1, $2, $3, $4) RETURNING id, user_id, name, created_at`, [uuidv4(), userId, safeName, createdAt || ts()]);
+  } catch (error) {
+    if (!isUnique(error)) throw error;
+  }
+  return space || await one('SELECT id, user_id, name, created_at FROM personal_library_spaces WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [userId, safeName]);
+}
+
+async function ensurePersonalLibraryBookcase(userId, spaceId, name = 'Geral', createdAt = ts()) {
+  const safeName = cleanPersonalLibraryName(name).slice(0, 50) || 'Geral';
+  let bookcase = await one(`SELECT id, user_id, space_id, name, created_at FROM personal_library_bookcases
+    WHERE user_id = $1 AND space_id = $2 AND LOWER(name) = LOWER($3)`, [userId, spaceId, safeName]);
+  if (bookcase) return bookcase;
+  try {
+    bookcase = await one(`INSERT INTO personal_library_bookcases (id, user_id, space_id, name, created_at)
+      VALUES ($1, $2, $3, $4, $5) RETURNING id, user_id, space_id, name, created_at`, [uuidv4(), userId, spaceId, safeName, createdAt || ts()]);
+  } catch (error) {
+    if (!isUnique(error)) throw error;
+  }
+  return bookcase || await one(`SELECT id, user_id, space_id, name, created_at FROM personal_library_bookcases
+    WHERE user_id = $1 AND space_id = $2 AND LOWER(name) = LOWER($3)`, [userId, spaceId, safeName]);
+}
+
+async function migratePersonalLibraryHierarchy() {
+  const legacy = await q(`SELECT user_id, name, created_at FROM personal_library_shelves WHERE TRIM(name) <> ''
+    UNION SELECT user_id, COALESCE(NULLIF(TRIM(shelf), ''), 'Guardados') AS name, created_at FROM personal_library_items`);
+  for (const row of legacy) {
+    const space = await ensurePersonalLibrarySpace(row.user_id, row.name, row.created_at);
+    await ensurePersonalLibraryBookcase(row.user_id, space.id, 'Geral', row.created_at);
+  }
+  const oldItems = await q(`SELECT id, user_id, COALESCE(NULLIF(TRIM(shelf), ''), 'Guardados') AS legacy_space, created_at
+    FROM personal_library_items WHERE space_id IS NULL OR bookcase_id IS NULL`);
+  for (const item of oldItems) {
+    const space = await ensurePersonalLibrarySpace(item.user_id, item.legacy_space, item.created_at);
+    const bookcase = await ensurePersonalLibraryBookcase(item.user_id, space.id, 'Geral', item.created_at);
+    await q(`UPDATE personal_library_items SET space_id = $1, bookcase_id = $2, shelf = 'Geral'
+      WHERE id = $3 AND user_id = $4 AND (space_id IS NULL OR bookcase_id IS NULL)`, [space.id, bookcase.id, item.id, item.user_id]);
+  }
+}
+
+async function resolvePersonalLibraryLocation(userId, body = {}) {
+  const spaceId = String(body.space_id || '').trim();
+  const bookcaseId = String(body.bookcase_id || '').trim();
+  if (!spaceId && !bookcaseId) {
+    const legacyName = cleanPersonalLibraryName(body.shelf).slice(0, 50) || 'Guardados';
+    const space = await ensurePersonalLibrarySpace(userId, legacyName);
+    const bookcase = await ensurePersonalLibraryBookcase(userId, space.id);
+    return { space, bookcase };
+  }
+  if (spaceId && bookcaseId) {
+    const bookcase = await one(`SELECT b.id, b.user_id, b.space_id, b.name, b.created_at
+      FROM personal_library_bookcases b JOIN personal_library_spaces s ON s.id = b.space_id
+      WHERE b.id = $1 AND b.space_id = $2 AND b.user_id = $3 AND s.user_id = $3`, [bookcaseId, spaceId, userId]);
+    if (!bookcase) return null;
+    const space = await one('SELECT id, user_id, name, created_at FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [spaceId, userId]);
+    return space ? { space, bookcase } : null;
+  }
+  if (spaceId) {
+    const space = await one('SELECT id, user_id, name, created_at FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [spaceId, userId]);
+    if (!space) return null;
+    return { space, bookcase: await ensurePersonalLibraryBookcase(userId, spaceId) };
+  }
+  const bookcase = await one(`SELECT b.id, b.user_id, b.space_id, b.name, b.created_at FROM personal_library_bookcases b
+    JOIN personal_library_spaces s ON s.id = b.space_id WHERE b.id = $1 AND b.user_id = $2 AND s.user_id = $2`, [bookcaseId, userId]);
+  if (!bookcase) return null;
+  const space = await one('SELECT id, user_id, name, created_at FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [bookcase.space_id, userId]);
+  return space ? { space, bookcase } : null;
+}
+
 let initPromise = null;
 function ensureDatabase() {
   if (!initPromise) {
@@ -283,6 +361,19 @@ async function createTables() {
       created_at TEXT NOT NULL,
       UNIQUE(user_id, name)
     )`),
+    q(`CREATE TABLE IF NOT EXISTS personal_library_spaces (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS personal_library_bookcases (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      space_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`),
     q(`CREATE TABLE IF NOT EXISTS room_typing (
       room_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
@@ -303,6 +394,13 @@ async function createTables() {
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_file ON personal_library_items (file_id)');
   await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_library_shelves_user_name ON personal_library_shelves (user_id, LOWER(name))');
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_shelves_user_created ON personal_library_shelves (user_id, created_at)');
+  await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS space_id TEXT');
+  await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS bookcase_id TEXT');
+  await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_library_spaces_user_name ON personal_library_spaces (user_id, LOWER(name))');
+  await q('CREATE INDEX IF NOT EXISTS idx_personal_library_spaces_user_created ON personal_library_spaces (user_id, created_at)');
+  await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_library_bookcases_location_name ON personal_library_bookcases (user_id, space_id, LOWER(name))');
+  await q('CREATE INDEX IF NOT EXISTS idx_personal_library_bookcases_space ON personal_library_bookcases (user_id, space_id, created_at)');
+  await migratePersonalLibraryHierarchy();
   await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
   await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_change_required INTEGER DEFAULT 0');
   await q(`CREATE TABLE IF NOT EXISTS file_collections (
@@ -1297,36 +1395,69 @@ app.get('/api/rooms', asMember, wrap(async (req, res) => {
 // Acervo pessoal: guarda referências privadas aos arquivos sem alterar o acesso da sala.
 app.get('/api/library', asMember, wrap(async (req, res) => {
   res.set('Cache-Control', 'private, no-store');
+  const defaultSpace = await ensurePersonalLibrarySpace(req.user.id, 'Guardados');
+  await ensurePersonalLibraryBookcase(req.user.id, defaultSpace.id, 'Geral');
   const access = isAdmin(req.user) ? '1=1' : 'EXISTS (SELECT 1 FROM room_members rm WHERE rm.room_id = f.room_id AND rm.user_id = $2)';
   const params = isAdmin(req.user) ? [req.user.id] : [req.user.id, req.user.id];
-  const [items, savedSpaces] = await Promise.all([q(`SELECT li.id, li.file_id, li.shelf, li.note, li.is_favorite, li.created_at AS saved_at, li.updated_at,
+  const [items, savedSpaces, bookcases] = await Promise.all([q(`SELECT li.id, li.file_id, li.space_id, s.name AS space_name, li.bookcase_id,
+      b.name AS bookcase_name, b.name AS shelf, li.note, li.is_favorite, li.created_at AS saved_at, li.updated_at,
       f.room_id, f.original_name, f.size, f.mime_type, f.uploaded_at, r.name AS room_name,
       u.username AS uploader, u.role AS uploader_role
     FROM personal_library_items li
+    JOIN personal_library_spaces s ON s.id = li.space_id AND s.user_id = li.user_id
+    JOIN personal_library_bookcases b ON b.id = li.bookcase_id AND b.space_id = s.id AND b.user_id = li.user_id
     JOIN files f ON f.id = li.file_id
     JOIN rooms r ON r.id = f.room_id
     LEFT JOIN users u ON u.id = f.uploaded_by
     WHERE li.user_id = $1 AND ${access}
     ORDER BY li.updated_at DESC, li.created_at DESC`, params), q(`SELECT id, name, created_at
-    FROM personal_library_shelves WHERE user_id = $1 ORDER BY LOWER(name), created_at`, [req.user.id])]);
-  const shelves = [...new Set([...savedSpaces.map(space => space.name), ...items.map(item => item.shelf)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  res.json({ items: items.map(item => ({ ...item, size: num(item.size), is_favorite: Boolean(item.is_favorite) })), shelves, spaces: savedSpaces });
+    FROM personal_library_spaces WHERE user_id = $1 ORDER BY LOWER(name), created_at`, [req.user.id]), q(`SELECT id, space_id, name, created_at
+    FROM personal_library_bookcases WHERE user_id = $1 ORDER BY LOWER(name), created_at`, [req.user.id])]);
+  const shelvesBySpace = new Map();
+  bookcases.forEach(bookcase => {
+    if (!shelvesBySpace.has(bookcase.space_id)) shelvesBySpace.set(bookcase.space_id, []);
+    shelvesBySpace.get(bookcase.space_id).push(bookcase);
+  });
+  res.json({
+    items: items.map(item => ({ ...item, size: num(item.size), is_favorite: Boolean(item.is_favorite) })),
+    spaces: savedSpaces.map(space => ({ ...space, shelves: shelvesBySpace.get(space.id) || [] })),
+    shelves: bookcases
+  });
 }));
 
 app.post('/api/library/spaces', asMember, wrap(async (req, res) => {
-  const name = String((req.body && req.body.name) || '').replace(/[\\/\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim();
+  const name = cleanPersonalLibraryName(req.body && req.body.name);
   if (!name || name.length > 50) return res.status(400).json({ error: 'Dê um nome de até 50 caracteres para o espaço.' });
-  const existing = await one('SELECT id, name FROM personal_library_shelves WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [req.user.id, name]);
+  const existing = await one('SELECT id, name FROM personal_library_spaces WHERE user_id = $1 AND LOWER(name) = LOWER($2)', [req.user.id, name]);
   if (existing) return res.status(409).json({ error: 'Você já tem um espaço com esse nome.' });
   let space;
   try {
-    space = await one(`INSERT INTO personal_library_shelves (id, user_id, name, created_at)
+    space = await one(`INSERT INTO personal_library_spaces (id, user_id, name, created_at)
       VALUES ($1, $2, $3, $4) RETURNING id, name, created_at`, [uuidv4(), req.user.id, name, ts()]);
   } catch (error) {
     if (isUnique(error)) return res.status(409).json({ error: 'Você já tem um espaço com esse nome.' });
     throw error;
   }
-  res.status(201).json(space);
+  const bookcase = await ensurePersonalLibraryBookcase(req.user.id, space.id, 'Geral');
+  res.status(201).json({ ...space, shelves: [bookcase] });
+}));
+
+app.post('/api/library/spaces/:id/shelves', asMember, wrap(async (req, res) => {
+  const name = cleanPersonalLibraryName(req.body && req.body.name);
+  if (!name || name.length > 50) return res.status(400).json({ error: 'Dê um nome de até 50 caracteres para a prateleira.' });
+  const space = await one('SELECT id FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!space) return res.status(404).json({ error: 'Espaço não encontrado no seu Acervo.' });
+  const existing = await one(`SELECT id FROM personal_library_bookcases
+    WHERE user_id = $1 AND space_id = $2 AND LOWER(name) = LOWER($3)`, [req.user.id, space.id, name]);
+  if (existing) return res.status(409).json({ error: 'Já existe uma prateleira com esse nome neste espaço.' });
+  try {
+    const bookcase = await one(`INSERT INTO personal_library_bookcases (id, user_id, space_id, name, created_at)
+      VALUES ($1, $2, $3, $4, $5) RETURNING id, space_id, name, created_at`, [uuidv4(), req.user.id, space.id, name, ts()]);
+    return res.status(201).json(bookcase);
+  } catch (error) {
+    if (isUnique(error)) return res.status(409).json({ error: 'Já existe uma prateleira com esse nome neste espaço.' });
+    throw error;
+  }
 }));
 
 app.post('/api/library', asMember, wrap(async (req, res) => {
@@ -1334,33 +1465,37 @@ app.post('/api/library', asMember, wrap(async (req, res) => {
   if (!fileId || fileId.length > 100) return res.status(400).json({ error: 'Arquivo inválido.' });
   const file = await one('SELECT id, room_id FROM files WHERE id = $1', [fileId]);
   if (!file || !(await canUseRoom(req.user, file.room_id))) return res.status(404).json({ error: 'Arquivo não encontrado nas suas salas.' });
-  const shelf = String((req.body && req.body.shelf) || 'Guardados').replace(/[\\/\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 50) || 'Guardados';
+  const location = await resolvePersonalLibraryLocation(req.user.id, req.body || {});
+  if (!location) return res.status(400).json({ error: 'Escolha uma prateleira de um espaço seu.' });
   const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
   const favorite = req.body && (req.body.is_favorite === true || req.body.is_favorite === 1 || req.body.is_favorite === '1') ? 1 : 0;
   const now = ts();
-  const saved = await one(`INSERT INTO personal_library_items (id, user_id, file_id, shelf, note, is_favorite, created_at, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
-    ON CONFLICT (user_id, file_id) DO UPDATE SET shelf = EXCLUDED.shelf, note = EXCLUDED.note, is_favorite = EXCLUDED.is_favorite, updated_at = EXCLUDED.updated_at
-    RETURNING id, file_id, shelf, note, is_favorite, created_at AS saved_at, updated_at`, [uuidv4(), req.user.id, file.id, shelf, note, favorite, now]);
+  const saved = await one(`INSERT INTO personal_library_items (id, user_id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
+    ON CONFLICT (user_id, file_id) DO UPDATE SET shelf = EXCLUDED.shelf, space_id = EXCLUDED.space_id,
+      bookcase_id = EXCLUDED.bookcase_id, note = EXCLUDED.note, is_favorite = EXCLUDED.is_favorite, updated_at = EXCLUDED.updated_at
+    RETURNING id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at`,
+    [uuidv4(), req.user.id, file.id, location.bookcase.name, location.space.id, location.bookcase.id, note, favorite, now]);
   res.json({ ...saved, is_favorite: Boolean(saved.is_favorite) });
 }));
 
 app.patch('/api/library/:id', asMember, wrap(async (req, res) => {
-  const current = await one(`SELECT li.id, li.file_id, li.shelf, li.note, li.is_favorite, f.room_id
+  const current = await one(`SELECT li.id, li.file_id, li.shelf, li.space_id, li.bookcase_id, li.note, li.is_favorite, f.room_id
     FROM personal_library_items li JOIN files f ON f.id = li.file_id
     WHERE li.id = $1 AND li.user_id = $2`, [req.params.id, req.user.id]);
   if (!current || !(await canUseRoom(req.user, current.room_id))) return res.status(404).json({ error: 'Item não encontrado no seu Acervo.' });
   const body = req.body || {};
-  const shelf = typeof body.shelf === 'string'
-    ? (body.shelf.replace(/[\\/\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 50) || 'Guardados')
-    : current.shelf;
+  const location = Object.prototype.hasOwnProperty.call(body, 'space_id') || Object.prototype.hasOwnProperty.call(body, 'bookcase_id') || typeof body.shelf === 'string'
+    ? await resolvePersonalLibraryLocation(req.user.id, body)
+    : { space: { id: current.space_id }, bookcase: { id: current.bookcase_id, name: current.shelf } };
+  if (!location) return res.status(400).json({ error: 'Escolha uma prateleira de um espaço seu.' });
   const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : current.note;
   const favorite = Object.prototype.hasOwnProperty.call(body, 'is_favorite')
     ? (body.is_favorite === true || body.is_favorite === 1 || body.is_favorite === '1' ? 1 : 0)
     : Number(current.is_favorite) || 0;
-  const updated = await one(`UPDATE personal_library_items SET shelf = $1, note = $2, is_favorite = $3, updated_at = $4
-    WHERE id = $5 AND user_id = $6 RETURNING id, file_id, shelf, note, is_favorite, created_at AS saved_at, updated_at`,
-    [shelf, note, favorite, ts(), current.id, req.user.id]);
+  const updated = await one(`UPDATE personal_library_items SET shelf = $1, space_id = $2, bookcase_id = $3, note = $4, is_favorite = $5, updated_at = $6
+    WHERE id = $7 AND user_id = $8 RETURNING id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at`,
+    [location.bookcase.name, location.space.id, location.bookcase.id, note, favorite, ts(), current.id, req.user.id]);
   res.json({ ...updated, is_favorite: Boolean(updated.is_favorite) });
 }));
 
