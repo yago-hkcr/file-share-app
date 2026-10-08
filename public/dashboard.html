@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="/css/style.css?v=20261008c"><link rel="stylesheet" href="/css/onboarding.css?v=20261007a">
   <link rel="stylesheet" href="/css/social.css?v=20261006e">
   <link rel="stylesheet" href="/css/collections.css?v=20261008k">
-  <link rel="stylesheet" href="/css/library.css?v=20261008c">
+  <link rel="stylesheet" href="/css/library.css?v=20261008d">
   <script src="/js/common.js?v=20261007a"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261008b" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
@@ -71,7 +71,7 @@
       .form-row .btn { width:auto; }
     }
   </style>
-  <link rel="stylesheet" href="/css/mobile.css?v=20261008b">
+  <link rel="stylesheet" href="/css/mobile.css?v=20261008c">
   <script src="/js/mobile.js" defer></script>
   <link rel="stylesheet" href="/css/fx.css">
   <link rel="stylesheet" href="/css/adaptive.css?v=20261008b">
@@ -141,15 +141,15 @@
     </section>
     <section id="libraryPanel" role="tabpanel" aria-labelledby="libraryTab" hidden>
       <div class="dashboard-intro">
-        <div><h2><i class="fas fa-bookmark"></i> Meu Acervo</h2><p>Crie espaços pessoais, organize seus arquivos em prateleiras e encontre tudo do seu jeito.</p></div>
+        <div><h2><i class="fas fa-bookmark"></i> Meu Acervo</h2><p>Crie um espaço para cada assunto. Dentro dele, use prateleiras para separar seus arquivos.</p></div>
         <div class="library-intro-actions"><button id="createLibrarySpaceBtn" class="btn btn-primary" type="button"><i class="fas fa-folder-plus"></i> Criar espaço</button><button id="refreshLibraryBtn" class="btn btn-outline" type="button"><i class="fas fa-sync-alt"></i> Atualizar</button></div>
       </div>
       <div class="library-toolbar">
         <div class="library-search"><i class="fas fa-search" aria-hidden="true"></i><input id="librarySearch" type="search" maxlength="120" placeholder="Buscar arquivos, salas ou anotações" autocomplete="off" aria-label="Buscar no Meu Acervo"><button id="librarySearchClear" type="button" aria-label="Limpar busca" title="Limpar busca" hidden><i class="fas fa-xmark" aria-hidden="true"></i></button></div>
-        <label class="library-shelf-filter"><span><i class="fas fa-folder-open" aria-hidden="true"></i> Espaço</span><select id="libraryShelfFilter" aria-label="Filtrar por espaço"><option value="">Todos os espaços</option></select></label>
+        <div class="library-shelf-filter"><span><i class="fas fa-folder-open" aria-hidden="true"></i> Espaço</span><div class="library-filter-picker"><button id="libraryShelfFilterButton" class="library-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="libraryShelfFilterMenu"><span id="libraryShelfFilterLabel">Todos os espaços</span><i class="fas fa-chevron-down" aria-hidden="true"></i></button><div id="libraryShelfFilterMenu" class="library-filter-menu" role="listbox" aria-label="Filtrar por espaço" hidden></div><input id="libraryShelfFilter" type="hidden" value=""></div></div>
         <button id="libraryFavoritesFilter" class="btn btn-outline" type="button" aria-pressed="false"><i class="far fa-star"></i> Favoritos</button>
       </div>
-      <div class="library-spaces-heading"><h3><i class="fas fa-layer-group" aria-hidden="true"></i> Seus espaços</h3><span>Toque para filtrar</span></div>
+      <div class="library-spaces-heading"><h3><i class="fas fa-layer-group" aria-hidden="true"></i> Seus espaços</h3><span>Abra um espaço para ver as prateleiras</span></div>
       <div id="librarySpaces" class="library-spaces" aria-label="Espaços pessoais"></div>
       <div id="libraryBookcasesPanel" class="library-bookcases-panel" hidden>
         <div class="library-spaces-heading library-bookcases-heading"><h3 id="libraryBookcasesTitle"><i class="fas fa-books" aria-hidden="true"></i> Prateleiras</h3><button id="createLibraryBookcaseBtn" class="btn btn-sm btn-outline" type="button"><i class="fas fa-plus"></i> Criar prateleira</button></div>
@@ -180,8 +180,8 @@
           <input id="libraryFileId" type="hidden"><input id="libraryItemId" type="hidden">
           <div class="library-editor-file"><i class="fas fa-file-arrow-down"></i><span id="libraryEditorFileName"></span></div>
           <div class="library-editor-location">
-            <label class="library-editor-field" for="libraryEditorSpace">Espaço<select id="libraryEditorSpace"></select></label>
-            <label class="library-editor-field" for="libraryEditorShelf">Prateleira<select id="libraryEditorShelf"></select></label>
+            <div class="library-editor-field"><span>Espaço</span><div class="library-select-picker"><select id="libraryEditorSpace" hidden aria-hidden="true"></select><button id="libraryEditorSpaceButton" class="library-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="libraryEditorSpaceMenu" aria-label="Escolher espaço"><span id="libraryEditorSpaceLabel">Escolha um espaço</span><i class="fas fa-chevron-down" aria-hidden="true"></i></button><div id="libraryEditorSpaceMenu" class="library-filter-menu" role="listbox" aria-label="Escolher espaço" hidden></div></div></div>
+            <div class="library-editor-field"><span>Prateleira</span><div class="library-select-picker"><select id="libraryEditorShelf" hidden aria-hidden="true"></select><button id="libraryEditorShelfButton" class="library-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="libraryEditorShelfMenu" aria-label="Escolher prateleira"><span id="libraryEditorShelfLabel">Escolha uma prateleira</span><i class="fas fa-chevron-down" aria-hidden="true"></i></button><div id="libraryEditorShelfMenu" class="library-filter-menu" role="listbox" aria-label="Escolher prateleira" hidden></div></div></div>
             <div class="library-editor-location-actions"><button id="libraryCreateSpaceFromEditor" class="btn btn-sm btn-outline" type="button"><i class="fas fa-folder-plus"></i> Novo espaço</button><button id="libraryCreateBookcaseFromEditor" class="btn btn-sm btn-outline" type="button"><i class="fas fa-plus"></i> Nova prateleira</button></div>
           </div>
           <label class="library-editor-field" for="libraryEditorNote">Sua anotação<textarea id="libraryEditorNote" maxlength="500" rows="3" placeholder="Por que esse arquivo é importante? Adicione contexto para encontrar depois."></textarea><small>Privada: só você pode ver esta anotação.</small></label>
@@ -593,7 +593,7 @@
   <script src="/js/cursor.js"></script>
   <script src="/js/preview.js"></script>
   <script src="/js/collections.js?v=20261007k"></script>
-  <script src="/js/library.js?v=20261008c"></script>
+  <script src="/js/library.js?v=20261008d"></script>
   <script src="/js/announce.js"></script>
 </body>
 </html>

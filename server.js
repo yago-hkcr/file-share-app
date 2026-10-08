@@ -1395,8 +1395,6 @@ app.get('/api/rooms', asMember, wrap(async (req, res) => {
 // Acervo pessoal: guarda referências privadas aos arquivos sem alterar o acesso da sala.
 app.get('/api/library', asMember, wrap(async (req, res) => {
   res.set('Cache-Control', 'private, no-store');
-  const defaultSpace = await ensurePersonalLibrarySpace(req.user.id, 'Guardados');
-  await ensurePersonalLibraryBookcase(req.user.id, defaultSpace.id, 'Geral');
   const access = isAdmin(req.user) ? '1=1' : 'EXISTS (SELECT 1 FROM room_members rm WHERE rm.room_id = f.room_id AND rm.user_id = $2)';
   const params = isAdmin(req.user) ? [req.user.id] : [req.user.id, req.user.id];
   const [items, savedSpaces, bookcases] = await Promise.all([q(`SELECT li.id, li.file_id, li.space_id, s.name AS space_name, li.bookcase_id,
@@ -1442,6 +1440,29 @@ app.post('/api/library/spaces', asMember, wrap(async (req, res) => {
   res.status(201).json({ ...space, shelves: [bookcase] });
 }));
 
+app.patch('/api/library/spaces/:id', asMember, wrap(async (req, res) => {
+  const name = cleanPersonalLibraryName(req.body && req.body.name);
+  if (!name || name.length > 50) return res.status(400).json({ error: 'Dê um nome de até 50 caracteres para o espaço.' });
+  try {
+    const updated = await one(`UPDATE personal_library_spaces SET name = $1
+      WHERE id = $2 AND user_id = $3 RETURNING id, name, created_at`, [name, req.params.id, req.user.id]);
+    if (!updated) return res.status(404).json({ error: 'Espaço não encontrado no seu Acervo.' });
+    return res.json(updated);
+  } catch (error) {
+    if (isUnique(error)) return res.status(409).json({ error: 'Você já tem um espaço com esse nome.' });
+    throw error;
+  }
+}));
+
+app.delete('/api/library/spaces/:id', asMember, wrap(async (req, res) => {
+  const space = await one('SELECT id FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!space) return res.status(404).json({ error: 'Espaço não encontrado no seu Acervo.' });
+  const removed = await q('DELETE FROM personal_library_items WHERE user_id = $1 AND space_id = $2 RETURNING id', [req.user.id, space.id]);
+  await q('DELETE FROM personal_library_bookcases WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
+  await q('DELETE FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [space.id, req.user.id]);
+  res.json({ success: true, removed_count: removed.length });
+}));
+
 app.post('/api/library/spaces/:id/shelves', asMember, wrap(async (req, res) => {
   const name = cleanPersonalLibraryName(req.body && req.body.name);
   if (!name || name.length > 50) return res.status(400).json({ error: 'Dê um nome de até 50 caracteres para a prateleira.' });
@@ -1458,6 +1479,36 @@ app.post('/api/library/spaces/:id/shelves', asMember, wrap(async (req, res) => {
     if (isUnique(error)) return res.status(409).json({ error: 'Já existe uma prateleira com esse nome neste espaço.' });
     throw error;
   }
+}));
+
+app.patch('/api/library/spaces/:id/shelves/:shelfId', asMember, wrap(async (req, res) => {
+  const name = cleanPersonalLibraryName(req.body && req.body.name);
+  if (!name || name.length > 50) return res.status(400).json({ error: 'Dê um nome de até 50 caracteres para a prateleira.' });
+  try {
+    const updated = await one(`UPDATE personal_library_bookcases SET name = $1
+      WHERE id = $2 AND space_id = $3 AND user_id = $4 RETURNING id, space_id, name, created_at`,
+    [name, req.params.shelfId, req.params.id, req.user.id]);
+    if (!updated) return res.status(404).json({ error: 'Prateleira não encontrada neste espaço.' });
+    return res.json(updated);
+  } catch (error) {
+    if (isUnique(error)) return res.status(409).json({ error: 'Já existe uma prateleira com esse nome neste espaço.' });
+    throw error;
+  }
+}));
+
+app.delete('/api/library/spaces/:id/shelves/:shelfId', asMember, wrap(async (req, res) => {
+  const shelf = await one(`SELECT id, name FROM personal_library_bookcases
+    WHERE id = $1 AND space_id = $2 AND user_id = $3`, [req.params.shelfId, req.params.id, req.user.id]);
+  if (!shelf) return res.status(404).json({ error: 'Prateleira não encontrada neste espaço.' });
+  const siblings = await q(`SELECT id, name FROM personal_library_bookcases
+    WHERE user_id = $1 AND space_id = $2 AND id <> $3 ORDER BY created_at, id`, [req.user.id, req.params.id, shelf.id]);
+  if (!siblings.length) return res.status(409).json({ error: 'Todo espaço precisa ter ao menos uma prateleira. Crie outra antes de excluir esta.' });
+  const destination = siblings[0];
+  const moved = await q(`UPDATE personal_library_items SET bookcase_id = $1, shelf = $2, updated_at = $3
+    WHERE user_id = $4 AND space_id = $5 AND bookcase_id = $6 RETURNING id`,
+  [destination.id, destination.name, ts(), req.user.id, req.params.id, shelf.id]);
+  await q('DELETE FROM personal_library_bookcases WHERE id = $1 AND space_id = $2 AND user_id = $3', [shelf.id, req.params.id, req.user.id]);
+  res.json({ success: true, moved_count: moved.length, destination: destination.name });
 }));
 
 app.post('/api/library', asMember, wrap(async (req, res) => {
