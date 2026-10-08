@@ -38,8 +38,17 @@
     if (!statePollTimer) statePollTimer = setInterval(pollState, 2000);
   }
   function renderNameGate() {
+    const multiUse = !!collection.multi_use_link;
+    const eyebrow = multiUse ? 'LINK MULTIUSO' : 'LIBERAR ENVIO';
+    const heading = multiUse ? 'Antes de começar, qual é o seu nome?' : 'Qual é o seu nome?';
+    const description = multiUse
+      ? 'Assim quem organizou a coleta saberá de quem são os arquivos.'
+      : 'Informe seu nome para identificar seus arquivos na sala e liberar o envio.';
+    const note = multiUse
+      ? 'O mesmo link continuará disponível para as próximas pessoas até o prazo.'
+      : 'Depois de confirmar o envio, este link será encerrado.';
     root.classList.add('is-name-gate');
-    root.innerHTML = '<section class="collection-name-gate" aria-labelledby="collectionNameHeading"><div class="collection-name-gate-icon"><i class="fas fa-user-pen" aria-hidden="true"></i></div><p class="collection-eyebrow">LINK MULTIUSO</p><h1 id="collectionNameHeading">Antes de começar, qual é o seu nome?</h1><p>Assim quem organizou a coleta saberá de quem são os arquivos.</p><form data-sender-name-form><label class="collection-sender-field"><span>Seu nome <b>obrigatório</b></span><input id="collectionSenderName" name="participant_name" type="text" maxlength="80" autocomplete="name" placeholder="Digite seu nome" value="' + esc(senderName) + '" required></label><button class="btn btn-primary" type="submit"><i class="fas fa-arrow-right"></i> Continuar</button></form><small>O mesmo link continuará disponível para as próximas pessoas até o prazo.</small></section>';
+    root.innerHTML = '<section class="collection-name-gate" aria-labelledby="collectionNameHeading"><div class="collection-name-gate-icon"><i class="fas fa-user-pen" aria-hidden="true"></i></div><p class="collection-eyebrow">' + eyebrow + '</p><h1 id="collectionNameHeading">' + heading + '</h1><p>' + description + '</p><form data-sender-name-form><label class="collection-sender-field"><span>Seu nome <b>obrigatório</b></span><input id="collectionSenderName" name="participant_name" type="text" maxlength="80" autocomplete="name" placeholder="Digite seu nome" value="' + esc(senderName) + '" required></label><button class="btn btn-primary" type="submit"><i class="fas fa-arrow-right"></i> Continuar</button></form><small>' + note + '</small></section>';
   }
   function showSubmitting(message) {
     collection = null; collectionSignature = ''; busy = false;
@@ -110,15 +119,12 @@
   function render() {
     if (!collection) return;
     root.classList.remove('is-name-gate');
-    if (collection.multi_use_link && !nameConfirmed) return renderNameGate();
+    if ((collection.multi_use_link || collection.single_link) && !nameConfirmed) return renderNameGate();
     const requiredMissing = missingRequired();
     const savedCount = (collection.uploads || []).length;
-    const senderField = collection.single_link
-      ? '<label class="collection-sender-field"><span>Seu nome <b>obrigatório</b></span><input id="collectionSenderName" type="text" maxlength="80" autocomplete="name" placeholder="Como devemos identificar seu envio?" value="' + esc(senderName) + '" ' + (busy ? 'disabled' : '') + ' required><small>Seu nome aparecerá junto aos arquivos na sala de destino.</small></label>' : '';
     root.innerHTML = '<div class="collection-title-row"><span class="collection-title-icon"><i class="fas fa-inbox"></i></span><div><p class="collection-eyebrow">ENVIO SEGURO</p><h1>' + esc(collection.title) + '</h1></div></div>' +
-      (collection.multi_use_link ? '<p class="collection-public-intro">Olá, ' + esc(senderName) + '. Envie os arquivos solicitados abaixo.</p>' : collection.single_link ? '<p class="collection-public-intro">Este link aceita um envio. Informe seu nome para identificar os arquivos.</p>' : '<p class="collection-public-intro">Olá, ' + esc(collection.participant_name) + '. Prepare os arquivos solicitados abaixo.</p>') +
+      (collection.multi_use_link || collection.single_link ? '<p class="collection-public-intro">Olá, ' + esc(senderName) + '. Prepare os arquivos solicitados abaixo.</p>' : '<p class="collection-public-intro">Olá, ' + esc(collection.participant_name) + '. Prepare os arquivos solicitados abaixo.</p>') +
       (collection.exclusive_access ? '<p class="collection-exclusive-notice"><i class="fas fa-user-lock" aria-hidden="true"></i> Acesso exclusivo: enquanto você estiver usando este link, outras pessoas não poderão entrar.</p>' : '') +
-      senderField +
       (collection.instructions ? '<section class="collection-request-instructions" aria-label="Instruções de quem pediu"><div><i class="fas fa-circle-info" aria-hidden="true"></i><strong>Instruções de quem pediu</strong></div><p>' + esc(collection.instructions) + '</p></section>' : '') +
       '<div class="collection-deadline"><i class="fas fa-clock"></i><span>Prazo <strong>' + esc(dateLabel(collection.expires_at)) + '</strong></span><span class="collection-deadline-separator"></span><span>Limite <strong>' + sizeLabel(collection.max_upload_bytes) + '</strong> por arquivo</span></div>' +
       '<div class="collection-request-list">' + collection.items.map(itemMarkup).join('') + '</div>' +

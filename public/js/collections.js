@@ -54,11 +54,12 @@
   function renderParticipants() {
     const host = $('collectionParticipantChips');
     host.innerHTML = participantNames.map((name, index) => '<span class="collection-participant-chip">' + esc(name) + '<button type="button" data-remove-participant="' + index + '" aria-label="Remover ' + esc(name) + '"><i class="fas fa-xmark"></i></button></span>').join('');
+    updateCollectionSubmitLabel();
   }
   function updateCollectionSubmitLabel() {
     const label = $('createCollectionSubmit')?.querySelector('span');
     if (!label) return;
-    label.textContent = $('collectionMultiUseLink').checked ? 'Criar link multiuso' : 'Criar links de envio';
+    label.textContent = $('collectionMultiUseLink').checked ? 'Criar link multiuso' : participantNames.length ? 'Criar links de envio' : 'Criar link para informar nome';
   }
   function participantExists(name) { return participantNames.some(existing => existing.toLocaleLowerCase() === String(name).toLocaleLowerCase()); }
   function renderFriendPicker(message) {
@@ -236,7 +237,7 @@
   $('collectionForm').addEventListener('submit', async event => {
     event.preventDefault();
     const multiUseLink = $('collectionMultiUseLink').checked;
-    if (!multiUseLink && !participantNames.length) { toast('Adicione pelo menos um participante.', 'error'); $('collectionParticipantInput').focus(); return; }
+    const singleLink = !multiUseLink && !participantNames.length;
     const items = Array.from($('collectionItems').querySelectorAll('.collection-item-input')).map(row => ({
       label: row.querySelector('input[type=text]').value.trim(),
       quantity: Math.max(1, Math.min(200, Number(row.querySelector('input[type=number]').value) || 1)),
@@ -251,7 +252,7 @@
       const created = await api('/api/coletas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         title: $('collectionTitle').value.trim(), room_id: $('collectionRoom').value,
         instructions: $('collectionInstructions').value.trim(), expires_at: deadline.toISOString(), items,
-        participants: multiUseLink ? [] : participantNames, multi_use_link: multiUseLink,
+        participants: multiUseLink || singleLink ? [] : participantNames, single_link: singleLink, multi_use_link: multiUseLink,
         exclusive_access: multiUseLink || $('collectionExclusiveAccess').checked
       }) });
       showCreatedLinks(created, created.recipients);
@@ -303,5 +304,6 @@
     const download = event.target.closest('[data-download]');
     if (download) window.location.href = '/api/coletas/' + encodeURIComponent(download.dataset.download) + '/zip';
   });
+  renderParticipants();
   loadRoomsForSelect();
 })();
