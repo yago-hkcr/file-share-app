@@ -58,7 +58,7 @@
   function updateCollectionSubmitLabel() {
     const label = $('createCollectionSubmit')?.querySelector('span');
     if (!label) return;
-    label.textContent = $('collectionMultiUseLink').checked ? 'Criar link multiuso' : $('collectionSingleLink').checked ? 'Criar link único' : 'Criar links de envio';
+    label.textContent = $('collectionMultiUseLink').checked ? 'Criar link multiuso' : 'Criar links de envio';
   }
   function participantExists(name) { return participantNames.some(existing => existing.toLocaleLowerCase() === String(name).toLocaleLowerCase()); }
   function renderFriendPicker(message) {
@@ -221,34 +221,22 @@
     const button = event.target.closest('[data-remove-participant]'); if (!button) return;
     participantNames.splice(Number(button.dataset.removeParticipant), 1); renderParticipants(); renderFriendPicker();
   });
-  $('collectionSingleLink').addEventListener('change', event => {
-    if (event.currentTarget.checked && $('collectionMultiUseLink').checked) {
-      $('collectionMultiUseLink').checked = false;
-      $('collectionExclusiveAccess').checked = exclusiveBeforeMultiUse;
-    }
-    $('collectionExclusiveAccess').disabled = $('collectionMultiUseLink').checked;
-    $('collectionParticipantsGroup').hidden = event.currentTarget.checked || $('collectionMultiUseLink').checked;
-    if (event.currentTarget.checked || $('collectionMultiUseLink').checked) { participantNames = []; renderParticipants(); $('collectionFriendPicker').hidden = true; $('collectionFriendsBtn').setAttribute('aria-expanded', 'false'); }
-    updateCollectionSubmitLabel();
-  });
   $('collectionMultiUseLink').addEventListener('change', event => {
     if (event.currentTarget.checked) {
       exclusiveBeforeMultiUse = $('collectionExclusiveAccess').checked;
-      $('collectionSingleLink').checked = false;
       $('collectionExclusiveAccess').checked = true;
     } else {
       $('collectionExclusiveAccess').checked = exclusiveBeforeMultiUse;
     }
     $('collectionExclusiveAccess').disabled = event.currentTarget.checked;
-    $('collectionParticipantsGroup').hidden = event.currentTarget.checked || $('collectionSingleLink').checked;
+    $('collectionParticipantsGroup').hidden = event.currentTarget.checked;
     if (event.currentTarget.checked) { participantNames = []; renderParticipants(); $('collectionFriendPicker').hidden = true; $('collectionFriendsBtn').setAttribute('aria-expanded', 'false'); }
     updateCollectionSubmitLabel();
   });
   $('collectionForm').addEventListener('submit', async event => {
     event.preventDefault();
-    const singleLink = $('collectionSingleLink').checked;
     const multiUseLink = $('collectionMultiUseLink').checked;
-    if (!singleLink && !multiUseLink && !participantNames.length) { toast('Adicione pelo menos um participante.', 'error'); $('collectionParticipantInput').focus(); return; }
+    if (!multiUseLink && !participantNames.length) { toast('Adicione pelo menos um participante.', 'error'); $('collectionParticipantInput').focus(); return; }
     const items = Array.from($('collectionItems').querySelectorAll('.collection-item-input')).map(row => ({
       label: row.querySelector('input[type=text]').value.trim(),
       quantity: Math.max(1, Math.min(200, Number(row.querySelector('input[type=number]').value) || 1)),
@@ -263,7 +251,7 @@
       const created = await api('/api/coletas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         title: $('collectionTitle').value.trim(), room_id: $('collectionRoom').value,
         instructions: $('collectionInstructions').value.trim(), expires_at: deadline.toISOString(), items,
-        participants: singleLink || multiUseLink ? [] : participantNames, single_link: singleLink, multi_use_link: multiUseLink,
+        participants: multiUseLink ? [] : participantNames, multi_use_link: multiUseLink,
         exclusive_access: multiUseLink || $('collectionExclusiveAccess').checked
       }) });
       showCreatedLinks(created, created.recipients);
