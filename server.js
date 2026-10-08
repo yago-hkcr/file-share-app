@@ -577,7 +577,7 @@ const MAX_COLLECTION_NAME_BYTES = 255;
 const COLLECTION_ACCESS_COOKIE = 'fs_collection_access';
 const COLLECTION_ACCESS_LEASE_MS = 2 * 60 * 1000;
 const COLLECTION_SESSION_COOKIE_MS = 30 * 24 * 60 * 60 * 1000;
-const COLLECTION_UPLOAD_STALE_MS = 5 * 60 * 1000;
+const COLLECTION_UPLOAD_STALE_MS = 90 * 1000;
 const makeCollectionToken = () => crypto.randomBytes(32).toString('base64url');
 const cleanCollectionFileName = value => String(value || 'arquivo').replace(/[\u0000-\u001f\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_COLLECTION_NAME_BYTES) || 'arquivo';
 const collectionLeaseUntil = () => new Date(Date.now() + COLLECTION_ACCESS_LEASE_MS).toISOString().slice(0, 19).replace('T', ' ');
@@ -679,7 +679,9 @@ async function removeStaleCollectionUpload(upload, staleBefore) {
     WHERE id = $1 AND status = 'uploading' AND (uploaded_at IS NULL OR uploaded_at <= $2)
     RETURNING id, stored_name`, [upload.id, staleBefore]);
   if (!removed.length) return false;
-  if (isBlobPath(removed[0].stored_name)) await deleteBlobs([removed[0].stored_name]);
+  if (isBlobPath(removed[0].stored_name)) {
+    await deleteBlobs([removed[0].stored_name]).catch(error => console.error('Limpeza de upload abandonado:', error && error.message));
+  }
   await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [removed[0].id]);
   return true;
 }
@@ -1659,6 +1661,17 @@ const publicCollectionAccess = wrap(async (req, res, next) => {
     const reserved = await reserveExclusiveCollectionAccess(recipient, req, res, req.params.token);
     if (!reserved) return res.status(423).json({ state: 'in_use', error: 'Este link está aberto em outro dispositivo. Tente novamente quando o acesso estiver disponível.' });
   } else reserveCollectionSession(req, res, req.params.token);
+  const isUploadActivity = ['/upload', '/upload-token', '/upload-heartbeat', '/registrar', '/heartbeat']
+    .some(path => req.path.endsWith(path));
+  if (!isUploadActivity) {
+    await recoverStaleCollectionUploadState(recipient.id, hashToken(req.params.token));
+    recipient = await getCollectionRecipient(req.params.token);
+    const currentError = collectionAccessError(recipient, res);
+    if (currentError) {
+      clearCollectionAccessCookie(res, req.params.token);
+      return currentError;
+    }
+  }
   req.collectionRecipient = recipient;
   return next();
 });
@@ -1684,10 +1697,6 @@ app.get('/api/coletas/enviar/:token', publicCollectionAccess, wrap(async (req, r
   if (recipient.recipient_status === 'submitting' && recipient.submission_started_at && recipient.submission_started_at <= agoTs(10 * 60 * 1000)) {
     await q(`UPDATE file_collection_recipients SET status = 'pending', submission_started_at = NULL
       WHERE id = $1 AND status = 'submitting' AND submission_started_at <= $2`, [recipient.id, agoTs(10 * 60 * 1000)]);
-    recipient = await getCollectionRecipient(req.params.token);
-  }
-  if (recipient.recipient_status === 'uploading') {
-    await recoverStaleCollectionUploadState(recipient.id, hashToken(req.params.token));
     recipient = await getCollectionRecipient(req.params.token);
   }
   if (recipient.recipient_status === 'submitting') {
@@ -1897,9 +1906,60 @@ app.post('/api/coletas/enviar/:token/upload', publicCollectionAccess, (req, res,
   res.status(201).json({ id, item_id: itemId, original_name: originalName, size: file.size });
 }));
 
+app.post('/api/coletas/enviar/:token/uploads/:uploadId/cancel', publicCollectionAccess, wrap(async (req, res) => {
+  const recipient = req.collectionRecipient, tokenHash = hashToken(req.params.token);
+  const staged = await one(`SELECT id, stored_name, status FROM file_collection_uploads
+    WHERE id = $1 AND recipient_id = $2 AND upload_session_hash = $3 AND submission_id IS NULL`,
+  [req.params.uploadId, recipient.id, req.collectionAccessSessionHash]);
+  if (!staged) return res.json({ success: true, removed: true });
+  if (staged.status === 'ready') return res.json({ success: true, ready: true });
+  if (staged.status !== 'uploading') return res.status(409).json({ error: 'Este arquivo não pode mais ser cancelado.' });
+  const locked = await q(`UPDATE file_collection_recipients SET status = 'deleting'
+    WHERE id = $1 AND status IN ('pending','uploading') AND token_hash = $2
+      AND EXISTS (SELECT 1 FROM file_collection_uploads u WHERE u.id = $3 AND u.recipient_id = $1
+        AND u.status = 'uploading' AND u.submission_id IS NULL AND u.upload_session_hash = $4)
+    RETURNING id`, [recipient.id, tokenHash, req.params.uploadId, req.collectionAccessSessionHash]);
+  if (!locked.length) {
+    const current = await one(`SELECT u.status AS upload_status FROM file_collection_uploads u
+      WHERE u.id = $1 AND u.recipient_id = $2 AND u.upload_session_hash = $3 AND u.submission_id IS NULL`,
+    [req.params.uploadId, recipient.id, req.collectionAccessSessionHash]);
+    if (!current) return res.json({ success: true, removed: true });
+    if (current.upload_status === 'ready') return res.json({ success: true, ready: true });
+    return res.status(409).json({ error: 'O arquivo ainda está sendo enviado. Aguarde o término.' });
+  }
+  try {
+    const removed = await removeStaleCollectionUpload(staged, ts());
+    if (!removed) {
+      const current = await one(`SELECT status FROM file_collection_uploads WHERE id = $1 AND recipient_id = $2
+        AND upload_session_hash = $3 AND submission_id IS NULL`, [staged.id, recipient.id, req.collectionAccessSessionHash]);
+      if (current && current.status !== 'ready') return res.status(409).json({ error: 'O arquivo ainda está sendo enviado. Aguarde o término.' });
+      if (current && current.status === 'ready') return res.json({ success: true, ready: true });
+    }
+  } finally {
+    await q(`UPDATE file_collection_recipients SET status = 'pending'
+      WHERE id = $1 AND status = 'deleting' AND token_hash = $2`, [recipient.id, tokenHash]);
+  }
+  res.json({ success: true, cancelled: true });
+}));
+
 app.delete('/api/coletas/enviar/:token/uploads/:uploadId', publicCollectionAccess, wrap(async (req, res) => {
   const recipient = req.collectionRecipient;
   const tokenHash = hashToken(req.params.token);
+  const upload = await one(`SELECT id, stored_name, status, uploaded_at FROM file_collection_uploads
+    WHERE id = $1 AND recipient_id = $2 AND upload_session_hash = $3 AND submission_id IS NULL`,
+  [req.params.uploadId, recipient.id, req.collectionAccessSessionHash]);
+  if (!upload) return res.json({ success: true, removed: true });
+  if (upload.status === 'uploading') {
+    const staleBefore = agoTs(COLLECTION_UPLOAD_STALE_MS);
+    if (upload.uploaded_at && upload.uploaded_at > staleBefore) {
+      return res.status(409).json({ error: 'Este arquivo ainda está sendo enviado em outra aba. Aguarde o término.' });
+    }
+    const removed = await removeStaleCollectionUpload(upload, staleBefore);
+    if (!removed) return res.status(409).json({ error: 'O envio acabou de ser retomado. Aguarde o término.' });
+    await recoverStaleCollectionUploadState(recipient.id, tokenHash);
+    return res.json({ success: true, removed: true });
+  }
+  if (upload.status !== 'ready') return res.status(404).json({ error: 'Arquivo não encontrado ou envio já encerrado.' });
   const locked = await q(`UPDATE file_collection_recipients SET status = 'deleting'
     WHERE id = $1 AND status = 'pending' AND token_hash = $2 RETURNING id`, [recipient.id, tokenHash]);
   if (!locked.length) return res.status(409).json({ error: 'Aguarde o envio em andamento terminar antes de remover arquivos.' });
