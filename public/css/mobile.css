@@ -90,3 +90,63 @@
   .sala-file-actions > * { box-sizing:border-box; width:100%; min-width:0; max-width:100%; margin:0; justify-content:center; white-space:normal; }
   .sala-file-actions .btn-download { grid-column:1/-1; }
 }
+
+/* Painel completo: manter abas, formulários, cards e ações dentro da largura real do celular. */
+@media (max-width: 820px) {
+  body.app-page { width:100%; min-width:0; overflow-x:clip; }
+  .dashboard-content { width:100%; min-width:0; max-width:100%; padding:18px 14px; }
+  .dashboard-content > section { min-width:0; max-width:100%; }
+  .dashboard-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; width:100%; min-width:0; margin:0 0 18px; }
+  .dashboard-tab { display:flex; min-width:0; min-height:44px; align-items:center; justify-content:center; gap:5px; padding:8px 5px; font-size:clamp(10px,3.2vw,13px); line-height:1.2; text-align:center; white-space:normal; }
+  .dashboard-tab i { flex:none; }
+  .dashboard-intro { min-width:0; align-items:stretch; }
+  .dashboard-intro > div { min-width:0; }
+  .dashboard-intro h2,.dashboard-intro p { overflow-wrap:anywhere; }
+  .collections-layout { grid-template-columns:minmax(0,1fr); width:100%; min-width:0; }
+  .collection-form,.collection-results,.collection-card-wrap,.collection-card,.collection-created-links { box-sizing:border-box; width:100%; min-width:0; max-width:100%; }
+  .collection-card-head { min-width:0; flex-wrap:wrap; }
+  .collection-card-head > * { min-width:0; }
+  .collection-participant { min-width:0; }
+  .collection-participant-actions { min-width:0; }
+  .collection-download-tray { min-width:0; flex-wrap:wrap; margin-right:0; margin-left:0; }
+  .collection-download-tray > strong { flex:1 1 100%; min-width:0; overflow-wrap:anywhere; }
+  .collection-download-actions { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr)); width:100%; min-width:0; }
+  .collection-download-actions .btn { width:100%; min-width:0; justify-content:center; white-space:normal; }
+  .collection-link-row { grid-template-columns:minmax(0,1fr); }
+  .collection-link-value { white-space:normal; overflow-wrap:anywhere; }
+  .room-submission-folder,.room-submission-folder-content { width:100%; min-width:0; max-width:100%; }
+  .room-submission-folder-toggle { min-width:0; }
+  .room-submission-folder-toggle strong { flex:1 1 auto; min-width:0; }
+  .room-submission-folder-toggle small { flex:none; margin-left:auto; }
+}
+
+@media (max-width: 480px) {
+  .dashboard-content { padding:15px 11px; }
+  .dashboard-tabs { position:static; padding:5px; border-radius:13px; }
+  .dashboard-tab { gap:4px; padding:8px 3px; font-size:11px; }
+  .dashboard-tab i { font-size:11px; }
+  .collection-form { padding:15px 12px; }
+  .collection-item-input { grid-template-columns:minmax(0,1fr) 62px auto 36px; align-items:end; gap:6px; }
+  .collection-item-input > input[type="text"] { grid-column:1 / -1; width:100%; }
+  .collection-item-input .collection-quantity-label { grid-column:1; justify-self:start; }
+  .collection-item-input .collection-required-label { grid-column:2 / 4; justify-self:start; white-space:normal; }
+  .collection-item-input .collection-remove-item { grid-column:4; grid-row:2; width:36px; height:40px; }
+  .collection-participant-entry { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+  .collection-participant-entry > input { grid-column:1 / -1; width:100%; }
+  .collection-participant-entry > .btn { width:100%; min-width:0; min-height:42px; justify-content:center; padding:7px 5px; font-size:12px; white-space:normal; }
+  .collection-participant-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
+  .collection-participant-actions .btn { min-width:0; justify-content:center; white-space:normal; }
+  .collection-card-actions .btn { min-width:0; white-space:normal; }
+  .collection-download-actions { grid-template-columns:minmax(0,1fr); }
+  .room-head-btns .btn { flex:1 1 calc(50% - 6px); white-space:normal; }
+  #roomModal .modal-content { width:100%; max-width:100%; max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  #roomModal .modal-body { padding-left:12px; padding-right:12px; }
+  #roomModal #roomFiles .file-btns { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+
+@media (max-width: 350px) {
+  .dashboard-tab { flex-direction:column; gap:2px; min-height:48px; font-size:10px; }
+  .collection-item-input { grid-template-columns:minmax(0,1fr) 56px auto 34px; gap:4px; }
+  .collection-item-input .collection-required-label { font-size:9px; }
+  .collection-item-input .collection-remove-item { width:34px; }
+}
