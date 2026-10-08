@@ -259,7 +259,7 @@ async function createTables() {
     )`),
     q(`CREATE TABLE IF NOT EXISTS user_preferences (
       user_id TEXT PRIMARY KEY,
-      theme TEXT DEFAULT 'dark',
+      theme TEXT DEFAULT 'system',
       compact_mode INTEGER DEFAULT 0,
       reduced_motion INTEGER DEFAULT 0,
       refresh_seconds INTEGER DEFAULT 2,
@@ -1118,12 +1118,12 @@ app.post('/api/onboarding/complete', requireAuth, wrap(async (req, res) => {
 
 app.get('/api/preferences', requireAuth, wrap(async (req, res) => {
   const row = await one('SELECT theme, compact_mode, reduced_motion, refresh_seconds, browser_notifications FROM user_preferences WHERE user_id = $1', [req.user.id]);
-  res.json({ has_preferences: !!row, theme: row && row.theme === 'light' ? 'light' : 'dark', compact_mode: num(row && row.compact_mode) === 1, reduced_motion: num(row && row.reduced_motion) === 1, refresh_seconds: [2, 5, 10].includes(num(row && row.refresh_seconds)) ? num(row.refresh_seconds) : 2, browser_notifications: num(row && row.browser_notifications) === 1 });
+  res.json({ has_preferences: !!row, theme: row && ['system', 'light', 'dark'].includes(row.theme) ? row.theme : 'system', compact_mode: num(row && row.compact_mode) === 1, reduced_motion: num(row && row.reduced_motion) === 1, refresh_seconds: [2, 5, 10].includes(num(row && row.refresh_seconds)) ? num(row.refresh_seconds) : 2, browser_notifications: num(row && row.browser_notifications) === 1 });
 }));
 
 app.put('/api/preferences', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
-  const theme = b.theme === 'light' ? 'light' : 'dark';
+  const theme = ['system', 'light', 'dark'].includes(b.theme) ? b.theme : 'system';
   const compact = b.compact_mode ? 1 : 0, reduced = b.reduced_motion ? 1 : 0;
   const refresh = [2, 5, 10].includes(Number(b.refresh_seconds)) ? Number(b.refresh_seconds) : 2;
   const notifications = b.browser_notifications ? 1 : 0;

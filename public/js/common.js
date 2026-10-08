@@ -1,9 +1,32 @@
-// Recursos compartilhados por todas as páginas: tema claro/escuro, renomear e substituir arquivos.
+// Recursos compartilhados por todas as páginas: tema automático/claro/escuro, renomear e substituir arquivos.
 (function () {
   const KEY = 'fileshare-theme';
   const root = document.documentElement;
+  const systemTheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   const saved = (() => { try { return localStorage.getItem(KEY); } catch (e) { return null; } })();
-  root.setAttribute('data-theme', saved === 'dark' ? 'dark' : 'light');
+  const normalizeTheme = theme => ['system', 'light', 'dark'].includes(theme) ? theme : 'system';
+  let preference = normalizeTheme(saved);
+
+  function applyTheme(theme) {
+    preference = normalizeTheme(theme);
+    const resolved = preference === 'system' ? (systemTheme && systemTheme.matches ? 'dark' : 'light') : preference;
+    root.setAttribute('data-theme-preference', preference);
+    root.setAttribute('data-theme', resolved);
+    root.style.colorScheme = resolved;
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    if (themeColor) themeColor.content = resolved === 'dark' ? '#0a0612' : '#f8f7fc';
+    document.querySelectorAll('.theme-toggle').forEach(paintButton);
+  }
+  applyTheme(preference);
+  window.setFileShareTheme = theme => {
+    applyTheme(theme);
+    try { localStorage.setItem(KEY, preference); } catch (e) {}
+  };
+  if (systemTheme) {
+    const onSystemThemeChange = () => { if (preference === 'system') applyTheme('system'); };
+    if (systemTheme.addEventListener) systemTheme.addEventListener('change', onSystemThemeChange);
+    else if (systemTheme.addListener) systemTheme.addListener(onSystemThemeChange);
+  }
 
   function paintButton(btn) {
     const dark = root.getAttribute('data-theme') === 'dark';
@@ -18,9 +41,7 @@
     btn.className = 'theme-toggle';
     btn.addEventListener('click', () => {
       const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-      root.setAttribute('data-theme', next);
-      try { localStorage.setItem(KEY, next); } catch (e) {}
-      paintButton(btn);
+      window.setFileShareTheme(next);
       window.dispatchEvent(new CustomEvent('fileshare:theme-change', { detail: { theme: next } }));
     });
     paintButton(btn);
