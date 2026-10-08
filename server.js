@@ -265,6 +265,17 @@ async function createTables() {
       refresh_seconds INTEGER DEFAULT 2,
       browser_notifications INTEGER DEFAULT 0
     )`),
+    q(`CREATE TABLE IF NOT EXISTS personal_library_items (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      file_id TEXT NOT NULL,
+      shelf TEXT NOT NULL DEFAULT 'Guardados',
+      note TEXT NOT NULL DEFAULT '',
+      is_favorite INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(user_id, file_id)
+    )`),
     q(`CREATE TABLE IF NOT EXISTS room_typing (
       room_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
@@ -281,6 +292,8 @@ async function createTables() {
       created_at TEXT
     )`)
   ]);
+  await q('CREATE INDEX IF NOT EXISTS idx_personal_library_user_updated ON personal_library_items (user_id, updated_at)');
+  await q('CREATE INDEX IF NOT EXISTS idx_personal_library_file ON personal_library_items (file_id)');
   await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
   await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_change_required INTEGER DEFAULT 0');
   await q(`CREATE TABLE IF NOT EXISTS file_collections (
@@ -518,6 +531,7 @@ async function purgeExpired() {
     const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [r.id]);
     try { await deleteBlobs(roomFiles.map(f => f.stored_name)); } catch (e) { console.error('purge blobs:', e && e.message); }
     await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [r.id]);
+    await q('DELETE FROM personal_library_items WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [r.id]);
     await q('DELETE FROM files WHERE room_id = $1', [r.id]);
     await q('DELETE FROM room_members WHERE room_id = $1', [r.id]);
     await q('DELETE FROM messages WHERE room_id = $1', [r.id]);
@@ -1180,6 +1194,7 @@ app.delete('/api/admin/users/:id', asAdmin, wrap(async (req, res) => {
   await q('DELETE FROM friendships WHERE requester_id = $1 OR addressee_id = $1', [req.params.id]);
   await q('DELETE FROM room_members WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM notifications WHERE user_id = $1', [req.params.id]);
+  await q('DELETE FROM personal_library_items WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM messages WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM users WHERE id = $1', [req.params.id]);
   res.json({ success: true });
@@ -1228,18 +1243,21 @@ app.post('/api/rooms', asMember, wrap(async (req, res) => {
 async function loadRooms(user) {
   const cond = isAdmin(user) ? '1=1' : '(is_public = 1 OR id IN (SELECT room_id FROM room_members WHERE user_id = $1))';
   const params = isAdmin(user) ? [] : [user.id];
+  const fileParams = [...params, user.id];
+  const libraryUserParam = '$' + fileParams.length;
   const [rooms, files, members] = await Promise.all([
     q(`SELECT * FROM rooms WHERE ${cond} ORDER BY created_at DESC`, params),
     q(`SELECT f.id, f.room_id, f.uploaded_by, f.original_name, f.size, f.mime_type, f.uploaded_at, u.username AS uploader, u.role AS uploader_role,
           COALESCE(cs.sender_name, CASE WHEN cr.status = 'submitted' THEN cr.participant_name ELSE NULL END) AS collection_sender,
           CASE WHEN cu.submission_id IS NOT NULL OR cr.status = 'submitted' THEN cr.id ELSE NULL END AS collection_recipient_id,
-          CASE WHEN cu.submission_id IS NOT NULL OR cr.status = 'submitted' THEN fc.id ELSE NULL END AS collection_id
+          CASE WHEN cu.submission_id IS NOT NULL OR cr.status = 'submitted' THEN fc.id ELSE NULL END AS collection_id,
+          CASE WHEN EXISTS (SELECT 1 FROM personal_library_items pli WHERE pli.user_id = ${libraryUserParam} AND pli.file_id = f.id) THEN 1 ELSE 0 END AS in_library
        FROM files f LEFT JOIN users u ON f.uploaded_by = u.id
        LEFT JOIN file_collection_uploads cu ON cu.id = f.id AND cu.status = 'ready'
        LEFT JOIN file_collection_recipients cr ON cr.id = cu.recipient_id
        LEFT JOIN file_collection_submissions cs ON cs.id = cu.submission_id
        LEFT JOIN file_collections fc ON fc.id = cu.collection_id
-       WHERE f.room_id IN (SELECT id FROM rooms WHERE ${cond}) ORDER BY f.uploaded_at DESC`, params),
+       WHERE f.room_id IN (SELECT id FROM rooms WHERE ${cond}) ORDER BY f.uploaded_at DESC`, fileParams),
     q(`SELECT rm.room_id, u.id, u.username, u.avatar_color, u.avatar_image, rm.role, rm.joined_at
        FROM room_members rm JOIN users u ON rm.user_id = u.id
        WHERE rm.room_id IN (SELECT id FROM rooms WHERE ${cond})`, params)
@@ -1265,6 +1283,65 @@ async function loadRooms(user) {
 
 app.get('/api/rooms', asMember, wrap(async (req, res) => {
   res.json(await loadRooms(req.user));
+}));
+
+// Acervo pessoal: guarda referências privadas aos arquivos sem alterar o acesso da sala.
+app.get('/api/library', asMember, wrap(async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  const access = isAdmin(req.user) ? '1=1' : 'EXISTS (SELECT 1 FROM room_members rm WHERE rm.room_id = f.room_id AND rm.user_id = $2)';
+  const params = isAdmin(req.user) ? [req.user.id] : [req.user.id, req.user.id];
+  const items = await q(`SELECT li.id, li.file_id, li.shelf, li.note, li.is_favorite, li.created_at AS saved_at, li.updated_at,
+      f.room_id, f.original_name, f.size, f.mime_type, f.uploaded_at, r.name AS room_name,
+      u.username AS uploader, u.role AS uploader_role
+    FROM personal_library_items li
+    JOIN files f ON f.id = li.file_id
+    JOIN rooms r ON r.id = f.room_id
+    LEFT JOIN users u ON u.id = f.uploaded_by
+    WHERE li.user_id = $1 AND ${access}
+    ORDER BY li.updated_at DESC, li.created_at DESC`, params);
+  const shelves = [...new Set(items.map(item => item.shelf).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  res.json({ items: items.map(item => ({ ...item, size: num(item.size), is_favorite: Boolean(item.is_favorite) })), shelves });
+}));
+
+app.post('/api/library', asMember, wrap(async (req, res) => {
+  const fileId = String((req.body && req.body.file_id) || '').trim();
+  if (!fileId || fileId.length > 100) return res.status(400).json({ error: 'Arquivo inválido.' });
+  const file = await one('SELECT id, room_id FROM files WHERE id = $1', [fileId]);
+  if (!file || !(await canUseRoom(req.user, file.room_id))) return res.status(404).json({ error: 'Arquivo não encontrado nas suas salas.' });
+  const shelf = String((req.body && req.body.shelf) || 'Guardados').replace(/[\\/\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 50) || 'Guardados';
+  const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
+  const favorite = req.body && (req.body.is_favorite === true || req.body.is_favorite === 1 || req.body.is_favorite === '1') ? 1 : 0;
+  const now = ts();
+  const saved = await one(`INSERT INTO personal_library_items (id, user_id, file_id, shelf, note, is_favorite, created_at, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+    ON CONFLICT (user_id, file_id) DO UPDATE SET shelf = EXCLUDED.shelf, note = EXCLUDED.note, is_favorite = EXCLUDED.is_favorite, updated_at = EXCLUDED.updated_at
+    RETURNING id, file_id, shelf, note, is_favorite, created_at AS saved_at, updated_at`, [uuidv4(), req.user.id, file.id, shelf, note, favorite, now]);
+  res.json({ ...saved, is_favorite: Boolean(saved.is_favorite) });
+}));
+
+app.patch('/api/library/:id', asMember, wrap(async (req, res) => {
+  const current = await one(`SELECT li.id, li.file_id, li.shelf, li.note, li.is_favorite, f.room_id
+    FROM personal_library_items li JOIN files f ON f.id = li.file_id
+    WHERE li.id = $1 AND li.user_id = $2`, [req.params.id, req.user.id]);
+  if (!current || !(await canUseRoom(req.user, current.room_id))) return res.status(404).json({ error: 'Item não encontrado no seu Acervo.' });
+  const body = req.body || {};
+  const shelf = typeof body.shelf === 'string'
+    ? (body.shelf.replace(/[\\/\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 50) || 'Guardados')
+    : current.shelf;
+  const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : current.note;
+  const favorite = Object.prototype.hasOwnProperty.call(body, 'is_favorite')
+    ? (body.is_favorite === true || body.is_favorite === 1 || body.is_favorite === '1' ? 1 : 0)
+    : Number(current.is_favorite) || 0;
+  const updated = await one(`UPDATE personal_library_items SET shelf = $1, note = $2, is_favorite = $3, updated_at = $4
+    WHERE id = $5 AND user_id = $6 RETURNING id, file_id, shelf, note, is_favorite, created_at AS saved_at, updated_at`,
+    [shelf, note, favorite, ts(), current.id, req.user.id]);
+  res.json({ ...updated, is_favorite: Boolean(updated.is_favorite) });
+}));
+
+app.delete('/api/library/:id', asMember, wrap(async (req, res) => {
+  const deleted = await q('DELETE FROM personal_library_items WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, req.user.id]);
+  if (!deleted.length) return res.status(404).json({ error: 'Item não encontrado no seu Acervo.' });
+  res.json({ success: true });
 }));
 
 app.get('/api/rooms/browse', asMember, wrap(async (req, res) => {
@@ -2134,6 +2211,7 @@ app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
   if (!isAdmin(req.user) && file.uploaded_by !== req.user.id && file.room_owner !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
   await deleteBlobs([file.stored_name]);
   await q('DELETE FROM file_blobs WHERE file_id = $1', [file.id]);
+  await q('DELETE FROM personal_library_items WHERE file_id = $1', [file.id]);
   await q('DELETE FROM files WHERE id = $1', [file.id]);
   res.json({ success: true });
 }));
@@ -2398,6 +2476,7 @@ async function destroyRoom(id) {
   const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [id]);
   try { await deleteBlobs(roomFiles.map(f => f.stored_name)); } catch (e) { console.error('blobs:', e && e.message); }
   await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [id]);
+  await q('DELETE FROM personal_library_items WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [id]);
   await q('DELETE FROM files WHERE room_id = $1', [id]);
   await q('DELETE FROM room_members WHERE room_id = $1', [id]);
   await q('DELETE FROM messages WHERE room_id = $1', [id]);
@@ -2709,6 +2788,7 @@ app.post('/api/admin/files/bulk-delete', asAdmin, wrap(async (req, res) => {
     if (!f) continue;
     try { await deleteBlobs([f.stored_name]); } catch (e) {}
     await q('DELETE FROM file_blobs WHERE file_id = $1', [f.id]);
+    await q('DELETE FROM personal_library_items WHERE file_id = $1', [f.id]);
     await q('DELETE FROM files WHERE id = $1', [f.id]);
     n++;
   }
