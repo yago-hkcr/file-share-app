@@ -48,11 +48,11 @@ function sessionSecret() {
 
 const PASSWORD_HASH_PREFIX = 'bcrypt-sha256$';
 const PASSWORD_HASH_COST = 12;
-const MIN_PASSWORD_LENGTH = 15;
+const MIN_PASSWORD_LENGTH = 4;
 const MAX_PASSWORD_LENGTH = 1024;
 const MAX_PASSWORD_BYTES = 4096;
 const normalizePassword = value => String(value == null ? '' : value).normalize('NFKC');
-function passwordIsStrong(value) {
+function passwordMeetsPolicy(value) {
   const password = normalizePassword(value);
   const length = Array.from(password).length;
   return length >= MIN_PASSWORD_LENGTH && length <= MAX_PASSWORD_LENGTH && Buffer.byteLength(password, 'utf8') <= MAX_PASSWORD_BYTES;
@@ -380,7 +380,7 @@ async function initDatabase() {
   const admin = await one("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
   if (!admin) {
     if (!INITIAL_ADMIN_PASSWORD) throw new Error('Defina ADMIN_PASSWORD antes de criar a conta administrativa inicial.');
-    if (!passwordIsStrong(INITIAL_ADMIN_PASSWORD)) throw new Error(`A senha inicial do administrador precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`);
+    if (!passwordMeetsPolicy(INITIAL_ADMIN_PASSWORD)) throw new Error(`A senha inicial do administrador precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`);
     const hash = await hashPassword(INITIAL_ADMIN_PASSWORD);
     await q(`INSERT INTO users (id, username, email, password_hash, role, status, avatar_color, created_at)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
@@ -1007,7 +1007,7 @@ app.post('/api/register', wrap(async (req, res) => {
   if (username.length < 3 || username.length > 60 || email.length > 254) return res.status(400).json({ error: 'Confira o tamanho do nome e do email.' });
   const regMode = await getSetting('registration_mode', 'approval');
   if (regMode === 'closed') return res.status(403).json({ error: 'Os cadastros estão fechados no momento.' });
-  if (!passwordIsStrong(password)) return res.status(400).json({ error: `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres (até ${MAX_PASSWORD_LENGTH}).` });
+  if (!passwordMeetsPolicy(password)) return res.status(400).json({ error: `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres (até ${MAX_PASSWORD_LENGTH}).` });
   if (await one('SELECT id FROM users WHERE username = $1 OR email = $2', [username, email])) return res.status(400).json({ error: 'Não foi possível criar a conta com esses dados.' });
 
   const colors = ['#4f46e5', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
@@ -1045,8 +1045,7 @@ app.post('/api/login', wrap(async (req, res) => {
     const upgradedHash = await hashPassword(password);
     await q('UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash = $3', [upgradedHash, user.id, user.password_hash]);
   }
-  const passwordChangeRequired = Number(user.password_change_required) === 1 || !passwordIsStrong(password);
-  if (passwordChangeRequired) await q('UPDATE users SET password_change_required = 1 WHERE id = $1', [user.id]);
+  const passwordChangeRequired = Number(user.password_change_required) === 1;
   await clearLoginRateLimits(ipKey, accountKey);
   await q('UPDATE users SET last_login = $1, last_seen = $1, last_ip = $2 WHERE id = $3', [ts(), clientIp(req), user.id]);
   await logAct(req, 'login', '', user);
@@ -2687,7 +2686,7 @@ app.post('/api/change-password', requireAuth, wrap(async (req, res) => {
   const user = await one('SELECT id, password_hash FROM users WHERE id = $1', [req.user.id]);
   const currentVerification = await verifyPassword(String(currentPassword || ''), user.password_hash);
   if (!currentVerification.matches) return res.status(400).json({ error: 'Senha atual incorreta' });
-  if (!passwordIsStrong(newPassword)) return res.status(400).json({ error: `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres (até ${MAX_PASSWORD_LENGTH}).` });
+  if (!passwordMeetsPolicy(newPassword)) return res.status(400).json({ error: `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres (até ${MAX_PASSWORD_LENGTH}).` });
   await q('UPDATE users SET password_hash = $1, password_change_required = 0 WHERE id = $2', [await hashPassword(newPassword), user.id]);
   // Encerra sessões e tokens antigos; mantém somente a sessão que acabou de trocar a senha.
   const loggedOutAt = Date.now();
