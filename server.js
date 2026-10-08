@@ -576,6 +576,8 @@ const MAX_COLLECTION_UPLOADS = 200;
 const MAX_COLLECTION_NAME_BYTES = 255;
 const COLLECTION_ACCESS_COOKIE = 'fs_collection_access';
 const COLLECTION_ACCESS_LEASE_MS = 2 * 60 * 1000;
+const COLLECTION_SESSION_COOKIE_MS = 30 * 24 * 60 * 60 * 1000;
+const COLLECTION_UPLOAD_STALE_MS = 5 * 60 * 1000;
 const makeCollectionToken = () => crypto.randomBytes(32).toString('base64url');
 const cleanCollectionFileName = value => String(value || 'arquivo').replace(/[\u0000-\u001f\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_COLLECTION_NAME_BYTES) || 'arquivo';
 const collectionLeaseUntil = () => new Date(Date.now() + COLLECTION_ACCESS_LEASE_MS).toISOString().slice(0, 19).replace('T', ' ');
@@ -622,8 +624,21 @@ async function reserveExclusiveCollectionAccess(recipient, req, res, token) {
     const abandoned = await q(`SELECT id, stored_name FROM file_collection_uploads
       WHERE recipient_id = $1 AND submission_id IS NULL AND upload_session_hash = $2`, [recipient.id, previousSessionHash]);
     for (const upload of abandoned) await removeCollectionUpload(upload).catch(error => console.error('Limpeza de envio abandonado:', error && error.message));
+    await q(`UPDATE file_collection_recipients SET status = 'pending'
+      WHERE id = $1 AND status = 'uploading' AND token_hash = $2
+        AND NOT EXISTS (SELECT 1 FROM file_collection_uploads WHERE recipient_id = $1 AND status = 'uploading')`, [recipient.id, recipient.token_hash]);
   }
   return true;
+}
+
+function reserveCollectionSession(req, res, token) {
+  const existing = readCookie(req, COLLECTION_ACCESS_COOKIE);
+  const browserSession = /^[a-f0-9]{64}$/i.test(String(existing || '')) ? existing : crypto.randomBytes(32).toString('hex');
+  res.cookie(COLLECTION_ACCESS_COOKIE, browserSession, {
+    httpOnly: true, secure: IS_VERCEL, sameSite: 'lax',
+    path: `/api/coletas/enviar/${encodeURIComponent(token)}`, maxAge: COLLECTION_SESSION_COOKIE_MS
+  });
+  req.collectionAccessSessionHash = hashToken(browserSession);
 }
 
 async function getCollectionRecipient(token) {
@@ -656,6 +671,29 @@ async function removeCollectionUpload(upload) {
   if (isBlobPath(upload.stored_name)) await deleteBlobs([upload.stored_name]);
   await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [upload.id]);
   await q('DELETE FROM file_collection_uploads WHERE id = $1', [upload.id]);
+}
+
+async function removeStaleCollectionUpload(upload, staleBefore) {
+  if (!upload) return false;
+  const removed = await q(`DELETE FROM file_collection_uploads
+    WHERE id = $1 AND status = 'uploading' AND (uploaded_at IS NULL OR uploaded_at <= $2)
+    RETURNING id, stored_name`, [upload.id, staleBefore]);
+  if (!removed.length) return false;
+  if (isBlobPath(removed[0].stored_name)) await deleteBlobs([removed[0].stored_name]);
+  await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [removed[0].id]);
+  return true;
+}
+
+async function recoverStaleCollectionUploadState(recipientId, tokenHash = null) {
+  const staleBefore = agoTs(COLLECTION_UPLOAD_STALE_MS);
+  const active = await q("SELECT id, stored_name, uploaded_at FROM file_collection_uploads WHERE recipient_id = $1 AND status = 'uploading'", [recipientId]);
+  const stale = active.filter(upload => !upload.uploaded_at || upload.uploaded_at <= staleBefore);
+  for (const upload of stale) await removeStaleCollectionUpload(upload, staleBefore);
+  const stillUploading = await one("SELECT id FROM file_collection_uploads WHERE recipient_id = $1 AND status = 'uploading' LIMIT 1", [recipientId]);
+  if (active.length > 0 && !stillUploading) {
+    await q(`UPDATE file_collection_recipients SET status = 'pending'
+      WHERE id = $1 AND status = 'uploading' AND ($2::TEXT IS NULL OR token_hash = $2)`, [recipientId, tokenHash]);
+  }
 }
 
 async function removeRecipientCollectionUploads(recipientId) {
@@ -1462,6 +1500,10 @@ async function expireCollectionRecipientsForOwner(ownerId) {
       AND LEAST(fc.expires_at, COALESCE(dest_room.expires_at, fc.expires_at)) <= $2
     RETURNING cr.id`, [ownerId, ts()]);
   for (const recipient of changed) await removeRecipientCollectionUploads(recipient.id);
+  const interrupted = await q(`SELECT cr.id, cr.token_hash FROM file_collection_recipients cr
+    JOIN file_collections fc ON fc.id = cr.collection_id
+    WHERE fc.owner_id = $1 AND cr.status = 'uploading'`, [ownerId]);
+  for (const recipient of interrupted) await recoverStaleCollectionUploadState(recipient.id, recipient.token_hash);
 }
 
 app.get('/api/coletas', asMember, wrap(async (req, res) => {
@@ -1616,7 +1658,7 @@ const publicCollectionAccess = wrap(async (req, res, next) => {
   if (Number(recipient.exclusive_access)) {
     const reserved = await reserveExclusiveCollectionAccess(recipient, req, res, req.params.token);
     if (!reserved) return res.status(423).json({ state: 'in_use', error: 'Este link está aberto em outro dispositivo. Tente novamente quando o acesso estiver disponível.' });
-  } else req.collectionAccessSessionHash = null;
+  } else reserveCollectionSession(req, res, req.params.token);
   req.collectionRecipient = recipient;
   return next();
 });
@@ -1626,6 +1668,17 @@ app.post('/api/coletas/enviar/:token/heartbeat', publicCollectionAccess, (req, r
   res.json({ success: true });
 });
 
+app.post('/api/coletas/enviar/:token/upload-heartbeat', publicCollectionAccess, wrap(async (req, res) => {
+  const uploadId = String(req.body && req.body.id || '');
+  const touched = await q(`UPDATE file_collection_uploads u SET uploaded_at = $1
+    WHERE u.id = $2 AND u.recipient_id = $3 AND u.status = 'uploading' AND u.upload_session_hash = $4
+      AND EXISTS (SELECT 1 FROM file_collection_recipients cr WHERE cr.id = $3 AND cr.status = 'uploading' AND cr.token_hash = $5)
+    RETURNING u.id`, [ts(), uploadId, req.collectionRecipient.id, req.collectionAccessSessionHash, hashToken(req.params.token)]);
+  if (!touched.length) return res.status(410).json({ error: 'Este envio não está mais ativo.' });
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true });
+}));
+
 app.get('/api/coletas/enviar/:token', publicCollectionAccess, wrap(async (req, res) => {
   let recipient = req.collectionRecipient;
   if (recipient.recipient_status === 'submitting' && recipient.submission_started_at && recipient.submission_started_at <= agoTs(10 * 60 * 1000)) {
@@ -1634,14 +1687,8 @@ app.get('/api/coletas/enviar/:token', publicCollectionAccess, wrap(async (req, r
     recipient = await getCollectionRecipient(req.params.token);
   }
   if (recipient.recipient_status === 'uploading') {
-    const active = await q("SELECT id, stored_name, uploaded_at FROM file_collection_uploads WHERE recipient_id = $1 AND status = 'uploading'", [recipient.id]);
-    const staleBefore = agoTs(30 * 60 * 1000);
-    const stale = active.filter(upload => !upload.uploaded_at || upload.uploaded_at <= staleBefore);
-    for (const upload of stale) await removeCollectionUpload(upload);
-    if (active.length === stale.length) {
-      await q(`UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'uploading' AND token_hash = $2`, [recipient.id, hashToken(req.params.token)]);
-      recipient = await getCollectionRecipient(req.params.token);
-    }
+    await recoverStaleCollectionUploadState(recipient.id, hashToken(req.params.token));
+    recipient = await getCollectionRecipient(req.params.token);
   }
   if (recipient.recipient_status === 'submitting') {
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
@@ -1651,7 +1698,7 @@ app.get('/api/coletas/enviar/:token', publicCollectionAccess, wrap(async (req, r
     q('SELECT id, label, required, quantity FROM file_collection_items WHERE collection_id = $1 ORDER BY sort_order, id', [recipient.collection_id]),
     q(`SELECT id, item_id, original_name, size, mime_type, status, uploaded_at
       FROM file_collection_uploads WHERE recipient_id = $1 AND submission_id IS NULL
-        AND ($2::BOOLEAN = FALSE OR upload_session_hash = $3) ORDER BY uploaded_at, id`, [recipient.id, !!Number(recipient.multi_use_link), req.collectionAccessSessionHash || null])
+        AND upload_session_hash = $2 ORDER BY uploaded_at, id`, [recipient.id, req.collectionAccessSessionHash])
   ]);
   res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
   res.json({ title: recipient.title, instructions: recipient.instructions, participant_name: recipient.participant_name,
@@ -1682,12 +1729,12 @@ app.post('/api/coletas/enviar/:token/reservar', publicCollectionAccess, wrap(asy
     if (accessError) return accessError;
     return res.status(409).json({ error: 'Outro arquivo está sendo enviado. Aguarde o término.' });
   }
-  const itemCount = num((await one("SELECT COUNT(*) AS count FROM file_collection_uploads WHERE recipient_id = $1 AND item_id = $2 AND submission_id IS NULL AND status IN ('ready','uploading') AND ($3::TEXT IS NULL OR upload_session_hash = $3)", [recipient.id, item.id, req.collectionAccessSessionHash || null])).count);
+  const itemCount = num((await one("SELECT COUNT(*) AS count FROM file_collection_uploads WHERE recipient_id = $1 AND item_id = $2 AND submission_id IS NULL AND status IN ('ready','uploading') AND upload_session_hash = $3", [recipient.id, item.id, req.collectionAccessSessionHash])).count);
   if (itemCount >= num(item.quantity)) {
     await q("UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'uploading' AND token_hash = $2", [recipient.id, hashToken(req.params.token)]);
     return res.status(409).json({ error: 'A quantidade solicitada para este item já foi atingida.' });
   }
-  const count = num((await one('SELECT COUNT(*) AS count FROM file_collection_uploads WHERE recipient_id = $1 AND submission_id IS NULL AND ($2::TEXT IS NULL OR upload_session_hash = $2)', [recipient.id, req.collectionAccessSessionHash || null])).count);
+  const count = num((await one('SELECT COUNT(*) AS count FROM file_collection_uploads WHERE recipient_id = $1 AND submission_id IS NULL AND upload_session_hash = $2', [recipient.id, req.collectionAccessSessionHash])).count);
   if (count >= MAX_COLLECTION_UPLOADS) {
     await q("UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'uploading' AND token_hash = $2", [recipient.id, hashToken(req.params.token)]);
     return res.status(413).json({ error: `O limite é de ${MAX_COLLECTION_UPLOADS} arquivos por participante.` });
@@ -1698,7 +1745,7 @@ app.post('/api/coletas/enviar/:token/reservar', publicCollectionAccess, wrap(asy
       JOIN rooms dest_room ON dest_room.id = fc.room_id
       WHERE cr.id = $3 AND cr.status = 'uploading' AND cr.token_hash = $9 AND fc.status = 'active' AND fc.expires_at > $10
         AND (dest_room.expires_at IS NULL OR dest_room.expires_at > $10)
-    ) RETURNING id`, [id, recipient.collection_id, recipient.id, itemId, originalName, pathname, size, mime, hashToken(req.params.token), ts(), req.collectionAccessSessionHash || null]);
+    ) RETURNING id`, [id, recipient.collection_id, recipient.id, itemId, originalName, pathname, size, mime, hashToken(req.params.token), ts(), req.collectionAccessSessionHash]);
   if (!reservation.length) {
     await q("UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'uploading' AND token_hash = $2", [recipient.id, hashToken(req.params.token)]);
     return sendCollectionClosedError(req.params.token, res);
@@ -1730,7 +1777,7 @@ app.post('/api/coletas/enviar/:token/upload-token', publicCollectionAccess, wrap
     const match = BLOB_PATH_RE.exec(pathname);
     if (!match || match[1] !== recipient.room_id) return res.status(400).json({ error: 'Caminho de upload inválido.' });
     const staged = await one(`SELECT id, size FROM file_collection_uploads WHERE id = $1 AND recipient_id = $2 AND stored_name = $3 AND status = 'uploading'
-      AND ($4::TEXT IS NULL OR upload_session_hash = $4)`, [match[2], recipient.id, pathname, req.collectionAccessSessionHash || null]);
+      AND upload_session_hash = $4`, [match[2], recipient.id, pathname, req.collectionAccessSessionHash]);
     if (!staged) return res.status(410).json({ error: 'Este envio não está mais disponível.' });
     const { handleUploadPresigned } = await blobClientSdk();
     const { issueSignedToken } = await blobSdk();
@@ -1757,7 +1804,7 @@ app.post('/api/coletas/enviar/:token/registrar', publicCollectionAccess, wrap(as
   if (!blobEnabled()) return res.status(501).json({ error: 'Registro de upload direto indisponível neste ambiente.' });
   const recipient = req.collectionRecipient, id = String(req.body && req.body.id || '');
   const staged = await one(`SELECT id, stored_name, size FROM file_collection_uploads
-    WHERE id = $1 AND recipient_id = $2 AND status = 'uploading' AND ($3::TEXT IS NULL OR upload_session_hash = $3)`, [id, recipient.id, req.collectionAccessSessionHash || null]);
+    WHERE id = $1 AND recipient_id = $2 AND status = 'uploading' AND upload_session_hash = $3`, [id, recipient.id, req.collectionAccessSessionHash]);
   if (!staged) return res.status(410).json({ error: 'Este envio não está mais disponível.' });
   try {
     const { head } = await blobSdk();
@@ -1770,9 +1817,9 @@ app.post('/api/coletas/enviar/:token/registrar', publicCollectionAccess, wrap(as
     }
     const updated = await q(`UPDATE file_collection_uploads SET status = 'ready', uploaded_at = $1
       WHERE id = $2 AND recipient_id = $3 AND status = 'uploading'
-        AND ($5::TEXT IS NULL OR upload_session_hash = $5)
+        AND upload_session_hash = $5
         AND EXISTS (SELECT 1 FROM file_collection_recipients WHERE id = $3 AND status = 'uploading' AND token_hash = $4)
-      RETURNING id`, [ts(), id, recipient.id, hashToken(req.params.token), req.collectionAccessSessionHash || null]);
+      RETURNING id`, [ts(), id, recipient.id, hashToken(req.params.token), req.collectionAccessSessionHash]);
     if (!updated.length) {
       const current = await one(`SELECT u.status AS upload_status, cr.status AS recipient_status, cr.token_hash
         FROM file_collection_uploads u JOIN file_collection_recipients cr ON cr.id = u.recipient_id
@@ -1814,12 +1861,12 @@ app.post('/api/coletas/enviar/:token/upload', publicCollectionAccess, (req, res,
     if (accessError) return accessError;
     return res.status(409).json({ error: 'Outro arquivo está sendo enviado. Aguarde o término.' });
   }
-  const itemCount = num((await one("SELECT COUNT(*) AS count FROM file_collection_uploads WHERE recipient_id = $1 AND item_id = $2 AND submission_id IS NULL AND status IN ('ready','uploading') AND ($3::TEXT IS NULL OR upload_session_hash = $3)", [recipient.id, item.id, req.collectionAccessSessionHash || null])).count);
+  const itemCount = num((await one("SELECT COUNT(*) AS count FROM file_collection_uploads WHERE recipient_id = $1 AND item_id = $2 AND submission_id IS NULL AND status IN ('ready','uploading') AND upload_session_hash = $3", [recipient.id, item.id, req.collectionAccessSessionHash])).count);
   if (itemCount >= num(item.quantity)) {
     await q("UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'uploading' AND token_hash = $2", [recipient.id, tokenHash]);
     return res.status(409).json({ error: 'A quantidade solicitada para este item já foi atingida.' });
   }
-  const count = num((await one('SELECT COUNT(*) AS count FROM file_collection_uploads WHERE recipient_id = $1 AND submission_id IS NULL AND ($2::TEXT IS NULL OR upload_session_hash = $2)', [recipient.id, req.collectionAccessSessionHash || null])).count);
+  const count = num((await one('SELECT COUNT(*) AS count FROM file_collection_uploads WHERE recipient_id = $1 AND submission_id IS NULL AND upload_session_hash = $2', [recipient.id, req.collectionAccessSessionHash])).count);
   if (count >= MAX_COLLECTION_UPLOADS) {
     await q("UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'uploading' AND token_hash = $2", [recipient.id, tokenHash]);
     return res.status(413).json({ error: `O limite é de ${MAX_COLLECTION_UPLOADS} arquivos por participante.` });
@@ -1837,7 +1884,7 @@ app.post('/api/coletas/enviar/:token/upload', publicCollectionAccess, (req, res,
       ), stored AS (
         INSERT INTO file_collection_upload_blobs (upload_id, data)
         SELECT id, decode($11, 'hex') FROM staged RETURNING upload_id
-      ) SELECT upload_id FROM stored`, [id, recipient.collection_id, recipient.id, itemId, originalName, id, file.size, file.mimetype || 'application/octet-stream', ts(), tokenHash, file.buffer.toString('hex'), req.collectionAccessSessionHash || null]);
+      ) SELECT upload_id FROM stored`, [id, recipient.collection_id, recipient.id, itemId, originalName, id, file.size, file.mimetype || 'application/octet-stream', ts(), tokenHash, file.buffer.toString('hex'), req.collectionAccessSessionHash]);
     if (!inserted.length) {
       await q("UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'uploading' AND token_hash = $2", [recipient.id, tokenHash]);
       return sendCollectionClosedError(req.params.token, res);
@@ -1858,9 +1905,9 @@ app.delete('/api/coletas/enviar/:token/uploads/:uploadId', publicCollectionAcces
   if (!locked.length) return res.status(409).json({ error: 'Aguarde o envio em andamento terminar antes de remover arquivos.' });
   try {
     const found = await q(`DELETE FROM file_collection_uploads u WHERE u.id = $1 AND u.recipient_id = $2 AND u.submission_id IS NULL
-      AND ($4::TEXT IS NULL OR u.upload_session_hash = $4)
+      AND u.upload_session_hash = $4
       AND EXISTS (SELECT 1 FROM file_collection_recipients cr WHERE cr.id = $2 AND cr.status = 'deleting' AND cr.token_hash = $3)
-      RETURNING u.id, u.stored_name`, [req.params.uploadId, recipient.id, tokenHash, req.collectionAccessSessionHash || null]);
+      RETURNING u.id, u.stored_name`, [req.params.uploadId, recipient.id, tokenHash, req.collectionAccessSessionHash]);
     if (!found.length) return res.status(404).json({ error: 'Arquivo não encontrado ou envio já encerrado.' });
     if (isBlobPath(found[0].stored_name)) await deleteBlobs([found[0].stored_name]);
     await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [found[0].id]);
@@ -1871,7 +1918,7 @@ app.delete('/api/coletas/enviar/:token/uploads/:uploadId', publicCollectionAcces
 }));
 
 app.post('/api/coletas/enviar/:token/finalizar', publicCollectionAccess, wrap(async (req, res) => {
-  const recipient = req.collectionRecipient, submittedAt = ts(), tokenHash = hashToken(req.params.token), submissionId = uuidv4(), accessSessionHash = req.collectionAccessSessionHash || null;
+  const recipient = req.collectionRecipient, submittedAt = ts(), tokenHash = hashToken(req.params.token), submissionId = uuidv4(), accessSessionHash = req.collectionAccessSessionHash;
   const senderName = recipient.single_link || recipient.multi_use_link
     ? String(req.body && req.body.participant_name || '').trim().replace(/\s+/g, ' ').slice(0, 80)
     : recipient.participant_name;
@@ -1894,8 +1941,8 @@ app.post('/api/coletas/enviar/:token/finalizar', publicCollectionAccess, wrap(as
   try {
     missing = await q(`SELECT i.label, i.quantity FROM file_collection_items i WHERE i.collection_id = $1 AND i.required = 1
       AND (SELECT COUNT(*) FROM file_collection_uploads u WHERE u.recipient_id = $2 AND u.item_id = i.id AND u.submission_id IS NULL AND u.status = 'ready'
-        AND ($3::TEXT IS NULL OR u.upload_session_hash = $3)) < i.quantity`, [recipient.collection_id, recipient.id, accessSessionHash]);
-    uploading = await one("SELECT id FROM file_collection_uploads WHERE recipient_id = $1 AND submission_id IS NULL AND status = 'uploading' AND ($2::TEXT IS NULL OR upload_session_hash = $2) LIMIT 1", [recipient.id, accessSessionHash]);
+        AND u.upload_session_hash = $3) < i.quantity`, [recipient.collection_id, recipient.id, accessSessionHash]);
+    uploading = await one("SELECT id FROM file_collection_uploads WHERE recipient_id = $1 AND submission_id IS NULL AND status = 'uploading' AND upload_session_hash = $2 LIMIT 1", [recipient.id, accessSessionHash]);
   } catch (error) {
     await q("UPDATE file_collection_recipients SET status = 'pending', submission_started_at = NULL WHERE id = $1 AND status = 'submitting' AND token_hash = $2", [recipient.id, tokenHash]).catch(() => {});
     throw error;
@@ -1920,11 +1967,11 @@ app.post('/api/coletas/enviar/:token/finalizar', publicCollectionAccess, wrap(as
       WHERE cr.id = $3 AND cr.collection_id = fc.id AND cr.token_hash = $1 AND cr.status = 'submitting'
         AND fc.status = 'active' AND fc.expires_at > $2 AND (dest_room.expires_at IS NULL OR dest_room.expires_at > $2)
         AND NOT EXISTS (SELECT 1 FROM file_collection_uploads u WHERE u.recipient_id = cr.id AND u.submission_id IS NULL AND u.status = 'uploading'
-          AND ($6::TEXT IS NULL OR u.upload_session_hash = $6))
+          AND u.upload_session_hash = $6)
         AND NOT EXISTS (
           SELECT 1 FROM file_collection_items i WHERE i.collection_id = cr.collection_id AND i.required = 1
             AND (SELECT COUNT(*) FROM file_collection_uploads u WHERE u.recipient_id = cr.id AND u.item_id = i.id AND u.submission_id IS NULL AND u.status = 'ready'
-              AND ($6::TEXT IS NULL OR u.upload_session_hash = $6)) < i.quantity
+              AND u.upload_session_hash = $6) < i.quantity
         )
       RETURNING cr.id, cr.collection_id
     ), submission AS (
@@ -1935,7 +1982,7 @@ app.post('/api/coletas/enviar/:token/finalizar', publicCollectionAccess, wrap(as
       UPDATE file_collection_uploads u SET submission_id = s.id
       FROM submission s
       WHERE u.recipient_id = s.recipient_id AND u.collection_id = s.collection_id
-        AND u.status = 'ready' AND u.submission_id IS NULL AND ($6::TEXT IS NULL OR u.upload_session_hash = $6)
+        AND u.status = 'ready' AND u.submission_id IS NULL AND u.upload_session_hash = $6
       RETURNING u.id, u.collection_id
     ), created_files AS (
       INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at)
@@ -1960,7 +2007,7 @@ app.post('/api/coletas/enviar/:token/finalizar', publicCollectionAccess, wrap(as
     if (accessError) return accessError;
     const missing = await q(`SELECT i.label, i.quantity FROM file_collection_items i WHERE i.collection_id = $1 AND i.required = 1
       AND (SELECT COUNT(*) FROM file_collection_uploads u WHERE u.recipient_id = $2 AND u.item_id = i.id AND u.submission_id IS NULL AND u.status = 'ready'
-        AND ($3::TEXT IS NULL OR u.upload_session_hash = $3)) < i.quantity`, [recipient.collection_id, recipient.id, accessSessionHash]);
+        AND u.upload_session_hash = $3) < i.quantity`, [recipient.collection_id, recipient.id, accessSessionHash]);
     if (missing.length) return res.status(400).json({ error: 'Faltam arquivos obrigatórios: ' + missing.map(item => `${item.label} (${item.quantity})`).join(', ') });
     return res.status(409).json({ error: 'Ainda há arquivos sendo enviados. Aguarde o fim e tente novamente.' });
   }
