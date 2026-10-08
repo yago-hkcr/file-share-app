@@ -490,3 +490,15 @@ html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions
   html[data-theme="dark"] .dashboard-tab:hover { color:#fff; background:rgba(168,85,247,.13); }
   html[data-theme="dark"] .dashboard-tab.is-active { color:#fff; background:linear-gradient(120deg,rgba(150,70,255,.36),rgba(94,78,255,.3)); box-shadow:inset 0 0 0 1px rgba(190,144,255,.32); }
 }
+
+/* Contraste e cores consistentes no tema claro. */
+html:not([data-theme="dark"]) .dashboard-tabs { border-color:rgba(93,65,150,.18); background:rgba(255,255,255,.92); }
+html:not([data-theme="dark"]) .dashboard-tab { color:#625873; }
+html:not([data-theme="dark"]) .dashboard-tab:hover { color:#35234f; background:rgba(114,81,211,.09); }
+html:not([data-theme="dark"]) .dashboard-tab.is-active { color:#4d2e9f; background:linear-gradient(120deg,rgba(114,81,211,.16),rgba(83,94,214,.11)); box-shadow:inset 0 0 0 1px rgba(114,81,211,.22); }
+html:not([data-theme="dark"]) .room-submission-folder { border-color:#ded4ed; border-left-color:#7251d3; background:#f7f3fc; }
+html:not([data-theme="dark"]) .room-submission-folder-toggle { color:#352544; }
+html:not([data-theme="dark"]) .room-submission-folder-toggle > i:first-child { color:#7045bd; }
+html:not([data-theme="dark"]) .room-submission-folder-toggle small { color:#6e627b; }
+html:not([data-theme="dark"]) .room-submission-folder-content .file-row { color:#30283c; border-color:#e8e0ef; border-left-color:#7251d3; background:#fff; }
+html:not([data-theme="dark"]) .room-submission-folder-content .file-row:hover { background:#faf7ff; }
