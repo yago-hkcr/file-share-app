@@ -24,6 +24,63 @@
   .header-right { gap: 4px; }
 }
 
+/* Composer de chat alinhado dentro da área segura do celular. */
+@media (max-width: 640px) {
+  #roomModal #messageForm.chat-compose {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    padding: 10px max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px));
+    box-sizing: border-box;
+  }
+  .personal-sheet .direct-compose {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px 48px;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    padding: 10px max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px));
+    box-sizing: border-box;
+  }
+  #roomModal #messageInput,
+  .personal-sheet .direct-compose #directMessageInput {
+    width: 100%;
+    min-width: 0;
+    height: 48px;
+    box-sizing: border-box;
+  }
+  #roomModal #chatSendBtn,
+  .personal-sheet .direct-compose .chat-send,
+  .personal-sheet .direct-compose .ocr-button {
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+    min-height: 48px;
+    padding: 0;
+    border-radius: 14px;
+    clip-path: none;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+  .personal-sheet .direct-compose .ocr-button { width: 44px; min-width: 44px; height: 44px; min-height: 44px; border-radius: 13px; }
+  #roomModal #chatSendBtn,
+  .personal-sheet .direct-compose .chat-send {
+    color: #fff;
+    border: 0;
+    background: linear-gradient(145deg, #a85cf7, #6657ed);
+    box-shadow: 0 6px 18px rgba(112, 75, 226, .25);
+    transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+  }
+  #roomModal #chatSendBtn:not(:disabled):active,
+  .personal-sheet .direct-compose .chat-send:not(:disabled):active { transform: scale(.96); }
+  #roomModal #chatSendBtn:disabled,
+  .personal-sheet .direct-compose .chat-send:disabled { opacity: .48; box-shadow: none; }
+}
+
 /* Sala pública: manter os controles dos arquivos dentro da largura do celular. */
 @media (max-width:600px) {
   .sala-container,.sala-content,.sala-files-grid,.sala-file-card,.sala-file-info { box-sizing:border-box; width:100%; max-width:100%; min-width:0; }
