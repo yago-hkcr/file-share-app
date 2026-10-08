@@ -155,14 +155,21 @@
     const reserved = await api(base + '/reservar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       item_id: entry.itemId, name: entry.file.name, size: entry.file.size, mime: entry.file.type
     }) });
-    if (reserved.multipart) {
-      const { uploadPresigned } = await import('https://esm.sh/@vercel/blob@2.8.0/client?bundle');
-      await uploadPresigned(reserved.pathname, entry.file, {
-        access: 'private', handleUploadUrl: base + '/upload-token', clientPayload: JSON.stringify({ uploadId: reserved.id }), multipart: true,
-        onUploadProgress: event => onProgress(Math.round(Number(event.percentage || 0)))
-      });
-    } else {
-      await putWithProgress(reserved.presignedUrl, entry.file, onProgress);
+    const heartbeat = () => api(base + '/upload-heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: reserved.id }) }).catch(() => {});
+    await heartbeat();
+    const heartbeatTimer = setInterval(heartbeat, 15000);
+    try {
+      if (reserved.multipart) {
+        const { uploadPresigned } = await import('https://esm.sh/@vercel/blob@2.8.0/client?bundle');
+        await uploadPresigned(reserved.pathname, entry.file, {
+          access: 'private', handleUploadUrl: base + '/upload-token', clientPayload: JSON.stringify({ uploadId: reserved.id }), multipart: true,
+          onUploadProgress: event => onProgress(Math.round(Number(event.percentage || 0)))
+        });
+      } else {
+        await putWithProgress(reserved.presignedUrl, entry.file, onProgress);
+      }
+    } finally {
+      clearInterval(heartbeatTimer);
     }
     return api(base + '/registrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: reserved.id }) });
   }

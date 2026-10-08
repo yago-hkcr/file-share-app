@@ -350,6 +350,73 @@ body.collection-page::before {
 .collection-request-instructions > div { display:flex; align-items:center; gap:8px; color:#d5b7ff; font-size:12px; }
 .collection-request-instructions > div i { color:#c590ff; }
 .collection-request-instructions p { margin:7px 0 0; color:#f0e8fb; font-size:14px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
+/* Keep Coletas readable when the dashboard is using the light theme. */
+html:not([data-theme="dark"]) #collectionsPanel .collection-form,
+html:not([data-theme="dark"]) #collectionsPanel .collection-created-links,
+html:not([data-theme="dark"]) #collectionsPanel .collection-card {
+  color:#281d3b;
+  border-color:#e5dcef;
+  background:linear-gradient(145deg,#fff,#fbf9ff);
+  box-shadow:0 14px 36px rgba(48,30,74,.08);
+}
+html:not([data-theme="dark"]) #collectionsPanel .collection-form h3,
+html:not([data-theme="dark"]) #collectionsPanel .collection-created-links h3,
+html:not([data-theme="dark"]) #collectionsPanel .collection-card h3,
+html:not([data-theme="dark"]) #collectionsPanel .collection-participant strong,
+html:not([data-theme="dark"]) #collectionsPanel .collection-list-heading > div strong,
+html:not([data-theme="dark"]) #collectionsPanel .collection-history-heading > h3 { color:#281d3b; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-form .form-group > label,
+html:not([data-theme="dark"]) #collectionsPanel .collection-field-head,
+html:not([data-theme="dark"]) #collectionsPanel .collection-instructions { color:#403451; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-form input:not([type=checkbox]),
+html:not([data-theme="dark"]) #collectionsPanel .collection-form select,
+html:not([data-theme="dark"]) #collectionsPanel .collection-form textarea,
+html:not([data-theme="dark"]) #collectionsPanel .collection-item-input input[type=text],
+html:not([data-theme="dark"]) #collectionsPanel .collection-item-input .collection-quantity-label input {
+  color:#281d3b;
+  border-color:#d8cce5;
+  background:#fff;
+}
+html:not([data-theme="dark"]) #collectionsPanel .collection-form input::placeholder,
+html:not([data-theme="dark"]) #collectionsPanel .collection-form textarea::placeholder { color:#81758e; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-item-input label,
+html:not([data-theme="dark"]) #collectionsPanel .collection-card-meta,
+html:not([data-theme="dark"]) #collectionsPanel .collection-participant small,
+html:not([data-theme="dark"]) #collectionsPanel .collection-created-links p,
+html:not([data-theme="dark"]) #collectionsPanel .collection-link-value,
+html:not([data-theme="dark"]) #collectionsPanel .collection-list-heading > div small { color:#6c607a; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-link-row,
+html:not([data-theme="dark"]) #collectionsPanel .collection-participant { border-color:#eee8f3; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-status { background:#eee9f4; color:#51455f; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-status.is-submitted { background:#dcfce7; color:#166534; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-status.is-progress,
+html:not([data-theme="dark"]) #collectionsPanel .collection-status.is-sending { background:#dbeafe; color:#1d4ed8; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-status.is-revoked,
+html:not([data-theme="dark"]) #collectionsPanel .collection-status.is-expired { background:#fee2e2; color:#b91c1c; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-empty { border-color:#d9cbe8; color:#6c607a; }
+html:not([data-theme="dark"]) #collectionsPanel .dashboard-intro h2 { color:#281d3b; }
+html:not([data-theme="dark"]) #collectionsPanel .dashboard-intro p { color:#6c607a; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-single-toggle { color:#38294b; border-color:#e2d7ed; background:#faf7ff; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-single-toggle small { color:#6d6279; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-participant-chip { color:#49375d; border-color:#e3d7ef; background:#f5effb; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-participant-chip button { color:#58466b; background:rgba(81,54,109,.1); }
+html:not([data-theme="dark"]) #collectionsPanel .collection-download-tray { color:#51445f; border-color:#e4d9ef; background:#faf8fd; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-download-senders strong { color:#796d86; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-download-senders span { color:#342642; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-friend-picker { border-color:#e2d7ed; background:#fff; box-shadow:0 14px 30px rgba(48,30,74,.12); }
+html:not([data-theme="dark"]) #collectionsPanel .collection-friend-option { color:#38294b; border-color:#eee7f4; background:#faf8fd; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-friend-option:hover:not(:disabled) { border-color:#caa7e9; background:#f5edfc; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-friends-empty { color:#6d6279; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-list-heading button > span { color:#fff; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-recent-list,
+html:not([data-theme="dark"]) #collectionsPanel .collection-history-panel { border-color:#e6dced; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-recent-list > h3,
+html:not([data-theme="dark"]) #collectionsPanel .collection-history-heading { color:#4c3b60; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-recent-list > h3 small { color:#6d6279; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions { color:#49375d; border-color:#e3d4f2; background:linear-gradient(135deg,#faf5ff,#f6f3ff); box-shadow:none; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions > div,
+html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions > div i { color:#7042a3; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions p { color:#49375d; }
 @media (max-width:640px) {
   .collection-participant-entry { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
   .collection-participant-entry input { grid-column:1/-1; }
