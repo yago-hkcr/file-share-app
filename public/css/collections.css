@@ -417,6 +417,55 @@ html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions
 html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions > div,
 html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions > div i { color:#7042a3; }
 html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions p { color:#49375d; }
+@media (prefers-color-scheme:light) {
+  body.collection-page { color:#291f39; color-scheme:light; background:#f4f2f9; }
+  body.collection-page::before { background:radial-gradient(ellipse at 17% 15%,rgba(171,112,230,.13),transparent 42%),radial-gradient(ellipse at 86% 74%,rgba(112,125,228,.1),transparent 39%),linear-gradient(145deg,#faf9fc,#f0edf7 56%,#f7f5fa); }
+  .collection-brand { color:#392b4e; }
+  .collection-brand i { color:#7950c4; filter:none; }
+  .collection-brand .badge { border-color:#e2d7ef; color:#685779; background:#f7f2fc; }
+  .collection-public-card { color:#30243f; border-color:#e3dbea; background:linear-gradient(145deg,#fff,#faf9fd); box-shadow:0 22px 60px rgba(47,34,69,.12); }
+  .collection-public-card h1,.collection-title-row h1,.collection-name-gate h1,.collection-complete h1 { color:#241a32; }
+  .collection-title-icon { color:#7045b7; border-color:#e0d4ee; background:linear-gradient(145deg,#f2e9fc,#eef0ff); box-shadow:0 8px 24px rgba(114,59,195,.1); }
+  .collection-eyebrow { color:#7045b7; }
+  .collection-public-intro,.collection-name-gate > p:not(.collection-eyebrow),.collection-complete p { color:#5e536c; }
+  .collection-public-meta,.collection-quantity-progress,.collection-optional,.collection-deadline,.collection-sender-field small,.collection-name-gate > small { color:#71667e; }
+  .collection-deadline strong,.collection-sender-field { color:#3c304d; }
+  .collection-deadline-separator { background:#ddd2e9; }
+  .collection-exclusive-notice { color:#474989; border-color:#d9dcf8; background:#f1f2ff; }
+  .collection-request-instructions { color:#49375d; border-color:#e3d4f2; background:linear-gradient(135deg,#faf5ff,#f6f3ff); box-shadow:none; }
+  .collection-request-instructions > div,.collection-request-instructions > div i { color:#7042a3; }
+  .collection-request-instructions p { color:#49375d; }
+  .collection-request-item { border-color:#e8e2ee; background:#fcfbfe; }
+  .collection-request-item:hover { border-color:#c9addf; box-shadow:0 10px 28px rgba(48,30,74,.08); }
+  .collection-request-item-head strong { color:#342741; }
+  .collection-required,.collection-sender-field b { color:#b4234d; }
+  .collection-drop-zone { color:#58476b; border-color:#cdbce0; background:linear-gradient(135deg,#faf6ff,#f5f4ff); }
+  .collection-drop-zone:hover,.collection-drop-zone.is-dragging { border-color:#9865cd; background:#f2eafd; }
+  .collection-drop-zone > i { color:#8054c1; filter:none; }
+  .collection-drop-zone strong,.collection-file-preview-info { color:#392b4e; }
+  .collection-drop-zone small,.collection-saved-file small,.collection-file-preview-info small { color:#746982; }
+  .collection-saved-file,.collection-preview-card { color:#493d59; border-color:#e8e1ee; background:#faf9fc; }
+  .collection-saved-file > i,.collection-preview-icon { color:#7950b7; }
+  .collection-preview-icon { background:#f0eafa; }
+  .collection-preview-thumb { border-color:#e0d4ee; background:#f5f2f8; }
+  .collection-file-preview-info a { color:#7042a3; }
+  .collection-review { border-color:#e3d8ef; color:#51445f; background:linear-gradient(135deg,#f8f2ff,#f4f3ff); }
+  .collection-review h2 { color:#342741; }
+  .collection-upload-progress { color:#51445f; background:#f4effa; }
+  .collection-public-message { border-color:#f1c9d2; color:#a52343; background:#fff1f3; }
+  .collection-public-message.is-success { border-color:#bfe8cd; color:#17683b; background:#effbf3; }
+  .collection-complete i { color:#168349; background:#e6f8ed; box-shadow:none; }
+  .collection-complete.is-suspended i,.collection-complete.is-expired i,.collection-complete.is-replaced i,.collection-complete.is-closed i,.collection-complete.is-invalid i { color:#a56813; background:#fff6df; }
+  .collection-complete.is-in_use i { color:#5269c1; background:#edf0ff; box-shadow:none; }
+  .collection-close-eyebrow { color:#7045a0 !important; }
+  .collection-exclusive-notice { color:#474989; }
+  .collection-sender-field input { color:#30243f; border-color:#d9cde6; background:#fff; }
+  .collection-sender-field input::placeholder { color:#8a8094; }
+  .collection-sender-field input:focus { border-color:#9865cd; }
+}
+@media (prefers-color-scheme:light) and (max-width:640px) {
+  .collection-public-actions { border-color:#e5dced; background:rgba(255,255,255,.94); box-shadow:0 8px 28px rgba(48,30,74,.12); }
+}
 @media (max-width:640px) {
   .collection-participant-entry { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
   .collection-participant-entry input { grid-column:1/-1; }
