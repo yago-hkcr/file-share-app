@@ -114,3 +114,52 @@ input, select, textarea { min-width: 0; }
   body { min-height: 100vh; }
   .modal-content, .rename-box, .slide-panel-content { max-height: calc(100vh - 20px); }
 }
+
+
+/* Correção mobile definitiva da lista de arquivos do painel administrativo.
+   Os controles são empilhados para impedir qualquer overflow horizontal. */
+@media (max-width: 800px) {
+  .room-files-list .file-row {
+    display: grid !important;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .room-files-list .file-row > i:first-child {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    justify-self: center;
+  }
+
+  .room-files-list .file-row > .file-main {
+    grid-column: 2;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .room-files-list .file-row > .text-muted,
+  .room-files-list .file-row > .btn,
+  .room-files-list .file-row > a.btn,
+  .room-files-list .file-row > button {
+    grid-column: 2;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    justify-self: stretch;
+  }
+
+  .room-files-list .file-row > .btn,
+  .room-files-list .file-row > a.btn,
+  .room-files-list .file-row > button {
+    min-height: 42px;
+  }
+}

@@ -1,5 +1,5 @@
 // Envio de arquivos para uma sala.
-// Arquivos até 100 MB usam URL assinada; acima disso, upload multipart direto ao Blob (limite 10 GB).
+// Arquivos até 100 MB usam URL assinada; acima disso, upload multipart direto ao Blob (limite 50 GB).
 // Reserva (servidor sem Blob, ex.: rodando local sem `vercel env pull`): envio pelo servidor.
 // O limite por arquivo vem do servidor (/api/me → max_upload_bytes), então o aviso nunca fica desatualizado.
 (function () {

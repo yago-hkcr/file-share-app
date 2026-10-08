@@ -23,3 +23,13 @@
   .intro-actions .btn { flex: 1 1 100%; }
   .header-right { gap: 4px; }
 }
+
+/* Sala pública: manter os controles dos arquivos dentro da largura do celular. */
+@media (max-width:600px) {
+  .sala-container,.sala-content,.sala-files-grid,.sala-file-card,.sala-file-info { box-sizing:border-box; width:100%; max-width:100%; min-width:0; }
+  .sala-file-card { align-items:stretch; overflow:hidden; }
+  .sala-file-info h4 { min-width:0; max-width:100%; overflow-wrap:anywhere; word-break:break-word; }
+  .sala-file-actions { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; gap:8px; width:100%; min-width:0; max-width:100%; }
+  .sala-file-actions > * { box-sizing:border-box; width:100%; min-width:0; max-width:100%; margin:0; justify-content:center; white-space:normal; }
+  .sala-file-actions .btn-download { grid-column:1/-1; }
+}

@@ -151,3 +151,59 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 @media (prefers-reduced-motion: reduce) {
   html:not(.personal-reduced-motion) .msg-highlight { scroll-behavior: auto; }
 }
+
+
+/* Editor de enquadramento da foto de perfil */
+.avatar-crop-sheet { z-index: 2200; }
+.avatar-crop-sheet .modal-content { width: min(440px, calc(100% - 24px)); max-width: 440px; }
+.avatar-crop-copy { margin-bottom: 12px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.avatar-crop-stage { width: min(320px, 78vw); aspect-ratio: 1; margin: 0 auto 14px; overflow: hidden; border-radius: 22px; background: #0a0612; border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(0,0,0,.22); touch-action: none; }
+.avatar-crop-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.avatar-crop-stage canvas:active { cursor: grabbing; }
+.avatar-crop-zoom { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; }
+.avatar-crop-zoom input { flex: 1; min-width: 0; accent-color: var(--cy); }
+.avatar-crop-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.avatar-crop-actions .btn { min-height: 42px; }
+@media (max-width: 600px) {
+  .avatar-crop-sheet { padding: 12px; align-items: center; }
+  .avatar-crop-sheet .modal-content { width: min(440px, 100%); border-radius: 20px; max-height: 92dvh; }
+  .avatar-crop-stage { width: min(320px, 78vw); }
+  .avatar-crop-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .avatar-crop-actions .btn { width: 100%; justify-content: center; }
+}
+
+/* O preview de resposta só ocupa espaço quando existe uma resposta selecionada. */
+#directReplyPreview[hidden], #roomReplyPreview[hidden] { display: none !important; }
+
+/* Transcrição de imagens e cópia rápida de mensagens */
+.ocr-button { flex: 0 0 42px; min-width: 42px; justify-content: center; padding: 7px; }
+.msg-bubble, .direct-bubble { position: relative; }
+.msg-copy-trigger, .direct-copy-trigger { display: inline-flex; align-items: center; gap: 5px; min-height: 27px; padding: 3px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .15s ease, background .15s ease, color .15s ease; }
+.msg-bubble:hover .msg-copy-trigger, .msg-bubble:focus-within .msg-copy-trigger, .direct-bubble:hover .direct-copy-trigger, .direct-bubble:focus-within .direct-copy-trigger { opacity: .9; pointer-events: auto; }
+.msg-copy-trigger:hover, .direct-copy-trigger:hover { background: rgba(var(--cy-rgb), .12); color: var(--ink); }
+.msg-copy-trigger { position: absolute; right: 7px; top: 7px; }
+.msg-bubble .msg-text { padding-right: 54px; }
+.direct-copy-trigger { margin-left: auto; }
+.direct-bubble footer { position: relative; }
+.direct-bubble footer time { margin-right: auto; }
+@media (hover: none), (max-width: 640px) {
+  .msg-copy-trigger, .direct-copy-trigger { opacity: .72; pointer-events: auto; }
+  .msg-copy-trigger { position: static; margin: 4px 0 -2px auto; }
+  .msg-bubble .msg-text { padding-right: 0; }
+}
+
+
+/* Seletor de texto extraído de imagens: permite escolher exatamente o trecho a copiar. */
+.image-text-modal { z-index: 2300; }
+.image-text-modal .modal-content { width: min(760px, calc(100% - 24px)); max-width: 760px; }
+.image-text-hint { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+.image-text-selection { display: block; width: 100%; min-height: 300px; max-height: 52vh; resize: vertical; box-sizing: border-box; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); color: var(--ink); font: 14px/1.55 inherit; white-space: pre-wrap; }
+.image-text-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.image-text-actions .btn { min-height: 42px; }
+@media (max-width: 640px) {
+  .image-text-modal { padding: 12px; align-items: flex-end; }
+  .image-text-modal .modal-content { width: 100%; max-width: 100%; border-radius: 18px 18px 0 0; }
+  .image-text-selection { min-height: 260px; max-height: 48vh; }
+  .image-text-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .image-text-actions .btn { width: 100%; justify-content: center; }
+}

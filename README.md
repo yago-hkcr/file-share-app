@@ -11,7 +11,7 @@ node server.js   # le DATABASE_URL do .env.local
 
 Abra `http://localhost:3000`.
 
-Acesso inicial do administrador: `admin` / `admin123`. Altere a senha depois do primeiro acesso.
+Configure `ADMIN_PASSWORD` e `SESSION_SECRET` no ambiente antes da inicialização. `ADMIN_PASSWORD` cria a conta administrativa `admin` apenas se ainda não houver uma conta; instalações existentes mantêm a senha cadastrada. `SESSION_SECRET` protege os cookies de sessão e deve permanecer estável entre reinicializações.
 
 ## Deploy (Vercel + Neon)
 
