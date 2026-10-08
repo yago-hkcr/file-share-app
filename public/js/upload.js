@@ -47,14 +47,14 @@
 
   async function legacyUpload(roomId, files) {
     const max = limitBytes || 4 * 1024 * 1024;
-    if (files.reduce((sum, f) => sum + f.size, 0) > max) {
-      throw new Error('Limite de ' + sizeLabel(max) + ' por envio neste ambiente.');
+    for (const file of files) {
+      if (file.size > max) throw new Error('Limite de ' + sizeLabel(max) + ' por arquivo neste ambiente.');
+      const form = new FormData();
+      form.append('files', file);
+      const response = await fetch('/api/rooms/' + roomId + '/files', { method: 'POST', body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Erro ao enviar arquivos');
     }
-    const form = new FormData();
-    files.forEach(f => form.append('files', f));
-    const response = await fetch('/api/rooms/' + roomId + '/files', { method: 'POST', body: form });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || 'Erro ao enviar arquivos');
   }
 
   // Texto de aviso para arquivos que ficaram de fora (grandes demais, vazios ou pastas)
