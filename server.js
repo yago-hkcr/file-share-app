@@ -1847,19 +1847,13 @@ app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
   const fileId = uuidv4();
   const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
   const pathname = `rooms/${room.id}/${fileId}-${safe}`;
+  // URL pre-assinada (mesmo fluxo estavel das Coletas): o servidor emite um link PUT de curta
+  // duracao e o navegador envia o arquivo direto ao Blob, sem o callback de token do SDK `upload()`.
   const { issueSignedToken, presignUrl } = await blobSdk();
-  const validUntil = Date.now() + 15 * 60 * 1000;
+  const validUntil = Date.now() + 60 * 60 * 1000;
   const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_DIRECT_BYTES, validUntil });
-  const { presignedUrl } = await presignUrl(token, {
-    operation: 'put',
-    pathname,
-    access: 'private',
-    maximumSizeInBytes: MAX_DIRECT_BYTES,
-    addRandomSuffix: false,
-    allowOverwrite: false,
-    validUntil
-  });
-  res.json({ pathname, presignedUrl });
+  const signed = await presignUrl(token, { operation: 'put', pathname, access: 'private', maximumSizeInBytes: MAX_DIRECT_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil });
+  res.json({ pathname, presignedUrl: signed.presignedUrl, validUntil, maxBytes: MAX_DIRECT_BYTES });
 }));
 
 
