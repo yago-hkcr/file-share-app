@@ -2,14 +2,23 @@
 
 Aplicacao web de compartilhamento de arquivos com contas aprovadas por administrador, salas publicas ou privadas, upload, download e chat.
 
-## Executar localmente
+O painel tem tres secoes:
+
+- **Salas** — crie salas temporarias, envie arquivos e converse com o grupo;
+- **Coletas** — peca arquivos a outras pessoas com links individuais, prazo e itens;
+- **Meu Acervo** — guarde arquivos importantes em espacos privados com prateleiras e anotacoes.
+
+## Executar localmente (modo mais simples, sem banco externo)
 
 ```powershell
-npm install
-node server.js   # le DATABASE_URL do .env.local
+npm run local:install   # uma vez, com internet
+npm run local:start     # banco local em data/local
 ```
 
 Abra `http://localhost:3000`.
+
+Alternativa com banco Neon: crie um `.env.local` com `DATABASE_URL` e execute
+`npm install` uma vez e depois `node server.js` (le `DATABASE_URL` do `.env.local`).
 
 Configure `ADMIN_PASSWORD` e `SESSION_SECRET` no ambiente antes da inicialização. `ADMIN_PASSWORD` cria a conta administrativa `admin` apenas se ainda não houver uma conta; instalações existentes mantêm a senha cadastrada. `SESSION_SECRET` protege os cookies de sessão e deve permanecer estável entre reinicializações.
 
@@ -37,3 +46,17 @@ Um computador da sala hospeda o FileShare, enquanto os demais entram pelo navega
 6. Se o Firewall perguntar, permita o acesso em redes privadas. Mantenha o computador ligado e o processo aberto.
 
 O banco e os arquivos enviados ficam persistidos em `data/local` no computador servidor. Faça cópias dessa pasta com o servidor encerrado. O servidor local e o site publicado na Vercel usam bases separadas; dados de um não são sincronizados automaticamente com o outro.
+
+## Protecao contra arquivos corrompidos
+
+Commits frequentes em branches salvam cada etapa do trabalho. Alem disso, o
+repositorio tem um hook de pre-commit versionado em `.githooks/pre-commit`
+que bloqueia arquivos truncados (a assinatura do incidente de 08/10/2026:
+arquivos com exatamente 1.506 bytes) e valida a sintaxe dos arquivos `.js`.
+O caminho ja vem configurado (`core.hooksPath = .githooks`); para reconfigurar:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Em um caso excepcional de arquivo legitimo ser bloqueado, use `git commit --no-verify`.
