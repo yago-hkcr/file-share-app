@@ -1,0 +1,103 @@
+#!/bin/sh
+# =============================================================================
+# Pre-commit do FileShare — evita a reincidência da corrupção de 08/10/2026.
+#
+# Naquela data, um truncamento (provavelmente do OneDrive) deixou 36 arquivos
+# com exatamente 1506 bytes e commits seguintes propagaram o dano para o
+# master. Este hook bloqueia:
+#   1. Os blobs já conhecidos como corrompidos;
+#   2. Qualquer arquivo novo staged com exatamente 1506 bytes;
+#   3. Arquivos .js staged com erro de sintaxe (node --check).
+#
+# Para forçar um commit legítimo:  git commit --no-verify
+# =============================================================================
+
+fail=0
+
+# --- 1 + 2: tamanho e hash dos arquivos staged -------------------------------
+files=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$files" ] && exit 0
+
+# Hashes dos blobs corrompidos conhecidos (truncados em 1506 bytes).
+KNOWN_BAD="066d7ac83e36e9fb5e8c89aab0f7f7ac78385539
+68efcb7ef06c0861d075504555447d1e19d55b3c
+841f8b4fc6e424e21cc5567eb3f9455f172ce2e3
+33ee93c0813f717f5370407c2374f32eb914ddb7
+bc7ece4fbe56105e18f802e3b80f1e96a91ca8fb
+8459b28833eed63165f6cca7a318507e98c5f2d0
+609a9a85c5cf1a541d94f90502ac7bdecc2e1bc1
+61ea20a1e8c446664548d8b731a056d2e80590f6
+a53fc291a444f8a0ead719b2a39d69b521542ad1
+55d7f15f741350f36b23af8c0e9db65c3b0efc83
+d1b0b8c6de72dabea545d30d117a78f583230423
+13b66c9b2ca5a7a752dfae15787f0d60d7bafcd3
+0c1f3b4d2c252d275302a4e9826fdddfd6aae4a9
+8c67feef0df7c47aba2edaf46b46e8f519a6ef06
+f7c4ae3d809946096a1f608ce60f9d3ea68c208c
+78aeea557125779cf7f7d30b0e9ed8ddbed22d91
+c5976e0ad66650ddbeb308b33537adbbbe93cf88
+cc7a8c92fa5d59c8e078065577495a6c65bbc117
+1be45748b5a4641a04c4fffc8a1f7a547ccf6d92
+615529c5c21a376d49f706d5de1bc186b8f8c403
+d26ffee9c637909a3b0cac914c71020c50350730
+c6b699dc1b238a81200dd0de77685e95520f7122
+49ad643741df164bf3e469dbf172c2062f79f7b5
+9bfdaadab192421658f28f22d343f216606660a0
+08c214384dd46d937b652962392c63c75b6ae811
+a041771c440750322e81336c98c86fdd75fbf0cf
+379be6f8077171dcb7943bc2491473ebe2a8c5d0
+1ed31a360f1c0a81db4caae316357994415d8cf1
+080c128e977cb39ba199420e3844a03d718ebd94
+fcb911771598122d8c57434f7a83d0423e34047e
+b38c0a23a139c7cc01354b58409da250905ecc6c
+1ff1498a32c430fd71a9c6d4b934f68e4677b507
+7034a8882a289b2a1999c249d72f04ca15be0029
+0be338cd99533a1b265f661b73f18883819f295c
+e4bca6293bce7ca536aedd137fbe452967dcf805
+5096514945714a076251123382d6b3fbc302f600"
+
+oldIFS=$IFS
+IFS='
+'
+for f in $files; do
+  [ -f "$f" ] || continue
+  blob=$(git rev-parse ":$f" 2>/dev/null)
+  size=$(git cat-file -s ":$f" 2>/dev/null)
+
+  if echo "$KNOWN_BAD" | grep -q "$blob"; then
+    echo "✗ BLOQUEADO: '$f' e um blob corrompido conhecido (truncamento de 08/10/2026)." >&2
+    echo "   Restaure o arquivo de um commit saudavel (ex.: git checkout e7975f1 -- \"$f\")" >&2
+    fail=1
+  elif [ "$size" = "1506" ]; then
+    echo "✗ BLOQUEADO: '$f' tem exatamente 1506 bytes — assinatura do truncamento." >&2
+    echo "   O arquivo parece cortado. Confira o conteudo antes de commitar." >&2
+    fail=1
+  fi
+done
+IFS=$oldIFS
+
+# --- 3: sintaxe dos .js staged ----------------------------------------------
+for f in $files; do
+  case "$f" in
+    *.js)
+      if command -v node >/dev/null 2>&1; then
+        tmp=$(mktemp "${TMPDIR:-/tmp}/fs-precommit-XXXXXX.js" 2>/dev/null || echo "/tmp/fs-precommit-$$.js")
+        git show ":$f" > "$tmp" 2>/dev/null || continue
+        if ! node --check "$tmp" >/dev/null 2>&1; then
+          echo "✗ ERRO de sintaxe em '$f':" >&2
+          node --check "$tmp" 2>&1 | sed 's/^/   /' >&2
+          fail=1
+        fi
+        rm -f "$tmp"
+      fi
+      ;;
+  esac
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo "" >&2
+  echo "Commit cancelado. Corrija os arquivos acima ou use 'git commit --no-verify' se tiver certeza." >&2
+  exit 1
+fi
+
+exit 0
