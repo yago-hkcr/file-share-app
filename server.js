@@ -1189,6 +1189,12 @@ app.use((req, res, next) => {
 // =================== PÁGINAS ===================
 const page = name => path.join(__dirname, 'public', name);
 
+// Endpoint simples para monitoramento: só responde depois que o banco foi inicializado.
+app.get('/health', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ status: 'ok' });
+});
+
 app.get('/', wrap(async (req, res) => {
   if (req.session && req.session.userId) {
     const user = await one('SELECT role FROM users WHERE id = $1', [req.session.userId]);
