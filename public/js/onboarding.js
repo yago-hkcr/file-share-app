@@ -193,7 +193,8 @@
       tutorialButton.addEventListener('click', event => { event.preventDefault(); start(); });
     }
     fetch('/api/me').then(response => response.ok ? response.json() : null).then(user => {
-      if (user && Number(user.onboarding_seen) === 0) window.setTimeout(start, 900);
+      const isAdmin = user && user.role === 'admin';
+      if (!isAdmin && user && Number(user.onboarding_seen) === 0) window.setTimeout(start, 900);
     }).catch(() => {});
   }
 
