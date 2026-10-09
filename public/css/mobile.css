@@ -48,18 +48,8 @@
   .header-right { gap: 4px; }
 }
 
-/* Composer de chat alinhado dentro da área segura do celular. */
+/* Composer pessoal alinhado dentro da área segura do celular. */
 @media (max-width: 640px) {
-  #roomModal #messageForm.chat-compose {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px 48px;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    max-width: 100%;
-    padding: 10px max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px));
-    box-sizing: border-box;
-  }
   .personal-sheet .direct-compose {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 44px 48px;
@@ -70,14 +60,12 @@
     padding: 10px max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px));
     box-sizing: border-box;
   }
-  #roomModal #messageInput,
   .personal-sheet .direct-compose #directMessageInput {
     width: 100%;
     min-width: 0;
     height: 48px;
     box-sizing: border-box;
   }
-  #roomModal #chatSendBtn,
   .personal-sheet .direct-compose .chat-send,
   .personal-sheet .direct-compose .ocr-button {
     width: 48px;
@@ -90,9 +78,7 @@
     justify-content: center;
     box-sizing: border-box;
   }
-  #roomModal #ocrButton,
   .personal-sheet .direct-compose .ocr-button { width: 44px; min-width: 44px; height: 44px; min-height: 44px; border-radius: 13px; }
-  #roomModal #chatSendBtn,
   .personal-sheet .direct-compose .chat-send {
     color: #fff;
     border: 0;
@@ -100,9 +86,7 @@
     box-shadow: 0 6px 18px rgba(112, 75, 226, .25);
     transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
   }
-  #roomModal #chatSendBtn:not(:disabled):active,
   .personal-sheet .direct-compose .chat-send:not(:disabled):active { transform: scale(.96); }
-  #roomModal #chatSendBtn:disabled,
   .personal-sheet .direct-compose .chat-send:disabled { opacity: .48; box-shadow: none; }
 }
 
@@ -176,8 +160,51 @@
   .collection-item-input .collection-remove-item { width:34px; }
 }
 
-/* Composer da sala: campo, OCR e envio ocupam colunas próprias em telas estreitas. */
+/* Composer da sala: folha, chat, OCR e envio permanecem dentro da viewport. */
 @media (max-width: 640px) {
+  #roomModal .modal-content {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    height: min(94dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
+    max-height: min(94dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+  #roomModal .modal-header {
+    flex: 0 0 auto;
+  }
+  #roomModal .modal-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
+  #roomModal .chat-box {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+  }
+  #roomModal .chat-list {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+    height: auto !important;
+    max-height: none !important;
+    overflow-x: hidden;
+  }
   #roomModal #messageForm.chat-compose {
     display: grid !important;
     grid-template-columns: minmax(0, 1fr) 44px 48px !important;
@@ -187,10 +214,55 @@
     min-width: 0;
     max-width: 100%;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: visible;
+    padding: 8px max(8px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+    margin-top: 0;
+    flex: 0 0 auto;
   }
-  #roomModal #messageInput { grid-column: 1; min-width: 0; width: 100%; }
-  #roomModal #ocrButton { grid-column: 2; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; }
-  #roomModal #chatSendBtn { grid-column: 3; width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 0; justify-content: center; }
-  .personal-sheet .direct-compose { grid-template-columns: minmax(0, 1fr) 44px 48px !important; }
+  #roomModal #messageInput {
+    grid-column: 1;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: 48px;
+    min-height: 48px;
+    box-sizing: border-box;
+  }
+  #roomModal #ocrButton {
+    grid-column: 2;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+  #roomModal #chatSendBtn {
+    grid-column: 3;
+    width: 48px;
+    min-width: 48px;
+    max-width: 48px;
+    height: 48px;
+    min-height: 48px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 380px) {
+  #roomModal #messageForm.chat-compose {
+    grid-template-columns: minmax(0, 1fr) 42px 46px !important;
+    gap: 6px;
+  }
+  #roomModal #ocrButton {
+    width: 42px;
+    min-width: 42px;
+    max-width: 42px;
+  }
+  #roomModal #chatSendBtn {
+    width: 46px;
+    min-width: 46px;
+    max-width: 46px;
+  }
 }
