@@ -612,7 +612,7 @@ const CONTENT_SECURITY_POLICY = [
   "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com",
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
-  "connect-src 'self' https://cdn.jsdelivr.net https://esm.sh https://*.blob.vercel-storage.com",
+  "connect-src 'self' https://cdn.jsdelivr.net https://esm.sh https://vercel.com https://*.blob.vercel-storage.com",
   "frame-src 'self' blob:",
   "worker-src 'self' blob: https://cdn.jsdelivr.net"
 ].join('; ') + (IS_VERCEL ? '; upgrade-insecure-requests' : '');
