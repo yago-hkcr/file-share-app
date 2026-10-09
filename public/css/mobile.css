@@ -19,6 +19,29 @@
   .header-right .btn, .header-right a.btn { min-height: 42px; min-width: 42px; justify-content: center; }
   .header-right .btn-label { display: none; }
   .nav-item { white-space: nowrap; }
+
+  /* Dashboard no celular: abas grudadas no topo, ferramentas em grade compacta */
+  .dashboard-tabs { position: sticky; top: 0; z-index: 10; background: var(--bg); border-bottom: 1px solid var(--gray-200); padding: 8px 0; }
+  .library-toolbar, .collections-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .library-toolbar > *, .collections-toolbar > * { flex: 1 1 auto; min-width: 0; }
+  .library-shelf-filter { order: 2; width: 100%; }
+  .library-search { order: 1; flex: 1 1 60%; }
+  #libraryFavoritesFilter { order: 3; }
+  .library-intro-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .library-intro-actions .btn { flex: 1 1 auto; min-height: 42px; justify-content: center; }
+  .collection-form .collection-participant-entry { grid-template-columns: minmax(0, 1fr); }
+  /* Secoes dobravels no celular: espacos e prateleiras do Acervo */
+  .library-spaces-heading { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .library-spaces-heading .library-collapse-hint { margin-left: auto; font-size: 11px; color: var(--gray-500); }
+  .library-spaces-heading.is-collapsed .library-collapse-hint i { transform: rotate(-90deg); }
+  .library-spaces-heading .library-collapse-hint i { display: inline-block; transition: transform .2s; }
+  .library-spaces.is-collapsed, .library-bookcases.is-collapsed { display: none; }
+  /* Cards do Acervo: acoes em grade 2x2 no celular, sem estourar a tela */
+  .library-card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .library-card-actions .btn { min-width: 0; justify-content: center; white-space: nowrap; }
+  /* Arquivos da sala: botoes em grade 2x2 no celular */
+  #roomModal #roomFiles .file-btns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  #roomModal #roomFiles .file-btns .btn { min-width: 0; justify-content: center; white-space: normal; min-height: 42px; }
 }
 @media (max-width: 380px) {
   .intro-actions .btn { flex: 1 1 100%; }

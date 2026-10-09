@@ -263,6 +263,75 @@ async function resolvePersonalLibraryLocation(userId, body = {}) {
   return space ? { space, bookcase } : null;
 }
 
+// ---------------------------------------------------------------------------
+// Acervo: copias independentes (snapshot). Cada item guardado tem seus proprios
+// bytes (Blob privado ou file_blobs), entao excluir a sala NAO apaga o Acervo.
+// ---------------------------------------------------------------------------
+const LIBRARY_BLOB_PREFIX = 'library/';
+const isLibraryBlobPath = name => typeof name === 'string' && name.startsWith(LIBRARY_BLOB_PREFIX);
+
+// Le os bytes de um arquivo de sala (Blob privado ou Postgres) para copiar ao Acervo.
+async function readRoomFileBytes(file) {
+  if (!file) return null;
+  if (isBlobPath(file.stored_name)) {
+    const { get } = await blobSdk();
+    const stored = await get(file.stored_name, { access: 'private' });
+    if (!stored || !stored.stream) return null;
+    const chunks = [];
+    for await (const part of Readable.fromWeb(stored.stream)) chunks.push(Buffer.isBuffer(part) ? part : Buffer.from(part));
+    return Buffer.concat(chunks);
+  }
+  const row = await one("SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1", [file.id]);
+  return row && row.data ? Buffer.from(row.data, 'base64') : null;
+}
+
+async function writeLibraryBlob(libraryItemId, buffer) {
+  if (blobEnabled()) {
+    const { put } = await blobSdk();
+    const storedName = `${LIBRARY_BLOB_PREFIX}${libraryItemId}`;
+    await put(storedName, buffer, { access: 'private', contentType: 'application/octet-stream', addRandomSuffix: false, allowOverwrite: true });
+    return storedName;
+  }
+  await q("INSERT INTO personal_library_blobs (item_id, data) VALUES ($1, decode($2, 'hex')) ON CONFLICT (item_id) DO UPDATE SET data = decode($2, 'hex')", [libraryItemId, buffer.toString('hex')]);
+  return libraryItemId;
+}
+
+async function readLibraryBlob(item) {
+  if (!item) return null;
+  if (isLibraryBlobPath(item.stored_name)) {
+    const { get } = await blobSdk();
+    const stored = await get(item.stored_name, { access: 'private' });
+    if (!stored || !stored.stream) return null;
+    const chunks = [];
+    for await (const part of Readable.fromWeb(stored.stream)) chunks.push(Buffer.isBuffer(part) ? part : Buffer.from(part));
+    return Buffer.concat(chunks);
+  }
+  const row = await one("SELECT encode(data, 'base64') AS data FROM personal_library_blobs WHERE item_id = $1", [item.id]);
+  return row && row.data ? Buffer.from(row.data, 'base64') : null;
+}
+
+async function deleteLibraryBlobs(items) {
+  const blobPaths = items.map(i => i.stored_name).filter(isLibraryBlobPath);
+  if (blobPaths.length) await deleteBlobs(blobPaths);
+  const ids = items.map(i => i.id).filter(Boolean);
+  for (const id of ids) await q('DELETE FROM personal_library_blobs WHERE item_id = $1', [id]);
+}
+
+// Preenche o snapshot de itens antigos que ainda apontam para files (migracao).
+async function backfillLibrarySnapshot(item) {
+  if (!item || item.snapshot_ready) return item;
+  const file = await one('SELECT id, original_name, size, mime_type, stored_name FROM files WHERE id = $1', [item.file_id]);
+  if (!file) return item; // sala ja excluida e sem copia: mantem metadados, sem download
+  const bytes = await readRoomFileBytes(file);
+  if (!bytes) return item;
+  const storedName = await writeLibraryBlob(item.id, bytes);
+  await q(`UPDATE personal_library_items
+    SET original_name = $1, size = $2, mime_type = $3, stored_name = $4, room_name = COALESCE(NULLIF(room_name, ''), $5),
+      uploader_name = COALESCE(NULLIF(uploader_name, ''), $6), snapshot_ready = 1, updated_at = $7
+    WHERE id = $8`, [file.original_name, file.size, file.mime_type, storedName, item.room_name || '', item.uploader_name || '', ts(), item.id]);
+  return (await one('SELECT * FROM personal_library_items WHERE id = $1', [item.id])) || item;
+}
+
 let initPromise = null;
 function ensureDatabase() {
   if (!initPromise) {
@@ -392,6 +461,18 @@ async function createTables() {
   ]);
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_user_updated ON personal_library_items (user_id, updated_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_file ON personal_library_items (file_id)');
+  await q(`CREATE TABLE IF NOT EXISTS personal_library_blobs (
+    item_id TEXT PRIMARY KEY,
+    data BYTEA NOT NULL
+  )`);
+  // Snapshot: copia independente do arquivo no Acervo (sobrevive a exclusao da sala).
+  await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS original_name TEXT');
+  await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS size BIGINT');
+  await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS mime_type TEXT');
+  await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS stored_name TEXT');
+  await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS room_name TEXT');
+  await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS uploader_name TEXT');
+  await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS snapshot_ready INTEGER DEFAULT 0');
   await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_library_shelves_user_name ON personal_library_shelves (user_id, LOWER(name))');
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_shelves_user_created ON personal_library_shelves (user_id, created_at)');
   await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS space_id TEXT');
@@ -638,7 +719,7 @@ async function purgeExpired() {
     const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [r.id]);
     try { await deleteBlobs(roomFiles.map(f => f.stored_name)); } catch (e) { console.error('purge blobs:', e && e.message); }
     await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [r.id]);
-    await q('DELETE FROM personal_library_items WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [r.id]);
+    // Acervo e independente (snapshot): sala expirada NAO apaga o Acervo.
     await q('DELETE FROM files WHERE room_id = $1', [r.id]);
     await q('DELETE FROM room_members WHERE room_id = $1', [r.id]);
     await q('DELETE FROM messages WHERE room_id = $1', [r.id]);
@@ -651,6 +732,7 @@ app.use(wrap(async (req, res, next) => { if (req.path.startsWith('/api/') || req
 const MAX_FILE_BYTES = IS_VERCEL ? 4 * 1024 * 1024 : 50 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES, files: 1 } });
 const collectionUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES, files: 1 } });
+const libraryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES, files: 5 } });
 
 // ---------------------------------------------------------------------------
 // Autenticação (sempre confere o usuário no banco — nada depende só do cookie)
@@ -1301,6 +1383,8 @@ app.delete('/api/admin/users/:id', asAdmin, wrap(async (req, res) => {
   await q('DELETE FROM friendships WHERE requester_id = $1 OR addressee_id = $1', [req.params.id]);
   await q('DELETE FROM room_members WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM notifications WHERE user_id = $1', [req.params.id]);
+  const userItems = await q('SELECT id, stored_name FROM personal_library_items WHERE user_id = $1', [req.params.id]);
+  await deleteLibraryBlobs(userItems);
   await q('DELETE FROM personal_library_items WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM messages WHERE user_id = $1', [req.params.id]);
   await q('DELETE FROM users WHERE id = $1', [req.params.id]);
@@ -1392,32 +1476,41 @@ app.get('/api/rooms', asMember, wrap(async (req, res) => {
   res.json(await loadRooms(req.user));
 }));
 
-// Acervo pessoal: guarda referências privadas aos arquivos sem alterar o acesso da sala.
+// Acervo pessoal: guarda COPIAS independentes (snapshot). Excluir a sala NAO apaga o Acervo;
+// so o dono remove seus itens. Tambem aceita upload direto, sem passar por sala.
 app.get('/api/library', asMember, wrap(async (req, res) => {
   res.set('Cache-Control', 'private, no-store');
-  const access = isAdmin(req.user) ? '1=1' : 'EXISTS (SELECT 1 FROM room_members rm WHERE rm.room_id = f.room_id AND rm.user_id = $2)';
-  const params = isAdmin(req.user) ? [req.user.id] : [req.user.id, req.user.id];
   const [items, savedSpaces, bookcases] = await Promise.all([q(`SELECT li.id, li.file_id, li.space_id, s.name AS space_name, li.bookcase_id,
       b.name AS bookcase_name, b.name AS shelf, li.note, li.is_favorite, li.created_at AS saved_at, li.updated_at,
-      f.room_id, f.original_name, f.size, f.mime_type, f.uploaded_at, r.name AS room_name,
-      u.username AS uploader, u.role AS uploader_role
+      li.original_name, li.size, li.mime_type, li.stored_name, li.room_name, li.uploader_name, li.snapshot_ready
     FROM personal_library_items li
     JOIN personal_library_spaces s ON s.id = li.space_id AND s.user_id = li.user_id
     JOIN personal_library_bookcases b ON b.id = li.bookcase_id AND b.space_id = s.id AND b.user_id = li.user_id
-    JOIN files f ON f.id = li.file_id
-    JOIN rooms r ON r.id = f.room_id
-    LEFT JOIN users u ON u.id = f.uploaded_by
-    WHERE li.user_id = $1 AND ${access}
-    ORDER BY li.updated_at DESC, li.created_at DESC`, params), q(`SELECT id, name, created_at
+    WHERE li.user_id = $1
+    ORDER BY li.updated_at DESC, li.created_at DESC`, [req.user.id]), q(`SELECT id, name, created_at
     FROM personal_library_spaces WHERE user_id = $1 ORDER BY LOWER(name), created_at`, [req.user.id]), q(`SELECT id, space_id, name, created_at
     FROM personal_library_bookcases WHERE user_id = $1 ORDER BY LOWER(name), created_at`, [req.user.id])]);
+  for (const item of items) {
+    if (!item.snapshot_ready) {
+      try { await backfillLibrarySnapshot(item); }
+      catch (e) { console.error('snapshot do Acervo:', e && e.message); }
+    }
+  }
+  const rows = await q(`SELECT li.id, li.file_id, li.space_id, s.name AS space_name, li.bookcase_id,
+      b.name AS bookcase_name, b.name AS shelf, li.note, li.is_favorite, li.created_at AS saved_at, li.updated_at,
+      li.original_name, li.size, li.mime_type, li.stored_name, li.room_name, li.uploader_name, li.snapshot_ready
+    FROM personal_library_items li
+    JOIN personal_library_spaces s ON s.id = li.space_id AND s.user_id = li.user_id
+    JOIN personal_library_bookcases b ON b.id = li.bookcase_id AND b.space_id = s.id AND b.user_id = li.user_id
+    WHERE li.user_id = $1
+    ORDER BY li.updated_at DESC, li.created_at DESC`, [req.user.id]);
   const shelvesBySpace = new Map();
   bookcases.forEach(bookcase => {
     if (!shelvesBySpace.has(bookcase.space_id)) shelvesBySpace.set(bookcase.space_id, []);
     shelvesBySpace.get(bookcase.space_id).push(bookcase);
   });
   res.json({
-    items: items.map(item => ({ ...item, size: num(item.size), is_favorite: Boolean(item.is_favorite) })),
+    items: rows.map(item => ({ ...item, size: num(item.size), is_favorite: Boolean(item.is_favorite), snapshot_ready: Boolean(item.snapshot_ready) })),
     spaces: savedSpaces.map(space => ({ ...space, shelves: shelvesBySpace.get(space.id) || [] })),
     shelves: bookcases
   });
@@ -1452,15 +1545,6 @@ app.patch('/api/library/spaces/:id', asMember, wrap(async (req, res) => {
     if (isUnique(error)) return res.status(409).json({ error: 'Você já tem um espaço com esse nome.' });
     throw error;
   }
-}));
-
-app.delete('/api/library/spaces/:id', asMember, wrap(async (req, res) => {
-  const space = await one('SELECT id FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
-  if (!space) return res.status(404).json({ error: 'Espaço não encontrado no seu Acervo.' });
-  const removed = await q('DELETE FROM personal_library_items WHERE user_id = $1 AND space_id = $2 RETURNING id', [req.user.id, space.id]);
-  await q('DELETE FROM personal_library_bookcases WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
-  await q('DELETE FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [space.id, req.user.id]);
-  res.json({ success: true, removed_count: removed.length });
 }));
 
 app.post('/api/library/spaces/:id/shelves', asMember, wrap(async (req, res) => {
@@ -1514,27 +1598,71 @@ app.delete('/api/library/spaces/:id/shelves/:shelfId', asMember, wrap(async (req
 app.post('/api/library', asMember, wrap(async (req, res) => {
   const fileId = String((req.body && req.body.file_id) || '').trim();
   if (!fileId || fileId.length > 100) return res.status(400).json({ error: 'Arquivo inválido.' });
-  const file = await one('SELECT id, room_id FROM files WHERE id = $1', [fileId]);
+  const file = await one(`SELECT f.id, f.room_id, f.original_name, f.size, f.mime_type, f.stored_name, r.name AS room_name,
+      u.username AS uploader_name FROM files f JOIN rooms r ON r.id = f.room_id LEFT JOIN users u ON u.id = f.uploaded_by WHERE f.id = $1`, [fileId]);
   if (!file || !(await canUseRoom(req.user, file.room_id))) return res.status(404).json({ error: 'Arquivo não encontrado nas suas salas.' });
   const location = await resolvePersonalLibraryLocation(req.user.id, req.body || {});
   if (!location) return res.status(400).json({ error: 'Escolha uma prateleira de um espaço seu.' });
   const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
   const favorite = req.body && (req.body.is_favorite === true || req.body.is_favorite === 1 || req.body.is_favorite === '1') ? 1 : 0;
   const now = ts();
-  const saved = await one(`INSERT INTO personal_library_items (id, user_id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
-    ON CONFLICT (user_id, file_id) DO UPDATE SET shelf = EXCLUDED.shelf, space_id = EXCLUDED.space_id,
-      bookcase_id = EXCLUDED.bookcase_id, note = EXCLUDED.note, is_favorite = EXCLUDED.is_favorite, updated_at = EXCLUDED.updated_at
+  const existing = await one('SELECT id FROM personal_library_items WHERE user_id = $1 AND file_id = $2', [req.user.id, file.id]);
+  const itemId = existing ? existing.id : uuidv4();
+  if (!existing) {
+    await q(`INSERT INTO personal_library_items (id, user_id, file_id, shelf, space_id, bookcase_id, note, is_favorite,
+        original_name, size, mime_type, stored_name, room_name, uploader_name, snapshot_ready, created_at, updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,0,$15,$15)`,
+      [itemId, req.user.id, file.id, location.bookcase.name, location.space.id, location.bookcase.id, note, favorite,
+        file.original_name, file.size, file.mime_type, '', file.room_name || '', file.uploader_name || '', now]);
+  }
+  // Copia os bytes agora: vira snapshot independente da sala.
+  const bytes = await readRoomFileBytes(file);
+  if (!bytes) return res.status(404).json({ error: 'O arquivo original não está mais disponível.' });
+  const storedName = await writeLibraryBlob(itemId, bytes);
+  const saved = await one(`UPDATE personal_library_items SET shelf = $1, space_id = $2, bookcase_id = $3, note = $4,
+      is_favorite = $5, original_name = $6, size = $7, mime_type = $8, stored_name = $9,
+      room_name = COALESCE(NULLIF(room_name, ''), $10), uploader_name = COALESCE(NULLIF(uploader_name, ''), $11),
+      snapshot_ready = 1, updated_at = $12 WHERE id = $13 AND user_id = $14
     RETURNING id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at`,
-    [uuidv4(), req.user.id, file.id, location.bookcase.name, location.space.id, location.bookcase.id, note, favorite, now]);
+    [location.bookcase.name, location.space.id, location.bookcase.id, note, favorite,
+      file.original_name, file.size, file.mime_type, storedName, file.room_name || '', file.uploader_name || '', ts(), itemId, req.user.id]);
   res.json({ ...saved, is_favorite: Boolean(saved.is_favorite) });
 }));
 
+// Upload direto ao Acervo (sem passar por sala): cria a copia independente na hora.
+app.post('/api/library/upload', asMember, (req, res, next) => {
+  libraryUpload.array('files', 5)(req, res, err => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: `Arquivo grande demais (máximo ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB por arquivo)` });
+    }
+    return res.status(400).json({ error: 'Falha no envio: ' + err.message });
+  });
+}, wrap(async (req, res) => {
+  const location = await resolvePersonalLibraryLocation(req.user.id, req.body || {});
+  if (!location) return res.status(400).json({ error: 'Escolha uma prateleira de um espaço seu.' });
+  if (!req.files || !req.files.length) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+  const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
+  const favorite = req.body && (req.body.is_favorite === true || req.body.is_favorite === 1 || req.body.is_favorite === '1') ? 1 : 0;
+  const inserted = [];
+  for (const file of req.files) {
+    const name = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const itemId = uuidv4();
+    const storedName = await writeLibraryBlob(itemId, file.buffer);
+    const saved = await one(`INSERT INTO personal_library_items (id, user_id, file_id, shelf, space_id, bookcase_id, note, is_favorite,
+        original_name, size, mime_type, stored_name, room_name, uploader_name, snapshot_ready, created_at, updated_at)
+      VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,'Envio direto','',1,$12,$12)
+      RETURNING id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at`,
+      [itemId, req.user.id, location.bookcase.name, location.space.id, location.bookcase.id, note, favorite,
+        name, file.size, file.mimetype || 'application/octet-stream', storedName, ts()]);
+    inserted.push({ ...saved, is_favorite: Boolean(saved.is_favorite) });
+  }
+  res.status(201).json(inserted);
+}));
+
 app.patch('/api/library/:id', asMember, wrap(async (req, res) => {
-  const current = await one(`SELECT li.id, li.file_id, li.shelf, li.space_id, li.bookcase_id, li.note, li.is_favorite, f.room_id
-    FROM personal_library_items li JOIN files f ON f.id = li.file_id
-    WHERE li.id = $1 AND li.user_id = $2`, [req.params.id, req.user.id]);
-  if (!current || !(await canUseRoom(req.user, current.room_id))) return res.status(404).json({ error: 'Item não encontrado no seu Acervo.' });
+  const current = await one('SELECT id, file_id, shelf, space_id, bookcase_id, note, is_favorite FROM personal_library_items WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!current) return res.status(404).json({ error: 'Item não encontrado no seu Acervo.' });
   const body = req.body || {};
   const location = Object.prototype.hasOwnProperty.call(body, 'space_id') || Object.prototype.hasOwnProperty.call(body, 'bookcase_id') || typeof body.shelf === 'string'
     ? await resolvePersonalLibraryLocation(req.user.id, body)
@@ -1551,9 +1679,54 @@ app.patch('/api/library/:id', asMember, wrap(async (req, res) => {
 }));
 
 app.delete('/api/library/:id', asMember, wrap(async (req, res) => {
-  const deleted = await q('DELETE FROM personal_library_items WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, req.user.id]);
+  const deleted = await q('DELETE FROM personal_library_items WHERE id = $1 AND user_id = $2 RETURNING id, stored_name', [req.params.id, req.user.id]);
   if (!deleted.length) return res.status(404).json({ error: 'Item não encontrado no seu Acervo.' });
+  await deleteLibraryBlobs(deleted);
   res.json({ success: true });
+}));
+
+// Excluir espaco do Acervo apaga as copias dos itens (so o dono; salas nao sao tocadas).
+app.delete('/api/library/spaces/:id', asMember, wrap(async (req, res) => {
+  const space = await one('SELECT id FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!space) return res.status(404).json({ error: 'Espaço não encontrado no seu Acervo.' });
+  const removed = await q('DELETE FROM personal_library_items WHERE user_id = $1 AND space_id = $2 RETURNING id, stored_name', [req.user.id, space.id]);
+  await deleteLibraryBlobs(removed);
+  await q('DELETE FROM personal_library_bookcases WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
+  await q('DELETE FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [space.id, req.user.id]);
+  res.json({ success: true, removed_count: removed.length });
+}));
+
+// Download de um item do Acervo: usa a copia independente (funciona mesmo sem a sala).
+app.get('/download/library/:itemId', requireAuth, wrap(async (req, res) => {
+  let item = await one('SELECT * FROM personal_library_items WHERE id = $1 AND user_id = $2', [req.params.itemId, req.user.id]);
+  if (!item) return res.status(404).send('Arquivo não encontrado no seu Acervo');
+  try { item = await backfillLibrarySnapshot(item); } catch (e) { console.error('snapshot do Acervo:', e && e.message); }
+  if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+  const bytes = await readLibraryBlob(item);
+  if (!bytes) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+  const ascii = String(item.original_name || 'arquivo').replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  res.set('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(item.original_name || 'arquivo')}`);
+  res.type(item.mime_type || 'application/octet-stream');
+  res.send(bytes);
+}));
+
+// Visualizacao inline de um item do Acervo (mesma copia independente do download).
+app.get('/preview/library/:itemId', requireAuth, wrap(async (req, res) => {
+  let item = await one('SELECT * FROM personal_library_items WHERE id = $1 AND user_id = $2', [req.params.itemId, req.user.id]);
+  if (!item) return res.status(404).send('Arquivo não encontrado no seu Acervo');
+  try { item = await backfillLibrarySnapshot(item); } catch (e) { console.error('snapshot do Acervo:', e && e.message); }
+  if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+  const bytes = await readLibraryBlob(item);
+  if (!bytes) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+  const declaredMime = String(item.mime_type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+  const safeMediaMime = /^(image\/(png|jpeg|gif|webp|avif|bmp)|video\/(mp4|webm|ogg|quicktime)|audio\/(mpeg|mp4|ogg|wav|webm|aac))$/.test(declaredMime);
+  const textMime = declaredMime.startsWith('text/') || ['application/json', 'application/xml', 'application/yaml', 'application/x-yaml'].includes(declaredMime);
+  const mime = safeMediaMime ? declaredMime : textMime ? 'text/plain; charset=utf-8' : 'application/octet-stream';
+  const ascii = String(item.original_name || 'arquivo').replace(/[^a-zA-Z0-9._ -]/g, '_');
+  res.set('Content-Disposition', (safeMediaMime || textMime ? 'inline' : 'attachment') + '; filename="' + ascii + '"');
+  res.set('Cache-Control', 'private, no-store');
+  res.set('Content-Type', mime);
+  res.send(bytes);
 }));
 
 app.get('/api/rooms/browse', asMember, wrap(async (req, res) => {
@@ -2423,7 +2596,7 @@ app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
   if (!isAdmin(req.user) && file.uploaded_by !== req.user.id && file.room_owner !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
   await deleteBlobs([file.stored_name]);
   await q('DELETE FROM file_blobs WHERE file_id = $1', [file.id]);
-  await q('DELETE FROM personal_library_items WHERE file_id = $1', [file.id]);
+  // Acervo e copia independente: apagar o arquivo da sala NAO apaga o Acervo.
   await q('DELETE FROM files WHERE id = $1', [file.id]);
   res.json({ success: true });
 }));
@@ -2688,7 +2861,7 @@ async function destroyRoom(id) {
   const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [id]);
   try { await deleteBlobs(roomFiles.map(f => f.stored_name)); } catch (e) { console.error('blobs:', e && e.message); }
   await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [id]);
-  await q('DELETE FROM personal_library_items WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [id]);
+  // O Acervo pessoal guarda COPIAS independentes (snapshot). Excluir a sala NAO apaga o Acervo.
   await q('DELETE FROM files WHERE room_id = $1', [id]);
   await q('DELETE FROM room_members WHERE room_id = $1', [id]);
   await q('DELETE FROM messages WHERE room_id = $1', [id]);
@@ -3000,7 +3173,7 @@ app.post('/api/admin/files/bulk-delete', asAdmin, wrap(async (req, res) => {
     if (!f) continue;
     try { await deleteBlobs([f.stored_name]); } catch (e) {}
     await q('DELETE FROM file_blobs WHERE file_id = $1', [f.id]);
-    await q('DELETE FROM personal_library_items WHERE file_id = $1', [f.id]);
+    // Acervo e copia independente: exclusao em massa na sala NAO apaga o Acervo.
     await q('DELETE FROM files WHERE id = $1', [f.id]);
     n++;
   }
