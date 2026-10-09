@@ -87,6 +87,21 @@ body.app-page .btn-primary:not(:disabled)::after, body.app-page .btn-green:not(:
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .001ms !important; }
   #fxCanvas, .fx-orb, .fx-pointer-glow { display: none; }
 }
+/* Nivel de graficos escolhido pelo usuario (engrenagem no login; vale no site todo). */
+html[data-gfx="low"] #fxCanvas, html[data-gfx="low"] .fx-orb, html[data-gfx="low"] .fx-pointer-glow,
+html[data-gfx="low"] #cyberRain, html[data-gfx="low"] .cy-grid, html[data-gfx="low"] .cy-scan { display: none !important; }
+html[data-gfx="low"] *, html[data-gfx="low"] *::before, html[data-gfx="low"] *::after { animation: none !important; transition: none !important; }
+html[data-gfx="medium"] .fx-orb, html[data-gfx="medium"] .fx-pointer-glow { display: none !important; }
+html[data-gfx="medium"] #fxCanvas { opacity: .55; }
+/* Botao de engrenagem no cartao de login/cadastro */
+.auth-settings-btn { position: absolute; top: 12px; right: 12px; min-width: 40px; min-height: 40px; padding: 0 10px; border-radius: 12px; }
+.gfx-modal-card { width: min(430px, 100%); }
+.gfx-options { display: grid; gap: 10px; }
+.gfx-option { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 12px; border: 1px solid var(--gray-300, #ddd); border-radius: 12px; background: transparent; font: inherit; text-align: left; cursor: pointer; color: inherit; }
+.gfx-option.is-active { border-color: var(--primary, #7c3aed); box-shadow: 0 0 0 3px rgba(124, 58, 237, .15); }
+.gfx-option i { margin-top: 2px; }
+.gfx-option strong { display: block; font-size: 14px; }
+.gfx-option small { display: block; font-size: 12px; opacity: .75; }
 html.fx-lite .fx-orb { display: none; }
 @media (max-width: 700px) { .fx-orb { opacity: .14; } .fx-pointer-glow { width:min(92vw,430px); mix-blend-mode:normal; } }
 html.fx-lite .fx-pointer-glow { opacity:.6; }
