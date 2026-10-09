@@ -52,6 +52,7 @@
         <div id="errorMsg" class="alert alert-error" style="display:none;"></div>
         <div id="successMsg" class="alert alert-success" style="display:none;"></div>
         <button type="submit" class="btn btn-success btn-full"><i class="fas fa-user-plus"></i> CRIAR CONTA</button>
+        <p id="registerHint" style="color:#c9bfe0;font-size:13px;text-align:center;margin:12px 0 0;" hidden></p>
       </form>
       <div class="auth-footer">
         <p>Já tem conta? <a href="/">Entrar</a></p>
@@ -59,6 +60,17 @@
     </div>
   </div>
   <script src="/js/cyber.js"></script>
+  <script>
+    // Mostra o aviso certo sobre o fluxo de cadastro (aprovação, automático ou fechado).
+    fetch('/api/public/registration').then(r => r.json()).then(data => {
+      const hint = document.getElementById('registerHint');
+      if (!hint || !data.mode || data.mode === 'auto') return;
+      hint.textContent = data.mode === 'closed'
+        ? 'Os cadastros estão fechados no momento. Peça acesso ao administrador.'
+        : 'Após o cadastro, o administrador precisa aprovar seu acesso antes do primeiro login.';
+      hint.hidden = false;
+    }).catch(() => {});
+  </script>
   <script>
     document.getElementById('registerForm').addEventListener('submit', async (e) => {
       e.preventDefault();
