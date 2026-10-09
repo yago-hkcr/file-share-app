@@ -31,6 +31,7 @@
         <div class="auth-icon"><i class="fas fa-share-alt"></i></div>
         <h1 class="glitch" data-text="CRIAR CONTA">CRIAR CONTA</h1>
         <p class="cy-status"><span id="cyType" data-text="> solicitar acesso ao sistema"></span><span class="cy-caret"></span></p>
+        <button type="button" class="btn btn-sm btn-outline auth-settings-btn" id="authSettingsBtn" aria-label="Configurações de desempenho" title="Configurações de desempenho"><i class="fas fa-cog" aria-hidden="true"></i></button>
       </div>
       <form id="registerForm">
         <div class="form-group">
@@ -59,6 +60,22 @@
       </div>
     </div>
   </div>
+  <div id="gfxModal" class="modal" style="display:none;" aria-hidden="true">
+    <div class="modal-overlay" data-gfx-close></div>
+    <div class="modal-content gfx-modal-card" role="dialog" aria-modal="true" aria-labelledby="gfxModalTitle">
+      <div class="modal-header"><h3 id="gfxModalTitle"><i class="fas fa-cog"></i> Gráficos e desempenho</h3><button class="modal-close" type="button" data-gfx-close aria-label="Fechar">&times;</button></div>
+      <div class="modal-body">
+        <p class="text-muted" style="font-size:13px;margin-bottom:12px;">Escolha o nível de efeitos. Quanto mais baixo, mais leve e rápido o site fica.</p>
+        <div class="gfx-options">
+          <button class="gfx-option" type="button" data-gfx-option="high" aria-pressed="true"><i class="fas fa-wand-magic-sparkles"></i><span><strong>Alto — tudo ligado</strong><small>Partículas, brilhos e animações completas. Para aparelhos fortes.</small></span></button>
+          <button class="gfx-option" type="button" data-gfx-option="medium" aria-pressed="false"><i class="fas fa-gauge-high"></i><span><strong>Médio — equilibrado</strong><small>Menos brilhos, partículas suaves. Bom para a maioria.</small></span></button>
+          <button class="gfx-option" type="button" data-gfx-option="low" aria-pressed="false"><i class="fas fa-feather"></i><span><strong>Baixo — bem leve</strong><small>Sem efeitos nem animações. Ideal para celular simples ou internet lenta.</small></span></button>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-primary" type="button" data-gfx-close><i class="fas fa-check"></i> Pronto</button></div>
+    </div>
+  </div>
+  <script src="/js/gfx.js?v=20261009a"></script>
   <script src="/js/cyber.js"></script>
   <script>
     // Mostra o aviso certo sobre o fluxo de cadastro (aprovação, automático ou fechado).
