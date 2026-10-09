@@ -111,6 +111,11 @@ a:hover {
   font-size: 13px;
 }
 
+/* Rótulo de texto ao lado do ícone em botões do cabeçalho (escondido no mobile). */
+.header-right .btn-label {
+  margin-left: 6px;
+}
+
 .btn-full {
   width: 100%;
   justify-content: center;

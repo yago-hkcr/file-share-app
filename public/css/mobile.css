@@ -17,6 +17,7 @@
   .intro-actions .btn { flex: 1 1 calc(50% - 8px); }
   .room-actions .btn, .room-actions a.btn { min-height: 44px; }
   .header-right .btn, .header-right a.btn { min-height: 42px; min-width: 42px; justify-content: center; }
+  .header-right .btn-label { display: none; }
   .nav-item { white-space: nowrap; }
 }
 @media (max-width: 380px) {
