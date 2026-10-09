@@ -155,7 +155,10 @@
           return { sent: sent + rest.length, skipped };
         }
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
-        await putWithProgress(prep.data.presignedUrl, file, p => say('Enviando ' + label + ' ' + p + '%'));
+        // URL pre-assinada: o servidor valida e devolve um link PUT; enviamos o arquivo
+        // direto ao Blob (mesmo fluxo estavel das Coletas, sem callback de token do SDK).
+        if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponivel).');
+        await putWithProgress(prep.data.presignedUrl, file, percent => say('Enviando ' + label + ' ' + percent + '%'));
         pathname = prep.data.pathname;
       }
       const done = await postJson('/api/rooms/' + roomId + '/files/register', {
