@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="/css/style.css?v=20261008c"><link rel="stylesheet" href="/css/onboarding.css?v=20261007a">
+  <link rel="stylesheet" href="/css/style.css?v=20261008d"><link rel="stylesheet" href="/css/onboarding.css?v=20261007a">
   <link rel="stylesheet" href="/css/social.css?v=20261006e">
   <link rel="stylesheet" href="/css/collections.css?v=20261008k">
   <link rel="stylesheet" href="/css/library.css?v=20261008d">
@@ -34,7 +34,6 @@
     .empty-state i { font-size:42px; margin-bottom:12px; color:var(--gray-300); }
     .empty-state .btn { margin-top:16px; }
     .profile-pill { display:flex; align-items:center; gap:8px; color:var(--gray-700); font-size:14px; }
-    .header-right .btn-label { margin-left:6px; }
     .avatar { flex:none; }
     .modal-content { max-width:720px; }
     /* Rodapé da criação de sala: área de toque isolada no mobile. */
@@ -57,7 +56,6 @@
       .header { padding:14px 16px; }
       .header-left h1 { font-size:18px; }
       .header-right .profile-pill { display:none; }
-      .header-right .btn-label { display:none; }
       .room-actions .btn { flex:1 1 100%; justify-content:center; }
       .modal { padding:10px; align-items:flex-end; }
       .modal-content { width:100%; max-width:100%; max-height:92vh; overflow:hidden; border-radius:18px 18px 0 0; }
@@ -74,7 +72,7 @@
       .form-row .btn { width:auto; }
     }
   </style>
-  <link rel="stylesheet" href="/css/mobile.css?v=20261008c">
+  <link rel="stylesheet" href="/css/mobile.css?v=20261008d">
   <script src="/js/mobile.js" defer></script>
   <link rel="stylesheet" href="/css/fx.css">
   <link rel="stylesheet" href="/css/adaptive.css?v=20261008b">
@@ -83,7 +81,7 @@
 </head>
 <body class="app-page">
   <header class="header">
-    <div class="header-left"><i class="fas fa-share-alt header-logo"></i><h1>FileShare</h1><span class="badge">Salas</span></div>
+    <div class="header-left"><i class="fas fa-share-alt header-logo"></i><h1>FileShare</h1><span class="badge" id="sectionBadge">Salas</span></div>
     <div class="header-right">
       <span class="profile-pill"><span class="avatar" id="userAvatar"></span><span id="userName">Carregando...</span></span>
       <button id="tutorialBtn" class="btn btn-sm btn-outline" type="button" title="Abrir tutorial" aria-label="Abrir tutorial"><i class="fas fa-compass"></i><span class="btn-label">Ajuda</span></button><button class="btn btn-sm btn-outline" onclick="showPasswordModal()" title="Alterar senha" aria-label="Alterar senha"><i class="fas fa-key"></i><span class="btn-label">Senha</span></button>
@@ -595,7 +593,7 @@
   <script src="/js/personal.js?v=20261007b"></script>
   <script src="/js/cursor.js"></script>
   <script src="/js/preview.js"></script>
-  <script src="/js/collections.js?v=20261007k"></script>
+  <script src="/js/collections.js?v=20261008a"></script>
   <script src="/js/library.js?v=20261008d"></script>
   <script src="/js/announce.js"></script>
 </body>

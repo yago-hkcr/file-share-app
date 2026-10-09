@@ -180,12 +180,16 @@
   function setTab(active) {
     const panels = { rooms: 'roomsPanel', collections: 'collectionsPanel', library: 'libraryPanel' };
     const tabs = { rooms: 'roomsTab', collections: 'collectionsTab', library: 'libraryTab' };
+    const titles = { rooms: 'Salas', collections: 'Coletas', library: 'Meu Acervo' };
     Object.entries(panels).forEach(([key, panelId]) => {
       const selected = key === active;
       $(panelId).hidden = !selected;
       $(tabs[key]).classList.toggle('is-active', selected);
       $(tabs[key]).setAttribute('aria-selected', String(selected));
     });
+    const badge = document.getElementById('sectionBadge');
+    if (badge) badge.textContent = titles[active];
+    if (titles[active]) document.title = 'FileShare - ' + titles[active];
     if (active === 'collections') { loadRoomsForSelect(); loadCollections(); }
     if (active === 'library') window.loadLibrary?.();
   }
