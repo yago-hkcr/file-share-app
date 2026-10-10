@@ -179,8 +179,8 @@
   }
   function setTab(active) {
     const panels = { rooms: 'roomsPanel', collections: 'collectionsPanel', library: 'libraryPanel' };
-    const tabs = { rooms: 'roomsTab', collections: 'collectionsTab', library: 'libraryTab' };
-    const titles = { rooms: 'Salas', collections: 'Coletas', library: 'Meu Acervo' };
+    const tabs    = { rooms: 'roomsTab',  collections: 'collectionsTab',  library: 'libraryTab'  };
+    const titles  = { rooms: 'Salas',      collections: 'Coletas',           library: 'Meu Acervo'   };
     Object.entries(panels).forEach(([key, panelId]) => {
       const selected = key === active;
       $(panelId).hidden = !selected;
@@ -192,13 +192,49 @@
     if (titles[active]) document.title = 'FileShare - ' + titles[active];
     if (active === 'collections') { loadRoomsForSelect(); loadCollections(); }
     if (active === 'library') window.loadLibrary?.();
+    updateLiquidIndicator(active);
   }
+
+  /* ── LIQUID TAB INDICATOR ─
+     Calcula a posição do indicador em relação às tabs e a define nas
+     CSS custom properties. O pseudo-elemento ::before "derrete" suavemente
+     até a nova posição usando a transição declarada no CSS. */
+  function updateLiquidIndicator(active) {
+    const id = active === 'rooms' ? 'roomsTab' : active === 'collections' ? 'collectionsTab' : 'libraryTab';
+    const tabsHost = document.querySelector('.dashboard-tabs');
+    const activeBtn = $(id);
+    if (!tabsHost || !activeBtn) return;
+    const hostRect  = tabsHost.getBoundingClientRect();
+    const btnRect   = activeBtn.getBoundingClientRect();
+    const top  = btnRect.top  - hostRect.top;
+    const left = btnRect.left - hostRect.left;
+    tabsHost.style.setProperty('--liquid-top',    top  + 'px');
+    tabsHost.style.setProperty('--liquid-left',   left + 'px');
+    tabsHost.style.setProperty('--liquid-width',  btnRect.width  + 'px');
+    tabsHost.style.setProperty('--liquid-height', btnRect.height + 'px');
+  }
+
   $('roomsTab').addEventListener('click', () => setTab('rooms'));
   $('collectionsTab').addEventListener('click', () => setTab('collections'));
   $('libraryTab').addEventListener('click', () => setTab('library'));
   $('refreshCollectionsBtn').addEventListener('click', loadCollections);
   setInterval(() => { if (!document.hidden && !$('collectionsPanel').hidden) loadCollections(true); }, 2000);
   setInterval(() => { if (!document.hidden && !$('libraryPanel').hidden) window.loadLibrary?.(true); }, 2000);
+
+  // Inicializa o indicador líquido na aba ativa já no carregamento e
+  // reposiciona ao redimensionar a janela.
+  (function initLiquid() {
+    const active = document.querySelector('.dashboard-tab.is-active');
+    if (!active) return;
+    const key = active.id === 'roomsTab' ? 'rooms' : active.id === 'collectionsTab' ? 'collections' : 'library';
+    updateLiquidIndicator(key);
+  })();
+  window.addEventListener('resize', () => {
+    const active = document.querySelector('.dashboard-tab.is-active');
+    if (!active) return;
+    const key = active.id === 'roomsTab' ? 'rooms' : active.id === 'collectionsTab' ? 'collections' : 'library';
+    updateLiquidIndicator(key);
+  });
 
   $('addCollectionItem').addEventListener('click', () => {
     const host = $('collectionItems');

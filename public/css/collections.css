@@ -1,7 +1,82 @@
-.dashboard-tabs { display:flex; gap:8px; margin:0 0 22px; padding-bottom:10px; border-bottom:1px solid var(--gray-200); }
-.dashboard-tab { display:inline-flex; align-items:center; gap:8px; padding:10px 15px; border:0; border-radius:9px; background:transparent; color:var(--gray-500); font-family:inherit; font-size:14px; font-weight:600; cursor:pointer; }
-.dashboard-tab:hover { background:var(--gray-100); color:var(--gray-800); }
-.dashboard-tab.is-active { background:var(--primary-bg); color:var(--primary); }
+/* ── LIQUID TAB INDICATOR ────────────────────────────────
+   O indicador ativo "derrete" suavemente de uma aba para outra,
+   em vez de deslizar. Baseado no efeito do Instagram Reel
+   @_code_and_chill.
+────────────────────────────────────────────────────── */
+.dashboard-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 22px;
+  padding-bottom: 10px;
+  position: relative;
+  isolation: isolate;
+}
+
+/* O indicador líquido é um pseudo-elemento do container de tabs */
+.dashboard-tabs::before {
+  content: '';
+  position: absolute;
+  /* As posições são controladas via CSS custom properties (setadas pelo JS) */
+  top:    var(--liquid-top, 0);
+  left:   var(--liquid-left, 0);
+  width:  var(--liquid-width, 0);
+  height: var(--liquid-height, 0);
+  background: var(--primary-bg);
+  border-radius: 9px;
+  transition:
+    top    360ms cubic-bezier(0.34, 1.30, 0.64, 1),
+    left   360ms cubic-bezier(0.34, 1.30, 0.64, 1),
+    width  280ms cubic-bezier(0.34, 1.30, 0.64, 1),
+    height 280ms cubic-bezier(0.34, 1.30, 0.64, 1);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.dashboard-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 15px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--gray-500);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  position: relative; /* ancora o texto acima do pseudo-elemento */
+  transition: color 300ms ease;
+}
+
+.dashboard-tab:hover {
+  color: var(--gray-800);
+}
+
+.dashboard-tab.is-active {
+  color: var(--primary);
+}
+
+/* ── RESPONSIVO MOBILE ────────────────────────────────── */
+@media (max-width: 640px) {
+  .dashboard-tabs {
+    gap: 4px;
+    margin-bottom: 16px;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .dashboard-tab {
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    gap: 5px;
+  }
+
+  .dashboard-tab i {
+    font-size: 13px;
+  }
+}
 .collections-layout { display:grid; grid-template-columns:minmax(280px, 360px) minmax(0, 1fr); gap:20px; align-items:start; }
 .collection-form { padding:22px; }
 .collection-form h3 { margin:0 0 18px; color:var(--gray-900); font-size:18px; }
@@ -133,7 +208,8 @@
 .dashboard-tabs { border-color:rgba(175,131,235,.2); }
 .dashboard-tab { color:#a99bbf; transition:color .2s ease,background .2s ease,transform .2s ease; }
 .dashboard-tab:hover { color:#efe5ff; background:rgba(168,85,247,.1); }
-.dashboard-tab.is-active { color:#f5eaff; background:linear-gradient(120deg,rgba(150,70,255,.24),rgba(94,78,255,.18)); box-shadow:inset 0 0 0 1px rgba(190,144,255,.2); }
+.dashboard-tabs::before { background:linear-gradient(120deg,rgba(150,70,255,.24),rgba(94,78,255,.18)); box-shadow:inset 0 0 0 1px rgba(190,144,255,.2); }
+.dashboard-tab.is-active { color:#f5eaff; background:transparent; box-shadow:none; }
 .collection-item-input { grid-template-columns:minmax(0,1fr) 64px auto 36px; }
 .collection-quantity-label { display:grid !important; gap:3px !important; justify-items:center; font-size:10px !important; }
 #collectionsPanel .collection-item-input .collection-quantity-label input { width:58px; height:36px; padding:5px !important; text-align:center; }
@@ -488,14 +564,16 @@ html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions
   html[data-theme="dark"] .dashboard-tabs { border-color:rgba(175,131,235,.24); background:rgba(18,13,34,.96); box-shadow:0 8px 24px rgba(0,0,0,.22); }
   html[data-theme="dark"] .dashboard-tab { color:#cbbddd; background:transparent; }
   html[data-theme="dark"] .dashboard-tab:hover { color:#fff; background:rgba(168,85,247,.13); }
-  html[data-theme="dark"] .dashboard-tab.is-active { color:#fff; background:linear-gradient(120deg,rgba(150,70,255,.36),rgba(94,78,255,.3)); box-shadow:inset 0 0 0 1px rgba(190,144,255,.32); }
+  html[data-theme="dark"] .dashboard-tabs::before { background:linear-gradient(120deg,rgba(150,70,255,.36),rgba(94,78,255,.3)); box-shadow:inset 0 0 0 1px rgba(190,144,255,.32); }
+  html[data-theme="dark"] .dashboard-tab.is-active { color:#fff; background:transparent; box-shadow:none; }
 }
 
 /* Contraste e cores consistentes no tema claro. */
 html:not([data-theme="dark"]) .dashboard-tabs { border-color:rgba(93,65,150,.18); background:rgba(255,255,255,.92); }
 html:not([data-theme="dark"]) .dashboard-tab { color:#625873; }
 html:not([data-theme="dark"]) .dashboard-tab:hover { color:#35234f; background:rgba(114,81,211,.09); }
-html:not([data-theme="dark"]) .dashboard-tab.is-active { color:#4d2e9f; background:linear-gradient(120deg,rgba(114,81,211,.16),rgba(83,94,214,.11)); box-shadow:inset 0 0 0 1px rgba(114,81,211,.22); }
+html:not([data-theme="dark"]) .dashboard-tabs::before { background:linear-gradient(120deg,rgba(114,81,211,.16),rgba(83,94,214,.11)); box-shadow:inset 0 0 0 1px rgba(114,81,211,.22); }
+html:not([data-theme="dark"]) .dashboard-tab.is-active { color:#4d2e9f; background:transparent; box-shadow:none; }
 html:not([data-theme="dark"]) .room-submission-folder { border-color:#ded4ed; border-left-color:#7251d3; background:#f7f3fc; }
 html:not([data-theme="dark"]) .room-submission-folder-toggle { color:#352544; }
 html:not([data-theme="dark"]) .room-submission-folder-toggle > i:first-child { color:#7045bd; }
