@@ -218,13 +218,13 @@ async function ensurePersonalLibraryBookcase(userId, spaceId, name = 'Geral', cr
 }
 
 async function migratePersonalLibraryHierarchy() {
-  const legacy = await q(`SELECT user_id, name, created_at FROM personal_library_shelves WHERE TRIM(name) <> ''
-    UNION SELECT user_id, COALESCE(NULLIF(TRIM(shelf), ''), 'Guardados') AS name, created_at
-      FROM personal_library_items WHERE space_id IS NULL OR bookcase_id IS NULL`);
-  for (const row of legacy) {
-    const space = await ensurePersonalLibrarySpace(row.user_id, row.name, row.created_at);
-    await ensurePersonalLibraryBookcase(row.user_id, space.id, 'Geral', row.created_at);
-  }
+  // Itens legados ainda sem espaço/prateleira ganham um lugar aqui. Esse laço só
+  // roda enquanto existir item órfão (space_id/bookcase_id NULL) e deriva o nome
+  // do espaço a partir do próprio item. Ele NÃO varre personal_library_shelves:
+  // essa varredura recriava, a cada boot/cold start, um espaço e uma prateleira
+  // "Geral" (exibida como "Principal") para cada nome legado — ressuscitando
+  // estruturas que o usuário já havia excluído. A homenagem de itens órfãos é
+  // auto limitada: feita uma vez, o item deixa de estar órfão e nada mais é criado.
   const oldItems = await q(`SELECT id, user_id, COALESCE(NULLIF(TRIM(shelf), ''), 'Guardados') AS legacy_space, created_at
     FROM personal_library_items WHERE space_id IS NULL OR bookcase_id IS NULL`);
   for (const item of oldItems) {
