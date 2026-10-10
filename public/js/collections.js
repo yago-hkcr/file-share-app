@@ -196,22 +196,118 @@
   }
 
   /* ── LIQUID TAB INDICATOR ─
-     Calcula a posição do indicador em relação às tabs e a define nas
-     CSS custom properties. O pseudo-elemento ::before "derrete" suavemente
-     até a nova posição usando a transição declarada no CSS. */
-  function updateLiquidIndicator(active) {
+     O indicador é esticado, comprimido e deformado durante o deslocamento,
+     reproduzindo o efeito "melt/liquid" em vez de apenas deslizar. */
+  let liquidIndicator = null;
+  let liquidAnimation = null;
+  let liquidState = null;
+  let liquidActive = null;
+
+  function liquidReducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function setLiquidState(state) {
+    liquidIndicator.style.left = state.left + 'px';
+    liquidIndicator.style.top = state.top + 'px';
+    liquidIndicator.style.width = state.width + 'px';
+    liquidIndicator.style.height = state.height + 'px';
+  }
+
+  function updateLiquidIndicator(active, options = {}) {
     const id = active === 'rooms' ? 'roomsTab' : active === 'collections' ? 'collectionsTab' : 'libraryTab';
     const tabsHost = document.querySelector('.dashboard-tabs');
     const activeBtn = $(id);
     if (!tabsHost || !activeBtn) return;
-    const hostRect  = tabsHost.getBoundingClientRect();
-    const btnRect   = activeBtn.getBoundingClientRect();
-    const top  = btnRect.top  - hostRect.top;
-    const left = btnRect.left - hostRect.left;
-    tabsHost.style.setProperty('--liquid-top',    top  + 'px');
-    tabsHost.style.setProperty('--liquid-left',   left + 'px');
-    tabsHost.style.setProperty('--liquid-width',  btnRect.width  + 'px');
-    tabsHost.style.setProperty('--liquid-height', btnRect.height + 'px');
+    liquidIndicator = liquidIndicator || tabsHost.querySelector('.dashboard-tabs-liquid');
+    if (!liquidIndicator) {
+      liquidIndicator = document.createElement('span');
+      liquidIndicator.className = 'dashboard-tabs-liquid';
+      liquidIndicator.setAttribute('aria-hidden', 'true');
+      tabsHost.prepend(liquidIndicator);
+    }
+
+    const hostRect = tabsHost.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+    const target = {
+      left: btnRect.left - hostRect.left,
+      top: btnRect.top - hostRect.top,
+      width: btnRect.width,
+      height: btnRect.height
+    };
+    const shouldAnimate = options.animate !== false && !liquidReducedMotion() && liquidState && liquidActive !== active;
+
+    if (liquidAnimation) {
+      const currentRect = liquidIndicator.getBoundingClientRect();
+      liquidAnimation.cancel();
+      liquidAnimation = null;
+      liquidIndicator.classList.remove('is-morphing');
+      liquidState = {
+        left: currentRect.left - hostRect.left,
+        top: currentRect.top - hostRect.top,
+        width: currentRect.width,
+        height: currentRect.height
+      };
+      setLiquidState(liquidState);
+    }
+
+    if (!shouldAnimate) {
+      setLiquidState(target);
+      liquidIndicator.style.opacity = '1';
+      liquidIndicator.style.transform = '';
+      liquidIndicator.style.filter = '';
+      liquidIndicator.style.borderRadius = Math.min(target.height / 2, 9) + 'px';
+      liquidState = target;
+      liquidActive = active;
+      return;
+    }
+
+    const from = liquidState;
+    const fromCenter = from.left + from.width / 2;
+    const targetCenter = target.left + target.width / 2;
+    const midWidth = Math.max(from.width, target.width);
+    const midHeight = Math.max(1, Math.min(from.height, target.height) * .86);
+    const distance = Math.abs(targetCenter - fromCenter);
+    const stretch = Math.min(1.72, Math.max(1.18, 1 + distance / Math.max(midWidth, 1) * .42));
+    const mid = {
+      left: (fromCenter + targetCenter) / 2 - midWidth / 2,
+      top: (from.top + target.top) / 2 + (Math.max(from.height, target.height) - midHeight) / 2,
+      width: midWidth,
+      height: midHeight
+    };
+    const targetRadius = Math.min(target.height / 2, 9) + 'px';
+
+    setLiquidState(from);
+    liquidIndicator.style.opacity = '1';
+    liquidIndicator.classList.remove('is-morphing');
+    void liquidIndicator.offsetWidth;
+    liquidIndicator.classList.add('is-morphing');
+    liquidAnimation = liquidIndicator.animate([
+      {
+        left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px',
+        borderRadius: targetRadius, transform: 'scale(1)', filter: 'blur(0)'
+      },
+      {
+        left: mid.left + 'px', top: mid.top + 'px', width: mid.width + 'px', height: mid.height + 'px',
+        borderRadius: '52% 48% 48% 52%', transform: 'scaleX(' + stretch + ') scaleY(.72)', filter: 'blur(.25px)',
+        offset: .46
+      },
+      {
+        left: target.left + 'px', top: target.top + 'px', width: target.width + 'px', height: target.height + 'px',
+        borderRadius: targetRadius, transform: 'scale(1)', filter: 'blur(0)'
+      }
+    ], { duration: 460, easing: 'cubic-bezier(.22,.9,.28,1)', fill: 'forwards' });
+    liquidAnimation.onfinish = () => {
+      setLiquidState(target);
+      liquidIndicator.style.opacity = '1';
+      liquidIndicator.style.transform = '';
+      liquidIndicator.style.filter = '';
+      liquidIndicator.style.borderRadius = targetRadius;
+      liquidIndicator.classList.remove('is-morphing');
+      liquidAnimation = null;
+    };
+    liquidState = target;
+    liquidActive = active;
   }
 
   $('roomsTab').addEventListener('click', () => setTab('rooms'));
@@ -222,18 +318,18 @@
   setInterval(() => { if (!document.hidden && !$('libraryPanel').hidden) window.loadLibrary?.(true); }, 2000);
 
   // Inicializa o indicador líquido na aba ativa já no carregamento e
-  // reposiciona ao redimensionar a janela.
+  // reposiciona sem animar ao redimensionar a janela.
   (function initLiquid() {
     const active = document.querySelector('.dashboard-tab.is-active');
     if (!active) return;
     const key = active.id === 'roomsTab' ? 'rooms' : active.id === 'collectionsTab' ? 'collections' : 'library';
-    updateLiquidIndicator(key);
+    updateLiquidIndicator(key, { animate: false });
   })();
   window.addEventListener('resize', () => {
     const active = document.querySelector('.dashboard-tab.is-active');
     if (!active) return;
     const key = active.id === 'roomsTab' ? 'rooms' : active.id === 'collectionsTab' ? 'collections' : 'library';
-    updateLiquidIndicator(key);
+    updateLiquidIndicator(key, { animate: false });
   });
 
   $('addCollectionItem').addEventListener('click', () => {
