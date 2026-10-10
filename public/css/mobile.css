@@ -299,3 +299,46 @@
   }
   #roomModal #roomFiles { max-height: 18dvh; }
 }
+
+/* Rolagem final da sala: cada lista encolhe dentro do modal e o compositor
+   continua fixo na parte inferior, sem alterar o layout de desktop. */
+@media (max-width: 640px) {
+  #roomModal .modal-content,
+  #roomModal .modal-body,
+  #roomModal .chat-box,
+  #roomModal .chat-list {
+    min-height: 0;
+  }
+  #roomModal .modal-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #roomModal #roomFiles {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  #roomModal .chat-box {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    height: 0;
+    overflow: hidden;
+  }
+  #roomModal .chat-list {
+    flex: 1 1 0;
+    height: 0 !important;
+    max-height: none !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  #roomModal #messageForm.chat-compose {
+    flex: 0 0 auto;
+  }
+}
