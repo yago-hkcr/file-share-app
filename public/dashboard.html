@@ -78,11 +78,13 @@
   <link rel="stylesheet" href="/css/adaptive.css?v=20261008b">
   <script src="/js/gfx.js?v=20261009a"></script><script src="/js/fx.js" defer></script>
   <link rel="stylesheet" href="/css/preview.css">
+  <link rel="stylesheet" href="/css/dashboard-redesign.css?v=20261010a">
 </head>
 <body class="app-page">
   <header class="header">
     <div class="header-left"><i class="fas fa-share-alt header-logo"></i><h1>FileShare</h1><span class="badge" id="sectionBadge">Salas</span></div>
     <div class="header-right">
+      <button id="dashboardMenuToggle" class="btn btn-sm btn-outline dashboard-menu-toggle" type="button" aria-label="Abrir menu de navegação" aria-controls="dashboardSidebar" aria-expanded="false"><i class="fas fa-bars" aria-hidden="true"></i><span class="btn-label">Menu</span></button>
       <span class="profile-pill"><span class="avatar" id="userAvatar"></span><span id="userName">Carregando...</span></span>
       <button id="tutorialBtn" class="btn btn-sm btn-outline" type="button" title="Abrir tutorial" aria-label="Abrir tutorial"><i class="fas fa-compass"></i><span class="btn-label">Ajuda</span></button><button class="btn btn-sm btn-outline" onclick="showPasswordModal()" title="Alterar senha" aria-label="Alterar senha"><i class="fas fa-key"></i><span class="btn-label">Senha</span></button>
       <button class="btn btn-sm btn-danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
@@ -90,12 +92,21 @@
   </header>
 
   <main class="dashboard-content">
-    <nav class="dashboard-tabs" role="tablist" aria-label="Seções do FileShare">
-      <span class="dashboard-tabs-liquid" aria-hidden="true"></span>
-      <button class="dashboard-tab is-active" id="roomsTab" type="button" role="tab" aria-selected="true" title="Compartilhe arquivos e converse em salas"><i class="fas fa-door-open"></i> Salas</button>
-      <button class="dashboard-tab" id="collectionsTab" type="button" role="tab" aria-selected="false" title="Peça arquivos a outras pessoas com link e prazo"><i class="fas fa-inbox"></i> Coletas</button>
-      <button class="dashboard-tab" id="libraryTab" type="button" role="tab" aria-selected="false" title="Seu espaço privado para guardar arquivos importantes"><i class="fas fa-bookmark"></i> Meu Acervo</button>
-    </nav>
+    <div class="dashboard-shell" id="dashboardShell">
+      <aside class="dashboard-sidebar" id="dashboardSidebar" aria-label="Navegação principal">
+        <div class="dashboard-sidebar-brand"><span class="dashboard-brand-mark"><i class="fas fa-layer-group" aria-hidden="true"></i></span><span><strong>Seu espaço</strong><small>Organize sem perder o foco</small></span></div>
+        <div class="dashboard-sidebar-label">Navegação</div>
+        <nav class="dashboard-tabs" role="tablist" aria-label="Seções do FileShare">
+          <span class="dashboard-tabs-liquid" aria-hidden="true"></span>
+          <button class="dashboard-tab is-active" id="roomsTab" type="button" role="tab" aria-controls="roomsPanel" aria-selected="true" title="Compartilhe arquivos e converse em salas"><i class="fas fa-door-open"></i><span class="dashboard-tab-copy"><strong>Salas</strong><small>Compartilhe e converse</small></span></button>
+          <button class="dashboard-tab" id="collectionsTab" type="button" role="tab" aria-controls="collectionsPanel" aria-selected="false" title="Peça arquivos a outras pessoas com link e prazo"><i class="fas fa-inbox"></i><span class="dashboard-tab-copy"><strong>Coletas</strong><small>Peça arquivos por link</small></span></button>
+          <button class="dashboard-tab" id="libraryTab" type="button" role="tab" aria-controls="libraryPanel" aria-selected="false" title="Seu espaço privado para guardar arquivos importantes"><i class="fas fa-bookmark"></i><span class="dashboard-tab-copy"><strong>Meu Acervo</strong><small>Guarde e organize</small></span></button>
+        </nav>
+        <div class="dashboard-sidebar-footer"><i class="fas fa-shield-halved" aria-hidden="true"></i><span><strong>Ambiente protegido</strong><small>Seus arquivos ficam sob seu controle.</small></span></div>
+      </aside>
+      <div class="dashboard-workspace">
+        <div class="dashboard-workspace-bar"><div><span class="workspace-eyebrow">PAINEL DE TRABALHO</span><h2 id="workspaceTitle">Salas</h2></div><button id="dashboardCompactToggle" class="btn btn-sm btn-outline" type="button" aria-label="Recolher menu lateral" aria-pressed="false"><i class="fas fa-angles-left" aria-hidden="true"></i><span>Recolher menu</span></button></div>
+        <div class="dashboard-panels">
     <section id="roomsPanel" role="tabpanel" aria-labelledby="roomsTab">
     <div class="dashboard-intro">
       <div><h2><i class="fas fa-door-open"></i> Suas salas</h2><p>Entre em uma sala para compartilhar e encontrar arquivos.</p></div>
@@ -113,7 +124,13 @@
         <form id="collectionForm" class="card collection-form">
           <h3><i class="fas fa-wand-magic-sparkles"></i> Criar uma coleta</h3>
           <div class="form-group"><label for="collectionTitle">Título</label><input id="collectionTitle" maxlength="100" placeholder="Ex.: Documentos da equipe" required></div>
-          <div class="form-group"><label for="collectionRoom">Sala de destino</label><select id="collectionRoom" required><option value="">Carregando salas...</option></select></div>
+          <div class="form-group"><label for="collectionDestination">Destino dos arquivos</label><select id="collectionDestination"><option value="room">Sala</option><option value="library">Meu Acervo</option></select></div>
+          <div id="collectionRoomGroup" class="form-group"><label for="collectionRoom">Sala de destino</label><select id="collectionRoom" required><option value="">Carregando salas...</option></select></div>
+          <div id="collectionLibraryGroup" class="collection-library-destination" hidden>
+            <div class="form-group"><label for="collectionLibrarySpace">Espaço do Acervo</label><select id="collectionLibrarySpace"><option value="">Carregando espaços...</option></select></div>
+            <div class="form-group"><label for="collectionLibraryBookcase">Prateleira</label><select id="collectionLibraryBookcase"><option value="">Escolha um espaço primeiro</option></select></div>
+            <small>Os arquivos recebidos serão guardados como cópias independentes no seu Acervo.</small>
+          </div>
           <div class="form-group"><label for="collectionInstructions">Instruções</label><textarea id="collectionInstructions" maxlength="2000" rows="3" placeholder="Explique como preparar ou nomear os arquivos"></textarea><small>Essa orientação aparece para a pessoa ao abrir o link de envio.</small></div>
           <div class="form-group"><label for="collectionDeadline">Prazo para envio</label><input id="collectionDeadline" type="datetime-local" required></div>
           <div class="collection-field-head"><strong>Arquivos solicitados</strong><span>Até 30 itens</span></div>
@@ -160,6 +177,9 @@
       <div id="librarySummary" class="library-summary" aria-live="polite"></div>
       <div id="libraryGrid" class="library-grid"><div class="loading"><i class="fas fa-spinner fa-spin"></i> Preparando seu Acervo...</div></div>
     </section>
+        </div>
+      </div>
+    </div>
   </main>
 
   <div id="librarySpaceModal" class="modal library-space-modal" style="display:none;" aria-hidden="true">
@@ -596,6 +616,7 @@
   <script src="/js/preview.js"></script>
   <script src="/js/collections.js?v=20261009c"></script>
   <script src="/js/library.js?v=20261009f"></script>
+  <script src="/js/dashboard-shell.js?v=20261010a"></script>
   <script src="/js/announce.js"></script>
 </body>
 </html>

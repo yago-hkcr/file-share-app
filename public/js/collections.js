@@ -21,7 +21,7 @@
     pending: ['Aguardando envio', ''], in_progress: ['Envio parcial', 'is-progress'], sending: ['Enviando agora', 'is-sending'],
     submitted: ['Enviado', 'is-submitted'], revoked: ['Suspenso pelo organizador', 'is-revoked'], expired: ['Prazo não cumprido', 'is-expired']
   };
-  let roomsCache = [], friendsCache = [], friendsLoaded = false, friendsLoading = false, participantNames = [], collectionsCache = [], collectionsSignature = '', collectionsLoading = false, historyOpen = false, exclusiveBeforeMultiUse = false;
+  let roomsCache = [], librarySpacesCache = [], friendsCache = [], friendsLoaded = false, friendsLoading = false, participantNames = [], collectionsCache = [], collectionsSignature = '', collectionsLoading = false, historyOpen = false, exclusiveBeforeMultiUse = false;
 
   async function copyText(text, button) {
     try {
@@ -113,6 +113,42 @@
       if (!available.length) select.innerHTML = '<option value="">Entre em uma sala para criar uma coleta</option>';
     } catch (error) { select.innerHTML = '<option value="">Não foi possível carregar as salas</option>'; }
   }
+  function renderCollectionLibraryBookcases(preferred) {
+    const space = librarySpacesCache.find(item => item.id === $('collectionLibrarySpace').value);
+    const bookcases = space?.shelves || [];
+    const select = $('collectionLibraryBookcase');
+    select.innerHTML = bookcases.length
+      ? bookcases.map(bookcase => '<option value="' + esc(bookcase.id) + '">' + esc(bookcase.name === 'Geral' ? 'Principal' : bookcase.name) + '</option>').join('')
+      : '<option value="">Nenhuma prateleira disponível</option>';
+    if (bookcases.some(bookcase => bookcase.id === preferred)) select.value = preferred;
+    else if (bookcases.length) select.value = bookcases[0].id;
+  }
+  function renderCollectionDestination() {
+    const isLibrary = $('collectionDestination').value === 'library';
+    $('collectionRoomGroup').hidden = isLibrary;
+    $('collectionRoom').required = !isLibrary;
+    $('collectionLibraryGroup').hidden = !isLibrary;
+    $('collectionLibrarySpace').required = isLibrary;
+    $('collectionLibraryBookcase').required = isLibrary;
+  }
+  async function loadLibraryLocationsForSelect() {
+    try {
+      const result = await api('/api/library');
+      librarySpacesCache = result.spaces || [];
+      const select = $('collectionLibrarySpace');
+      const previous = select.value;
+      select.innerHTML = librarySpacesCache.length
+        ? librarySpacesCache.map(space => '<option value="' + esc(space.id) + '">' + esc(space.name) + '</option>').join('')
+        : '<option value="">Nenhum espaço criado — será usado Guardados</option>';
+      if (librarySpacesCache.some(space => space.id === previous)) select.value = previous;
+      else if (librarySpacesCache.length) select.value = librarySpacesCache[0].id;
+      renderCollectionLibraryBookcases();
+    } catch (error) {
+      librarySpacesCache = [];
+      $('collectionLibrarySpace').innerHTML = '<option value="">Não foi possível carregar os espaços</option>';
+      $('collectionLibraryBookcase').innerHTML = '<option value="">O padrão será usado ao criar</option>';
+    }
+  }
   function participantMarkup(recipient, collectionId, singleLink) {
     const status = statuses[recipient.status] || ['Aguardando envio', ''];
     const canReissue = ['pending', 'in_progress', 'revoked'].includes(recipient.status);
@@ -146,10 +182,13 @@
       const items = collection.items.map(item => esc(item.label) + (Number(item.quantity) > 1 ? ' × ' + Number(item.quantity) : '') + (Number(item.required) ? ' *' : ' (opcional)')).join(' · ');
       const mode = multiUse ? '<span class="collection-mode-badge"><i class="fas fa-users"></i> Link multiuso</span>' : collection.single_link ? '<span class="collection-mode-badge"><i class="fas fa-link"></i> Link único</span>' : '<span class="collection-mode-badge"><i class="fas fa-users"></i> Links individuais</span>';
       const accessMode = Number(collection.exclusive_access) ? '<span class="collection-mode-badge"><i class="fas fa-lock"></i> Uma pessoa por vez</span>' : '';
+      const destination = collection.destination_type === 'library'
+        ? '<i class="fas fa-bookmark"></i> Meu Acervo' + (collection.library_space_name ? ' · ' + esc(collection.library_space_name) + (collection.library_bookcase_name ? ' · ' + esc(collection.library_bookcase_name === 'Geral' ? 'Principal' : collection.library_bookcase_name) : '') : '')
+        : '<i class="fas fa-folder"></i> ' + esc(collection.room_name || 'Sala');
       const senderNames = [...new Set((multiUse ? submissions.map(submission => submission.sender_name) : completedRecipients.map(recipient => recipient.participant_name)).filter(Boolean))];
       const senderLabel = senderNames.slice(0, 3).join(', ') + (senderNames.length > 3 ? ' +' + (senderNames.length - 3) : '');
       const tray = completed ? '<div class="collection-download-tray"><div class="collection-download-senders"><strong>Enviado por</strong><span title="' + esc(senderNames.join(', ')) + '">' + esc(senderLabel) + '</span></div><button class="btn btn-sm btn-green" type="button" data-download="' + esc(collection.id) + '"><i class="fas fa-file-zipper"></i> Baixar tudo · ZIP</button></div>' : '';
-      return '<div class="collection-card-wrap"><article class="collection-card"><div class="collection-card-head"><div><h3>' + esc(collection.title) + '</h3><div class="collection-card-meta"><i class="fas fa-folder"></i> ' + esc(collection.room_name) + ' · prazo ' + esc(dateLabel(collection.expires_at)) + '</div>' + mode + accessMode + '</div><span class="collection-status ' + statusClass + '">' + esc(statusText) + '</span></div>' +
+      return '<div class="collection-card-wrap"><article class="collection-card"><div class="collection-card-head"><div><h3>' + esc(collection.title) + '</h3><div class="collection-card-meta">' + destination + ' · prazo ' + esc(dateLabel(collection.expires_at)) + '</div>' + mode + accessMode + '</div><span class="collection-status ' + statusClass + '">' + esc(statusText) + '</span></div>' +
         (collection.instructions ? '<p class="collection-card-meta collection-instructions">' + esc(collection.instructions) + '</p>' : '') +
         '<p class="collection-card-meta">' + (multiUse ? completed + (completed === 1 ? ' envio recebido' : ' envios recebidos') + ' · link ativo até o prazo' : completed + ' de ' + collection.recipients.length + ' concluíram') + ' · ' + esc(items) + '</p>' +
         '<div class="collection-participant-list">' + collection.recipients.map(recipient => participantMarkup(multiUse ? { ...recipient, participant_name: 'Link multiuso' } : recipient, collection.id, collection.single_link)).join('') + '</div></article>' + tray + '</div>';
@@ -314,6 +353,8 @@
   $('collectionsTab').addEventListener('click', () => setTab('collections'));
   $('libraryTab').addEventListener('click', () => setTab('library'));
   $('refreshCollectionsBtn').addEventListener('click', loadCollections);
+  $('collectionDestination').addEventListener('change', () => { renderCollectionDestination(); if ($('collectionDestination').value === 'library') loadLibraryLocationsForSelect(); });
+  $('collectionLibrarySpace').addEventListener('change', () => renderCollectionLibraryBookcases());
   setInterval(() => { if (!document.hidden && !$('collectionsPanel').hidden) loadCollections(true); }, 2000);
   setInterval(() => { if (!document.hidden && !$('libraryPanel').hidden) window.loadLibrary?.(true); }, 2000);
 
@@ -389,17 +430,25 @@
     if (items.reduce((total, item) => total + item.quantity, 0) > 200) { toast('A soma das quantidades não pode passar de 200 arquivos por pessoa.', 'error'); return; }
     const deadline = new Date($('collectionDeadline').value);
     if (!Number.isFinite(deadline.getTime())) { toast('Escolha um prazo para a coleta.', 'error'); return; }
+    const destinationType = $('collectionDestination').value;
+    if (destinationType === 'library' && librarySpacesCache.length && (!$('collectionLibrarySpace').value || !$('collectionLibraryBookcase').value)) {
+      toast('Escolha o espaço e a prateleira do Acervo.', 'error'); return;
+    }
     const submit = event.submitter || $('collectionForm').querySelector('[type=submit]');
     submit.disabled = true;
     try {
       const created = await api('/api/coletas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        title: $('collectionTitle').value.trim(), room_id: $('collectionRoom').value,
+        title: $('collectionTitle').value.trim(), destination_type: destinationType, room_id: destinationType === 'room' ? $('collectionRoom').value : null,
+        library_space_id: destinationType === 'library' ? $('collectionLibrarySpace').value : null,
+        library_bookcase_id: destinationType === 'library' ? $('collectionLibraryBookcase').value : null,
         instructions: $('collectionInstructions').value.trim(), expires_at: deadline.toISOString(), items,
         participants: multiUseLink || singleLink ? [] : participantNames, single_link: singleLink, multi_use_link: multiUseLink,
         exclusive_access: multiUseLink || $('collectionExclusiveAccess').checked
       }) });
       showCreatedLinks(created, created.recipients);
       $('collectionForm').reset(); $('collectionExclusiveAccess').disabled = false; exclusiveBeforeMultiUse = false; participantNames = []; renderParticipants(); $('collectionParticipantsGroup').hidden = false;
+      renderCollectionDestination();
+      renderCollectionLibraryBookcases();
       updateCollectionSubmitLabel();
       $('collectionItems').innerHTML = '<div class="collection-item-input"><input type="text" maxlength="120" placeholder="Ex.: Foto" required><label class="collection-quantity-label">Qtd.<input type="number" min="1" max="200" value="1" inputmode="numeric" aria-label="Quantidade solicitada"></label><label class="collection-required-label"><input type="checkbox" checked> Obrigatório</label><button class="btn btn-sm btn-outline collection-remove-item" type="button" title="Remover item" aria-label="Remover item"><i class="fas fa-xmark"></i></button></div>';
       $('collectionFriendPicker').hidden = true; $('collectionFriendsBtn').setAttribute('aria-expanded', 'false'); await loadCollections(); toast('Coleta criada e links gerados.');
@@ -448,5 +497,7 @@
     if (download) window.location.href = '/api/coletas/' + encodeURIComponent(download.dataset.download) + '/zip';
   });
   renderParticipants();
+  renderCollectionDestination();
   loadRoomsForSelect();
+  loadLibraryLocationsForSelect();
 })();

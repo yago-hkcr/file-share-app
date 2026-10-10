@@ -132,6 +132,10 @@
 .collection-form input:not([type=checkbox]), .collection-form select, .collection-form textarea { width:100%; padding:10px 12px; border:1px solid var(--gray-300); border-radius:var(--radius-sm); background:#fff; color:var(--gray-800); font:inherit; font-size:14px; }
 .collection-form textarea { resize:vertical; }
 .collection-form input:focus, .collection-form select:focus, .collection-form textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(79,70,229,.13); }
+.collection-library-destination { padding:11px 12px 12px; margin:-3px 0 14px; border:1px solid var(--gray-200); border-radius:var(--radius-sm); background:rgba(79,70,229,.04); }
+.collection-library-destination .form-group { margin-bottom:10px; }
+.collection-library-destination .form-group:last-of-type { margin-bottom:3px; }
+.collection-library-destination small { display:block; color:var(--gray-500); font-size:12px; line-height:1.4; }
 .collection-field-head { display:flex; justify-content:space-between; align-items:center; margin:12px 0 8px; color:var(--gray-700); font-size:14px; }
 .collection-field-head span, .collection-participants small { color:var(--gray-500); font-size:12px; }
 .collection-items { display:grid; gap:8px; }
@@ -237,6 +241,8 @@
 }
 #collectionsPanel .collection-form input::placeholder,
 #collectionsPanel .collection-form textarea::placeholder { color:#8f83a8; }
+#collectionsPanel .collection-library-destination { border-color:rgba(182,137,242,.2); background:rgba(117,73,170,.1); }
+#collectionsPanel .collection-library-destination small { color:#b8accb; }
 #collectionsPanel .collection-item-input label,
 #collectionsPanel .collection-card-meta,
 #collectionsPanel .collection-participant small,
