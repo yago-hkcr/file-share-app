@@ -943,7 +943,8 @@ body.auth-page {
   display: grid;
   place-items: center;
   padding: 32px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #152238;
   background-image: radial-gradient(circle at 12% 18%, rgba(255, 107, 74, 0.32), transparent 28%), radial-gradient(circle at 90% 80%, rgba(89, 208, 174, 0.28), transparent 30%), linear-gradient(135deg, #152238 0%, #263d5b 100%);
 }
