@@ -1,0 +1,8 @@
+.env*
+data/local/
+data/database.sqlite
+uploads/
+node_modules/
+.git/
+.vercel/
+diag-*.mjs
