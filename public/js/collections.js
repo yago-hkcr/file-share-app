@@ -139,20 +139,21 @@
       const previous = select.value;
       select.innerHTML = librarySpacesCache.length
         ? librarySpacesCache.map(space => '<option value="' + esc(space.id) + '">' + esc(space.name) + '</option>').join('')
-        : '<option value="">Nenhum espaço criado — será usado Guardados</option>';
+        : '<option value="">Nenhum espaço criado — crie um no Meu Acervo</option>';
       if (librarySpacesCache.some(space => space.id === previous)) select.value = previous;
       else if (librarySpacesCache.length) select.value = librarySpacesCache[0].id;
       renderCollectionLibraryBookcases();
     } catch (error) {
       librarySpacesCache = [];
-      $('collectionLibrarySpace').innerHTML = '<option value="">Não foi possível carregar os espaços</option>';
-      $('collectionLibraryBookcase').innerHTML = '<option value="">O padrão será usado ao criar</option>';
+      $('collectionLibrarySpace').innerHTML = '<option value="">Crie um espaço no Meu Acervo</option>';
+      $('collectionLibraryBookcase').innerHTML = '<option value="">Crie uma prateleira no Meu Acervo</option>';
     }
   }
   function participantMarkup(recipient, collectionId, singleLink) {
     const status = statuses[recipient.status] || ['Aguardando envio', ''];
-    const canReissue = ['pending', 'in_progress', 'revoked'].includes(recipient.status);
-    const canSuspend = ['pending', 'in_progress'].includes(recipient.status);
+    const collection = collectionsCache.find(entry => entry.id === collectionId);
+    const canReissue = collection?.status === 'active' && ['pending', 'in_progress', 'revoked'].includes(recipient.status);
+    const canSuspend = collection?.status === 'active' && ['pending', 'in_progress'].includes(recipient.status);
     const label = recipient.participant_name || (singleLink ? 'Link único' : 'Participante');
     const closedAt = recipient.closed_at || recipient.submitted_at || recipient.revoked_at;
     return '<div class="collection-participant"><div><strong>' + esc(label) + '</strong><small>' + esc(status[0]) + (recipient.upload_count ? ' · ' + recipient.upload_count + (recipient.upload_count === 1 ? ' arquivo' : ' arquivos') : '') + (closedAt ? ' · ' + esc(dateLabel(closedAt)) : '') + '</small></div><div class="collection-participant-actions"><span class="collection-status ' + status[1] + '">' + esc(status[0]) + '</span>' +
@@ -177,8 +178,10 @@
       const allEnded = collection.recipients.length > 0 && collection.recipients.every(recipient => ['submitted', 'revoked', 'expired'].includes(recipient.status));
       const hasExpired = collection.recipients.some(recipient => recipient.status === 'expired');
       const hasSuspended = collection.recipients.some(recipient => recipient.status === 'revoked');
-      const statusText = allSubmitted ? 'Todos enviaram' : hasExpired && allEnded ? 'Encerrada · prazo não cumprido' : hasSuspended && allEnded ? 'Encerrada · link suspenso' : allEnded ? 'Encerrada' : 'Coleta aberta';
-      const statusClass = hasExpired ? 'is-expired' : allSubmitted ? 'is-submitted' : hasSuspended && allEnded ? 'is-revoked' : '';
+      const collectionSuspended = collection.status === 'suspended';
+      const collectionClosed = collection.status === 'closed';
+      const statusText = collectionClosed ? 'Encerrada pelo organizador' : collectionSuspended ? 'Suspensa pelo organizador' : allSubmitted ? 'Todos enviaram' : hasExpired && allEnded ? 'Encerrada · prazo não cumprido' : hasSuspended && allEnded ? 'Encerrada · link suspenso' : allEnded ? 'Encerrada' : 'Coleta aberta';
+      const statusClass = collectionClosed || collectionSuspended ? 'is-revoked' : hasExpired ? 'is-expired' : allSubmitted ? 'is-submitted' : hasSuspended && allEnded ? 'is-revoked' : '';
       const items = collection.items.map(item => esc(item.label) + (Number(item.quantity) > 1 ? ' × ' + Number(item.quantity) : '') + (Number(item.required) ? ' *' : ' (opcional)')).join(' · ');
       const mode = multiUse ? '<span class="collection-mode-badge"><i class="fas fa-users"></i> Link multiuso</span>' : collection.single_link ? '<span class="collection-mode-badge"><i class="fas fa-link"></i> Link único</span>' : '<span class="collection-mode-badge"><i class="fas fa-users"></i> Links individuais</span>';
       const accessMode = Number(collection.exclusive_access) ? '<span class="collection-mode-badge"><i class="fas fa-lock"></i> Uma pessoa por vez</span>' : '';
@@ -188,7 +191,14 @@
       const senderNames = [...new Set((multiUse ? submissions.map(submission => submission.sender_name) : completedRecipients.map(recipient => recipient.participant_name)).filter(Boolean))];
       const senderLabel = senderNames.slice(0, 3).join(', ') + (senderNames.length > 3 ? ' +' + (senderNames.length - 3) : '');
       const tray = completed ? '<div class="collection-download-tray"><div class="collection-download-senders"><strong>Enviado por</strong><span title="' + esc(senderNames.join(', ')) + '">' + esc(senderLabel) + '</span></div><button class="btn btn-sm btn-green" type="button" data-download="' + esc(collection.id) + '"><i class="fas fa-file-zipper"></i> Baixar tudo · ZIP</button></div>' : '';
+      const lifecycleAvailable = collection.expires_at > new Date().toISOString().slice(0, 19).replace('T', ' ');
+      const lifecycleActions = lifecycleAvailable && collection.status === 'active'
+        ? '<button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="suspend" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-pause"></i> Suspender coleta</button><button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="close" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-stop"></i> Encerrar coleta</button>'
+        : lifecycleAvailable && collection.status === 'suspended'
+          ? '<button class="btn btn-sm btn-outline" type="button" data-collection-status="resume" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-play"></i> Reativar coleta</button><button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="close" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-stop"></i> Encerrar definitivamente</button>'
+          : '';
       return '<div class="collection-card-wrap"><article class="collection-card"><div class="collection-card-head"><div><h3>' + esc(collection.title) + '</h3><div class="collection-card-meta">' + destination + ' · prazo ' + esc(dateLabel(collection.expires_at)) + '</div>' + mode + accessMode + '</div><span class="collection-status ' + statusClass + '">' + esc(statusText) + '</span></div>' +
+        (lifecycleActions ? '<div class="collection-card-actions">' + lifecycleActions + '</div>' : '') +
         (collection.instructions ? '<p class="collection-card-meta collection-instructions">' + esc(collection.instructions) + '</p>' : '') +
         '<p class="collection-card-meta">' + (multiUse ? completed + (completed === 1 ? ' envio recebido' : ' envios recebidos') + ' · link ativo até o prazo' : completed + ' de ' + collection.recipients.length + ' concluíram') + ' · ' + esc(items) + '</p>' +
         '<div class="collection-participant-list">' + collection.recipients.map(recipient => participantMarkup(multiUse ? { ...recipient, participant_name: 'Link multiuso' } : recipient, collection.id, collection.single_link)).join('') + '</div></article>' + tray + '</div>';
@@ -431,7 +441,7 @@
     const deadline = new Date($('collectionDeadline').value);
     if (!Number.isFinite(deadline.getTime())) { toast('Escolha um prazo para a coleta.', 'error'); return; }
     const destinationType = $('collectionDestination').value;
-    if (destinationType === 'library' && librarySpacesCache.length && (!$('collectionLibrarySpace').value || !$('collectionLibraryBookcase').value)) {
+    if (destinationType === 'library' && (!$('collectionLibrarySpace').value || !$('collectionLibraryBookcase').value)) {
       toast('Escolha o espaço e a prateleira do Acervo.', 'error'); return;
     }
     const submit = event.submitter || $('collectionForm').querySelector('[type=submit]');
@@ -491,6 +501,24 @@
       try { await api('/api/coletas/' + encodeURIComponent(revoke.dataset.revoke) + '/participantes/' + encodeURIComponent(revoke.dataset.recipient) + '/revogar', { method: 'POST' }); toast('Link suspenso pelo organizador.'); await loadCollections(); }
       catch (error) { toast(error.message, 'error'); }
       finally { revoke.disabled = false; }
+      return;
+    }
+    const lifecycle = event.target.closest('[data-collection-status]');
+    if (lifecycle) {
+      const action = lifecycle.dataset.collectionStatus;
+      const messages = {
+        suspend: 'Suspender a coleta bloqueará os dois tipos de link e removerá apenas os arquivos enviados parcialmente. Reativar depois será possível até o prazo. Continuar?',
+        resume: 'Reativar a coleta liberará novamente os links que ainda não foram concluídos. Continuar?',
+        close: 'Encerrar a coleta bloqueará definitivamente os dois tipos de link e removerá apenas os arquivos enviados parcialmente. Continuar?'
+      };
+      if (!confirm(messages[action] || 'Alterar o estado desta coleta?')) return;
+      lifecycle.disabled = true;
+      try {
+        await api('/api/coletas/' + encodeURIComponent(lifecycle.dataset.collectionId) + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+        toast(action === 'suspend' ? 'Coleta suspensa.' : action === 'resume' ? 'Coleta reativada.' : 'Coleta encerrada.');
+        await loadCollections();
+      } catch (error) { toast(error.message, 'error'); }
+      finally { if (lifecycle.isConnected) lifecycle.disabled = false; }
       return;
     }
     const download = event.target.closest('[data-download]');

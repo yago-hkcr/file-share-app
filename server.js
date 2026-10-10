@@ -219,7 +219,8 @@ async function ensurePersonalLibraryBookcase(userId, spaceId, name = 'Geral', cr
 
 async function migratePersonalLibraryHierarchy() {
   const legacy = await q(`SELECT user_id, name, created_at FROM personal_library_shelves WHERE TRIM(name) <> ''
-    UNION SELECT user_id, COALESCE(NULLIF(TRIM(shelf), ''), 'Guardados') AS name, created_at FROM personal_library_items`);
+    UNION SELECT user_id, COALESCE(NULLIF(TRIM(shelf), ''), 'Guardados') AS name, created_at
+      FROM personal_library_items WHERE space_id IS NULL OR bookcase_id IS NULL`);
   for (const row of legacy) {
     const space = await ensurePersonalLibrarySpace(row.user_id, row.name, row.created_at);
     await ensurePersonalLibraryBookcase(row.user_id, space.id, 'Geral', row.created_at);
@@ -237,12 +238,10 @@ async function migratePersonalLibraryHierarchy() {
 async function resolvePersonalLibraryLocation(userId, body = {}) {
   const spaceId = String(body.space_id || '').trim();
   const bookcaseId = String(body.bookcase_id || '').trim();
-  if (!spaceId && !bookcaseId) {
-    const legacyName = cleanPersonalLibraryName(body.shelf).slice(0, 50) || 'Guardados';
-    const space = await ensurePersonalLibrarySpace(userId, legacyName);
-    const bookcase = await ensurePersonalLibraryBookcase(userId, space.id);
-    return { space, bookcase };
-  }
+  // Localizações explícitas são obrigatórias nos fluxos novos. A migração
+  // legada continua usando os helpers acima, mas uma requisição comum nunca
+  // deve criar um espaço/prateleira só porque faltou um identificador.
+  if (!spaceId && !bookcaseId) return null;
   if (spaceId && bookcaseId) {
     const bookcase = await one(`SELECT b.id, b.user_id, b.space_id, b.name, b.created_at
       FROM personal_library_bookcases b JOIN personal_library_spaces s ON s.id = b.space_id
@@ -252,9 +251,7 @@ async function resolvePersonalLibraryLocation(userId, body = {}) {
     return space ? { space, bookcase } : null;
   }
   if (spaceId) {
-    const space = await one('SELECT id, user_id, name, created_at FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [spaceId, userId]);
-    if (!space) return null;
-    return { space, bookcase: await ensurePersonalLibraryBookcase(userId, spaceId) };
+    return null;
   }
   const bookcase = await one(`SELECT b.id, b.user_id, b.space_id, b.name, b.created_at FROM personal_library_bookcases b
     JOIN personal_library_spaces s ON s.id = b.space_id WHERE b.id = $1 AND b.user_id = $2 AND s.user_id = $2`, [bookcaseId, userId]);
@@ -520,6 +517,8 @@ async function createTables() {
   await q('ALTER TABLE file_collections ADD COLUMN IF NOT EXISTS exclusive_access INTEGER DEFAULT 0');
   await q('ALTER TABLE file_collections ADD COLUMN IF NOT EXISTS multi_use_link INTEGER DEFAULT 0');
   await q('ALTER TABLE file_collections ADD COLUMN IF NOT EXISTS history_cleared_at TEXT');
+  await q('ALTER TABLE file_collections ADD COLUMN IF NOT EXISTS closed_at TEXT');
+  await q('ALTER TABLE file_collections ADD COLUMN IF NOT EXISTS closed_reason TEXT');
   await q(`CREATE TABLE IF NOT EXISTS file_collection_items (
     id TEXT PRIMARY KEY, collection_id TEXT NOT NULL, label TEXT NOT NULL, required INTEGER DEFAULT 1, quantity INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0
   )`);
@@ -884,16 +883,18 @@ async function getCollectionRecipient(token) {
 
 function collectionAccessError(row, res) {
   if (!row) return res.status(404).json({ state: 'invalid', error: 'Este link de envio não é válido.' });
+  if (row.collection_status === 'closed') return res.status(410).json({ state: 'closed', error: 'Coleta encerrada pelo organizador. Este link não aceita novos arquivos.' });
+  if (row.collection_status === 'suspended') return res.status(410).json({ state: 'suspended', error: 'Coleta suspensa pelo organizador. Este link foi temporariamente bloqueado e não aceita novos arquivos.' });
   if (row.recipient_status === 'submitted') return res.status(410).json({ state: 'submitted', error: 'Envio concluído: seus arquivos foram recebidos e este link foi encerrado.' });
   if (row.recipient_status === 'revoked') return res.status(410).json({ state: 'suspended', error: 'Envio suspenso pelo organizador. Este link foi encerrado e não aceita novos arquivos.' });
   if (row.recipient_status === 'expired' || row.expires_at <= ts() || (row.destination_type === 'room' && row.room_expires_at && row.room_expires_at <= ts())) return res.status(410).json({ state: 'expired', error: 'Prazo não cumprido: o prazo terminou antes da confirmação do envio.' });
-  if (row.collection_status !== 'active') return res.status(410).json({ state: 'suspended', error: 'Coleta suspensa pelo organizador. Este link foi encerrado e não aceita novos arquivos.' });
+  if (row.collection_status !== 'active') return res.status(410).json({ state: 'closed', error: 'Esta coleta não aceita novos arquivos.' });
   if (!['pending', 'uploading', 'submitting'].includes(row.recipient_status)) return res.status(410).json({ state: 'closed', error: 'Este link foi encerrado e não aceita novos arquivos.' });
   return null;
 }
 
 async function requireCollectionOwner(collectionId, userId) {
-  return one('SELECT id, room_id, owner_id, destination_type, library_space_id, library_bookcase_id, title, status, expires_at, single_link, multi_use_link FROM file_collections WHERE id = $1 AND owner_id = $2', [collectionId, userId]);
+  return one('SELECT id, room_id, owner_id, destination_type, library_space_id, library_bookcase_id, title, status, closed_at, closed_reason, expires_at, single_link, multi_use_link FROM file_collections WHERE id = $1 AND owner_id = $2', [collectionId, userId]);
 }
 
 async function removeCollectionUpload(upload) {
@@ -931,6 +932,25 @@ async function recoverStaleCollectionUploadState(recipientId, tokenHash = null) 
 async function removeRecipientCollectionUploads(recipientId) {
   const uploads = await q('SELECT id, stored_name FROM file_collection_uploads WHERE recipient_id = $1 AND submission_id IS NULL', [recipientId]);
   for (const upload of uploads) await removeCollectionUpload(upload);
+}
+
+async function resetCollectionOpenRecipients(collectionId) {
+  const recipients = await q(`SELECT id FROM file_collection_recipients
+    WHERE collection_id = $1 AND status IN ('pending','uploading','submitting','deleting')`, [collectionId]);
+  for (const recipient of recipients) await removeRecipientCollectionUploads(recipient.id);
+  await q(`UPDATE file_collection_recipients SET status = 'pending', submission_started_at = NULL,
+      access_session_hash = NULL, access_lease_until = NULL
+    WHERE collection_id = $1 AND status IN ('pending','uploading','submitting','deleting')`, [collectionId]);
+}
+
+async function closeCollectionOpenRecipients(collectionId, closedAt) {
+  const recipients = await q(`SELECT id FROM file_collection_recipients
+    WHERE collection_id = $1 AND status IN ('pending','uploading','submitting','deleting')`, [collectionId]);
+  for (const recipient of recipients) await removeRecipientCollectionUploads(recipient.id);
+  await q(`UPDATE file_collection_recipients SET status = 'revoked', revoked_at = $2, closed_at = $2,
+      closed_reason = 'collection_closed', submission_started_at = NULL,
+      access_session_hash = NULL, access_lease_until = NULL
+    WHERE collection_id = $1 AND status IN ('pending','uploading','submitting','deleting')`, [collectionId, closedAt]);
 }
 
 async function expireCollectionRecipientIfNeeded(recipient, token) {
@@ -1566,8 +1586,7 @@ app.post('/api/library/spaces', asMember, wrap(async (req, res) => {
     if (isUnique(error)) return res.status(409).json({ error: 'Você já tem um espaço com esse nome.' });
     throw error;
   }
-  const bookcase = await ensurePersonalLibraryBookcase(req.user.id, space.id, 'Geral');
-  res.status(201).json({ ...space, shelves: [bookcase] });
+  res.status(201).json({ ...space, shelves: [] });
 }));
 
 app.patch('/api/library/spaces/:id', asMember, wrap(async (req, res) => {
@@ -1621,6 +1640,10 @@ app.delete('/api/library/spaces/:id/shelves/:shelfId', asMember, wrap(async (req
   const shelf = await one(`SELECT id, name FROM personal_library_bookcases
     WHERE id = $1 AND space_id = $2 AND user_id = $3`, [req.params.shelfId, req.params.id, req.user.id]);
   if (!shelf) return res.status(404).json({ error: 'Prateleira não encontrada neste espaço.' });
+  const usedByCollection = await one(`SELECT id FROM file_collections
+    WHERE owner_id = $1 AND destination_type = 'library' AND library_bookcase_id = $2
+      AND status IN ('active','suspended') LIMIT 1`, [req.user.id, shelf.id]);
+  if (usedByCollection) return res.status(409).json({ error: 'Esta prateleira está vinculada a uma coleta aberta. Encerre a coleta antes de excluí-la.' });
   const siblings = await q(`SELECT id, name FROM personal_library_bookcases
     WHERE user_id = $1 AND space_id = $2 AND id <> $3 ORDER BY created_at, id`, [req.user.id, req.params.id, shelf.id]);
   if (!siblings.length) return res.status(409).json({ error: 'Todo espaço precisa ter ao menos uma prateleira. Crie outra antes de excluir esta.' });
@@ -1726,6 +1749,10 @@ app.delete('/api/library/:id', asMember, wrap(async (req, res) => {
 app.delete('/api/library/spaces/:id', asMember, wrap(async (req, res) => {
   const space = await one('SELECT id FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
   if (!space) return res.status(404).json({ error: 'Espaço não encontrado no seu Acervo.' });
+  const usedByCollection = await one(`SELECT id FROM file_collections
+    WHERE owner_id = $1 AND destination_type = 'library' AND library_space_id = $2
+      AND status IN ('active','suspended') LIMIT 1`, [req.user.id, space.id]);
+  if (usedByCollection) return res.status(409).json({ error: 'Este espaço está vinculado a uma coleta aberta. Encerre a coleta antes de excluí-lo.' });
   const removed = await q('DELETE FROM personal_library_items WHERE user_id = $1 AND space_id = $2 RETURNING id, stored_name', [req.user.id, space.id]);
   await deleteLibraryBlobs(removed);
   await q('DELETE FROM personal_library_bookcases WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
@@ -2009,10 +2036,7 @@ async function materializeCollectionLibraryUploads(collection, submissionId, sen
     space_id: collection.library_space_id,
     bookcase_id: collection.library_bookcase_id
   });
-  if (!location) {
-    location = await resolvePersonalLibraryLocation(collection.owner_id, {});
-    await q('UPDATE file_collections SET library_space_id = $1, library_bookcase_id = $2 WHERE id = $3', [location.space.id, location.bookcase.id, collection.id]);
-  }
+  if (!location) throw new Error('A localização do Acervo desta coleta não está mais disponível.');
   const uploads = await q(`SELECT id, original_name, size, mime_type, stored_name, library_item_id
     FROM file_collection_uploads WHERE collection_id = $1 AND submission_id = $2 AND status = 'ready' ORDER BY uploaded_at, id`, [collection.id, submissionId]);
   for (const upload of uploads) {
@@ -2149,10 +2173,41 @@ app.post('/api/coletas/:id/participantes/:recipientId/revogar', asMember, wrap(a
   res.json({ success: true });
 }));
 
+app.post('/api/coletas/:id/status', asMember, wrap(async (req, res) => {
+  const collection = await requireCollectionOwner(req.params.id, req.user.id);
+  if (!collection) return res.status(404).json({ error: 'Coleta não encontrada.' });
+  const action = String(req.body && req.body.action || '').trim().toLowerCase();
+  const now = ts();
+  if (!['suspend', 'resume', 'close'].includes(action)) return res.status(400).json({ error: 'Ação de ciclo de vida inválida.' });
+  if (action === 'resume') {
+    if (collection.status !== 'suspended') return res.status(409).json({ error: 'Somente uma coleta suspensa pode ser reativada.' });
+    if (collection.expires_at <= now) return res.status(410).json({ error: 'O prazo desta coleta terminou.' });
+    await q(`UPDATE file_collections SET status = 'active', closed_at = NULL, closed_reason = NULL
+      WHERE id = $1 AND owner_id = $2 AND status = 'suspended'`, [collection.id, req.user.id]);
+    await resetCollectionOpenRecipients(collection.id);
+    await logAct(req, 'coleta_reativada', collection.title);
+    return res.json({ success: true, status: 'active' });
+  }
+  if (action === 'suspend') {
+    if (collection.status !== 'active') return res.status(409).json({ error: collection.status === 'closed' ? 'Uma coleta encerrada não pode ser suspensa.' : 'A coleta já está suspensa.' });
+    await q(`UPDATE file_collections SET status = 'suspended', closed_at = $2, closed_reason = 'suspended'
+      WHERE id = $1 AND owner_id = $3 AND status = 'active'`, [collection.id, now, req.user.id]);
+    await resetCollectionOpenRecipients(collection.id);
+    await logAct(req, 'coleta_suspensa', collection.title);
+    return res.json({ success: true, status: 'suspended' });
+  }
+  if (collection.status === 'closed') return res.status(409).json({ error: 'A coleta já está encerrada.' });
+  await q(`UPDATE file_collections SET status = 'closed', closed_at = $2, closed_reason = 'closed'
+    WHERE id = $1 AND owner_id = $3 AND status IN ('active','suspended')`, [collection.id, now, req.user.id]);
+  await closeCollectionOpenRecipients(collection.id, now);
+  await logAct(req, 'coleta_encerrada', collection.title);
+  return res.json({ success: true, status: 'closed' });
+}));
+
 app.post('/api/coletas/:id/participantes/:recipientId/reemitir', asMember, wrap(async (req, res) => {
   const collection = await requireCollectionOwner(req.params.id, req.user.id);
   if (!collection) return res.status(404).json({ error: 'Coleta não encontrada.' });
-  if (collection.status !== 'active' || collection.expires_at <= ts()) return res.status(410).json({ error: 'O prazo desta coleta terminou.' });
+  if (collection.status !== 'active' || collection.expires_at <= ts()) return res.status(410).json({ error: collection.status === 'closed' ? 'A coleta foi encerrada.' : collection.status === 'suspended' ? 'A coleta está suspensa. Reative-a antes de gerar um novo link.' : 'O prazo desta coleta terminou.' });
   const recipient = await one('SELECT id, participant_name, status, token_hash FROM file_collection_recipients WHERE id = $1 AND collection_id = $2', [req.params.recipientId, collection.id]);
   if (!recipient) return res.status(404).json({ error: 'Participante não encontrado.' });
   if (recipient.status === 'submitted') return res.status(409).json({ error: 'O envio deste participante já foi concluído.' });
@@ -2221,7 +2276,8 @@ app.post('/api/coletas/enviar/:token/upload-heartbeat', publicCollectionAccess, 
   const uploadId = String(req.body && req.body.id || '');
   const touched = await q(`UPDATE file_collection_uploads u SET uploaded_at = $1
     WHERE u.id = $2 AND u.recipient_id = $3 AND u.status = 'uploading' AND u.upload_session_hash = $4
-      AND EXISTS (SELECT 1 FROM file_collection_recipients cr WHERE cr.id = $3 AND cr.status = 'uploading' AND cr.token_hash = $5)
+      AND EXISTS (SELECT 1 FROM file_collection_recipients cr JOIN file_collections fc ON fc.id = cr.collection_id
+        WHERE cr.id = $3 AND cr.status = 'uploading' AND cr.token_hash = $5 AND fc.status = 'active')
     RETURNING u.id`, [ts(), uploadId, req.collectionRecipient.id, req.collectionAccessSessionHash, hashToken(req.params.token)]);
   if (!touched.length) return res.status(410).json({ error: 'Este envio não está mais ativo.' });
   res.set('Cache-Control', 'no-store');
@@ -2325,8 +2381,10 @@ app.post('/api/coletas/enviar/:token/upload-token', publicCollectionAccess, wrap
     const match = recipient.destination_type === 'library' ? collectionMatch : roomMatch;
     const expectedOwner = recipient.destination_type === 'library' ? recipient.collection_id : recipient.room_id;
     if (!match || match[1] !== expectedOwner) return res.status(400).json({ error: 'Caminho de upload inválido.' });
-    const staged = await one(`SELECT id, size FROM file_collection_uploads WHERE id = $1 AND recipient_id = $2 AND stored_name = $3 AND status = 'uploading'
-      AND upload_session_hash = $4`, [match[2], recipient.id, pathname, req.collectionAccessSessionHash]);
+    const staged = await one(`SELECT u.id, u.size FROM file_collection_uploads u
+      JOIN file_collections fc ON fc.id = u.collection_id
+      WHERE u.id = $1 AND u.recipient_id = $2 AND u.stored_name = $3 AND u.status = 'uploading'
+        AND u.upload_session_hash = $4 AND fc.status = 'active'`, [match[2], recipient.id, pathname, req.collectionAccessSessionHash]);
     if (!staged) return res.status(410).json({ error: 'Este envio não está mais disponível.' });
     const { handleUploadPresigned } = await blobClientSdk();
     const { issueSignedToken } = await blobSdk();
@@ -2367,7 +2425,8 @@ app.post('/api/coletas/enviar/:token/registrar', publicCollectionAccess, wrap(as
     const updated = await q(`UPDATE file_collection_uploads SET status = 'ready', uploaded_at = $1
       WHERE id = $2 AND recipient_id = $3 AND status = 'uploading'
         AND upload_session_hash = $5
-        AND EXISTS (SELECT 1 FROM file_collection_recipients WHERE id = $3 AND status = 'uploading' AND token_hash = $4)
+        AND EXISTS (SELECT 1 FROM file_collection_recipients cr JOIN file_collections fc ON fc.id = cr.collection_id
+          WHERE cr.id = $3 AND cr.status = 'uploading' AND cr.token_hash = $4 AND fc.status = 'active')
       RETURNING id`, [ts(), id, recipient.id, hashToken(req.params.token), req.collectionAccessSessionHash]);
     if (!updated.length) {
       const current = await one(`SELECT u.status AS upload_status, cr.status AS recipient_status, cr.token_hash
