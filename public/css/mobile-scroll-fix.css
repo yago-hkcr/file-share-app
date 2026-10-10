@@ -145,3 +145,64 @@ body.auth-page {
   }
   #roomModal #roomFiles { max-height: 18dvh; }
 }
+
+/* ============================================================
+   ABAS DA SIDEBAR (Salas / Coletas / Meu Acervo)
+   BUG: o texto quebrava uma LETRA por linha porque
+   .dashboard-tab-copy colapsava (min-width) e o adaptive.css
+   força overflow-wrap:anywhere em <span>/<strong>/<small>.
+   Correção: dar largura real ao copy e quebrar só por palavra.
+   ============================================================ */
+@media (max-width: 760px) {
+  /* O container das abas PRECISA ser coluna única (senão as 3 abas
+     ficam lado a lado estreitas e o texto quebra letra por letra). */
+  .dashboard-sidebar .dashboard-tabs {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-auto-flow: row !important;
+    gap: 8px;
+    width: 100%;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+  .dashboard-sidebar .dashboard-tab {
+    display: flex !important;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 62px;
+  }
+  .dashboard-sidebar .dashboard-tab > i {
+    flex: 0 0 36px !important;
+    width: 36px;
+    height: 36px;
+  }
+  .dashboard-sidebar .dashboard-tab .dashboard-tab-copy,
+  .dashboard-tab-copy {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    width: auto;
+    max-width: 100%;
+    overflow: visible;
+  }
+  /* texto NUNCA quebra por caractere — só por palavra */
+  .dashboard-tab-copy strong,
+  .dashboard-tab-copy small {
+    display: block;
+    width: 100%;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+    overflow-wrap: break-word !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+  }
+  .dashboard-tab-copy strong { font-size: 13px; }
+  .dashboard-tab-copy small { font-size: 10px; }
+}
+
