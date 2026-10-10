@@ -1,6 +1,8 @@
 /* ===== Adaptação de aparelho: nada sai da tela, tudo quebra linha ou rola dentro do próprio bloco ===== */
-html { -webkit-text-size-adjust: 100%; max-width: 100%; overflow-x: hidden; }
-body { max-width: 100%; overflow-x: hidden; min-height: 100dvh; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+/* html NÃO pode ter overflow-x:clip/hidden — quebra a rolagem do documento
+   no Chrome (wheel/swipe param de rolar o documento). Clip horizontal é só no body. */
+html { -webkit-text-size-adjust: 100%; max-width: 100%; overflow-x: visible; }
+body { max-width: 100%; overflow-x: clip; min-height: 100dvh; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); touch-action: pan-y; }
 img, video, canvas, iframe, svg { max-width: 100%; }
 input, select, textarea, button { max-width: 100%; font-size: max(16px, 1em); }
 h1, h2, h3, h4, p, span, a, label, td, th, strong, b, .badge, .file-row-name { overflow-wrap: anywhere; }

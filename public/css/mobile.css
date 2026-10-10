@@ -160,43 +160,51 @@
   .collection-item-input .collection-remove-item { width:34px; }
 }
 
-/* Composer da sala: folha, chat, OCR e envio permanecem dentro da viewport. */
+/* Modal da sala: a lista rola, o compositor permanece sempre dentro da viewport. */
 @media (max-width: 640px) {
+  #roomModal {
+    padding: 0;
+    align-items: flex-end !important;
+  }
   #roomModal .modal-content {
     display: flex;
     flex-direction: column;
     width: 100%;
     max-width: 100%;
-    height: min(94dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
-    max-height: min(94dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
+    height: min(94dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+    max-height: min(94dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
     overflow: hidden;
     padding-bottom: 0;
   }
-  #roomModal .modal-header {
-    flex: 0 0 auto;
-  }
+  #roomModal .modal-header { flex: 0 0 auto; }
   #roomModal .modal-body {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
     min-height: 0;
+    overflow: hidden;
+    padding: 0 12px max(12px, env(safe-area-inset-bottom, 0px));
+  }
+  #roomModal #roomFiles {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: min(24dvh, 220px);
     overflow-x: hidden;
     overflow-y: auto;
-    padding-left: 12px;
-    padding-right: 12px;
-    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    overscroll-behavior: contain;
   }
   #roomModal .chat-box {
     display: flex;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     flex-direction: column;
     width: 100%;
     min-width: 0;
     min-height: 0;
     max-width: 100%;
+    overflow: hidden;
   }
   #roomModal .chat-list {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     width: 100%;
     min-width: 0;
     min-height: 0;
@@ -204,6 +212,9 @@
     height: auto !important;
     max-height: none !important;
     overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
   #roomModal #messageForm.chat-compose {
     display: grid !important;
@@ -216,8 +227,10 @@
     box-sizing: border-box;
     overflow: visible;
     padding: 8px max(8px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
-    margin-top: 0;
+    margin: 0;
     flex: 0 0 auto;
+    isolation: isolate;
+    z-index: 20;
   }
   #roomModal #messageInput {
     grid-column: 1;
@@ -227,6 +240,14 @@
     height: 48px;
     min-height: 48px;
     box-sizing: border-box;
+    display: block;
+    font-size: 16px !important;
+    line-height: normal;
+    padding: 0 14px;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto !important;
+    touch-action: auto !important;
   }
   #roomModal #ocrButton {
     grid-column: 2;
@@ -237,6 +258,8 @@
     min-height: 44px;
     padding: 0;
     justify-content: center;
+    pointer-events: auto !important;
+    touch-action: manipulation;
   }
   #roomModal #chatSendBtn {
     grid-column: 3;
@@ -247,6 +270,8 @@
     min-height: 48px;
     padding: 0;
     justify-content: center;
+    pointer-events: auto !important;
+    touch-action: manipulation;
   }
 }
 
@@ -264,5 +289,59 @@
     width: 46px;
     min-width: 46px;
     max-width: 46px;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 640px) {
+  #roomModal .modal-content {
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    max-height: 100dvh;
+  }
+  #roomModal #roomFiles { max-height: 18dvh; }
+}
+
+/* Rolagem final da sala: cada lista encolhe dentro do modal e o compositor
+   continua fixo na parte inferior, sem alterar o layout de desktop. */
+@media (max-width: 640px) {
+  #roomModal .modal-content,
+  #roomModal .modal-body,
+  #roomModal .chat-box,
+  #roomModal .chat-list {
+    min-height: 0;
+  }
+  #roomModal .modal-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #roomModal #roomFiles {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  #roomModal .chat-box {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #roomModal .chat-list {
+    flex: 1 1 auto;
+    min-height: 120px;
+    height: auto;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  #roomModal #messageForm.chat-compose {
+    flex: 0 0 auto;
   }
 }

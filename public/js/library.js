@@ -326,6 +326,22 @@
     modal.setAttribute('aria-hidden', 'true');
   }
 
+  async function uploadDirectFiles(picked, space, bookcaseId) {
+    const form = new FormData();
+    picked.slice(0, 5).forEach(file => form.append('files', file));
+    form.append('space_id', space.id);
+    form.append('bookcase_id', bookcaseId);
+    try {
+      window.toast?.('Enviando ' + Math.min(picked.length, 5) + ' arquivo(s) ao Acervo...');
+      const response = await fetch('/api/library/upload', { method: 'POST', credentials: 'same-origin', body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Não foi possível enviar.');
+      signature = '';
+      await loadLibrary(true);
+      window.toast?.('Arquivo(s) guardado(s) no seu Acervo.');
+    } catch (error) { window.toast?.(error.message, 'error'); }
+  }
+
   async function deleteSpace(spaceId) {
     const space = spaces.find(entry => entry.id === spaceId);
     if (!space) return;
@@ -408,6 +424,12 @@
     const spaceId = selectedSpaceId() || spaces[0].id;
     const space = spaces.find(entry => entry.id === spaceId) || spaces[0];
     const bookcaseId = (space.shelves && space.shelves[0] && space.shelves[0].id) || '';
+    if (!bookcaseId) {
+      window.toast?.('Crie uma prateleira neste espaço antes de guardar o arquivo.', 'error');
+      pendingLibraryEditor = { pendingFileId: String(fileId) };
+      openSpaceModal('bookcase', space.id);
+      return;
+    }
     try {
       window.toast?.('Guardando cópia no seu Acervo...');
       const saved = await api('/api/library', {
@@ -489,11 +511,6 @@
   $('createLibrarySpaceBtn').addEventListener('click', () => openSpaceModal('space'));
   $('createLibraryBookcaseBtn').addEventListener('click', () => openSpaceModal('bookcase'));
   $('uploadLibraryBtn')?.addEventListener('click', () => {
-    if (!spaces.length) {
-      window.toast?.('Crie seu primeiro espaço para enviar arquivos.');
-      openSpaceModal('space');
-      return;
-    }
     $('uploadLibraryInput').click();
   });
   $('uploadLibraryInput')?.addEventListener('change', async () => {
@@ -503,21 +520,20 @@
     if (!picked.length) return;
     const spaceId = selectedSpaceId() || spaces[0]?.id || '';
     const space = spaces.find(entry => entry.id === spaceId) || spaces[0];
-    if (!space) { window.toast?.('Crie seu primeiro espaço para enviar arquivos.', 'error'); return; }
     const bookcaseId = (space.shelves && space.shelves[0] && space.shelves[0].id) || '';
-    const form = new FormData();
-    picked.slice(0, 5).forEach(file => form.append('files', file));
-    form.append('space_id', space.id);
-    if (bookcaseId) form.append('bookcase_id', bookcaseId);
-    try {
-      window.toast?.('Enviando ' + Math.min(picked.length, 5) + ' arquivo(s) ao Acervo...');
-      const res = await fetch('/api/library/upload', { method: 'POST', credentials: 'same-origin', body: form });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Não foi possível enviar.');
-      signature = '';
-      await loadLibrary(true);
-      window.toast?.('Arquivo(s) guardado(s) no seu Acervo.');
-    } catch (error) { window.toast?.(error.message, 'error'); }
+    if (!space) {
+      window.toast?.('Crie um espaço antes de enviar arquivos ao Acervo.', 'error');
+      pendingLibraryEditor = { pendingDirectFiles: picked.slice(0, 5) };
+      openSpaceModal('space');
+      return;
+    }
+    if (!bookcaseId) {
+      window.toast?.('Crie uma prateleira neste espaço antes de enviar arquivos.', 'error');
+      pendingLibraryEditor = { pendingDirectFiles: picked.slice(0, 5) };
+      openSpaceModal('bookcase', space.id);
+      return;
+    }
+    await uploadDirectFiles(picked, space, bookcaseId);
   });
   $('libraryCreateSpaceFromEditor').addEventListener('click', () => openSpaceModal('space'));
   $('libraryCreateBookcaseFromEditor').addEventListener('click', () => openSpaceModal('bookcase', $('libraryEditorSpace').value));
@@ -649,14 +665,14 @@
         if ($('libraryEditorModal').getAttribute('aria-hidden') === 'false') {
           renderEditorLocations();
           $('libraryEditorSpace').value = saved.id;
-          renderEditorBookcases(saved.shelves?.[0]?.id || '');
+          renderEditorBookcases('');
           renderEditorPicker('space');
         }
       }
       signature = '';
       render();
       await loadLibrary(true);
-      const continueEditor = !isEdit && !isBookcase ? pendingLibraryEditor : null;
+      const pending = !isEdit ? pendingLibraryEditor : null;
       pendingLibraryEditor = null;
       const modal = $('librarySpaceModal');
       modal.style.display = 'none';
@@ -664,14 +680,17 @@
       window.toast?.(isEdit
         ? (isBookcase ? 'Prateleira renomeada.' : 'Espaço renomeado.')
         : (isBookcase ? 'Prateleira criada.' : 'Espaço criado.'));
-      if (continueEditor) {
-        if (continueEditor.pendingFileId) {
-          const pending = continueEditor.pendingFileId;
-          pendingLibraryEditor = null;
-          window.saveRoomFileToLibrary?.(pending);
-        } else {
-          openEditor(continueEditor.itemId, continueEditor.fileName);
-        }
+      if (pending?.pendingDirectFiles) {
+        const createdSpace = spaces.find(entry => entry.id === modalSpaceId)
+          || (!isBookcase && !isEdit ? spaces.find(entry => entry.id === saved.id) : null)
+          || spaces.find(entry => entry.id === saved.space_id);
+        const createdBookcase = createdSpace?.shelves?.find(entry => entry.id === saved.id);
+        if (createdSpace && createdBookcase) await uploadDirectFiles(pending.pendingDirectFiles, createdSpace, createdBookcase.id);
+        else if (createdSpace) { pendingLibraryEditor = pending; openSpaceModal('bookcase', createdSpace.id); }
+      } else if (pending?.pendingFileId) {
+        window.saveRoomFileToLibrary?.(pending.pendingFileId);
+      } else if (pending?.itemId) {
+        openEditor(pending.itemId, pending.fileName);
       }
     } catch (error) { window.toast?.(error.message, 'error'); }
     finally { button.disabled = false; }

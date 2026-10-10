@@ -21,7 +21,7 @@
     pending: ['Aguardando envio', ''], in_progress: ['Envio parcial', 'is-progress'], sending: ['Enviando agora', 'is-sending'],
     submitted: ['Enviado', 'is-submitted'], revoked: ['Suspenso pelo organizador', 'is-revoked'], expired: ['Prazo não cumprido', 'is-expired']
   };
-  let roomsCache = [], friendsCache = [], friendsLoaded = false, friendsLoading = false, participantNames = [], collectionsCache = [], collectionsSignature = '', collectionsLoading = false, historyOpen = false, exclusiveBeforeMultiUse = false;
+  let roomsCache = [], librarySpacesCache = [], friendsCache = [], friendsLoaded = false, friendsLoading = false, participantNames = [], collectionsCache = [], collectionsSignature = '', collectionsLoading = false, historyOpen = false, exclusiveBeforeMultiUse = false;
 
   async function copyText(text, button) {
     try {
@@ -113,10 +113,47 @@
       if (!available.length) select.innerHTML = '<option value="">Entre em uma sala para criar uma coleta</option>';
     } catch (error) { select.innerHTML = '<option value="">Não foi possível carregar as salas</option>'; }
   }
+  function renderCollectionLibraryBookcases(preferred) {
+    const space = librarySpacesCache.find(item => item.id === $('collectionLibrarySpace').value);
+    const bookcases = space?.shelves || [];
+    const select = $('collectionLibraryBookcase');
+    select.innerHTML = bookcases.length
+      ? bookcases.map(bookcase => '<option value="' + esc(bookcase.id) + '">' + esc(bookcase.name === 'Geral' ? 'Principal' : bookcase.name) + '</option>').join('')
+      : '<option value="">Nenhuma prateleira disponível</option>';
+    if (bookcases.some(bookcase => bookcase.id === preferred)) select.value = preferred;
+    else if (bookcases.length) select.value = bookcases[0].id;
+  }
+  function renderCollectionDestination() {
+    const isLibrary = $('collectionDestination').value === 'library';
+    $('collectionRoomGroup').hidden = isLibrary;
+    $('collectionRoom').required = !isLibrary;
+    $('collectionLibraryGroup').hidden = !isLibrary;
+    $('collectionLibrarySpace').required = isLibrary;
+    $('collectionLibraryBookcase').required = isLibrary;
+  }
+  async function loadLibraryLocationsForSelect() {
+    try {
+      const result = await api('/api/library');
+      librarySpacesCache = result.spaces || [];
+      const select = $('collectionLibrarySpace');
+      const previous = select.value;
+      select.innerHTML = librarySpacesCache.length
+        ? librarySpacesCache.map(space => '<option value="' + esc(space.id) + '">' + esc(space.name) + '</option>').join('')
+        : '<option value="">Nenhum espaço criado — crie um no Meu Acervo</option>';
+      if (librarySpacesCache.some(space => space.id === previous)) select.value = previous;
+      else if (librarySpacesCache.length) select.value = librarySpacesCache[0].id;
+      renderCollectionLibraryBookcases();
+    } catch (error) {
+      librarySpacesCache = [];
+      $('collectionLibrarySpace').innerHTML = '<option value="">Crie um espaço no Meu Acervo</option>';
+      $('collectionLibraryBookcase').innerHTML = '<option value="">Crie uma prateleira no Meu Acervo</option>';
+    }
+  }
   function participantMarkup(recipient, collectionId, singleLink) {
     const status = statuses[recipient.status] || ['Aguardando envio', ''];
-    const canReissue = ['pending', 'in_progress', 'revoked'].includes(recipient.status);
-    const canSuspend = ['pending', 'in_progress'].includes(recipient.status);
+    const collection = collectionsCache.find(entry => entry.id === collectionId);
+    const canReissue = collection?.status === 'active' && ['pending', 'in_progress', 'revoked'].includes(recipient.status);
+    const canSuspend = collection?.status === 'active' && ['pending', 'in_progress'].includes(recipient.status);
     const label = recipient.participant_name || (singleLink ? 'Link único' : 'Participante');
     const closedAt = recipient.closed_at || recipient.submitted_at || recipient.revoked_at;
     return '<div class="collection-participant"><div><strong>' + esc(label) + '</strong><small>' + esc(status[0]) + (recipient.upload_count ? ' · ' + recipient.upload_count + (recipient.upload_count === 1 ? ' arquivo' : ' arquivos') : '') + (closedAt ? ' · ' + esc(dateLabel(closedAt)) : '') + '</small></div><div class="collection-participant-actions"><span class="collection-status ' + status[1] + '">' + esc(status[0]) + '</span>' +
@@ -141,15 +178,27 @@
       const allEnded = collection.recipients.length > 0 && collection.recipients.every(recipient => ['submitted', 'revoked', 'expired'].includes(recipient.status));
       const hasExpired = collection.recipients.some(recipient => recipient.status === 'expired');
       const hasSuspended = collection.recipients.some(recipient => recipient.status === 'revoked');
-      const statusText = allSubmitted ? 'Todos enviaram' : hasExpired && allEnded ? 'Encerrada · prazo não cumprido' : hasSuspended && allEnded ? 'Encerrada · link suspenso' : allEnded ? 'Encerrada' : 'Coleta aberta';
-      const statusClass = hasExpired ? 'is-expired' : allSubmitted ? 'is-submitted' : hasSuspended && allEnded ? 'is-revoked' : '';
+      const collectionSuspended = collection.status === 'suspended';
+      const collectionClosed = collection.status === 'closed';
+      const statusText = collectionClosed ? 'Encerrada pelo organizador' : collectionSuspended ? 'Suspensa pelo organizador' : allSubmitted ? 'Todos enviaram' : hasExpired && allEnded ? 'Encerrada · prazo não cumprido' : hasSuspended && allEnded ? 'Encerrada · link suspenso' : allEnded ? 'Encerrada' : 'Coleta aberta';
+      const statusClass = collectionClosed || collectionSuspended ? 'is-revoked' : hasExpired ? 'is-expired' : allSubmitted ? 'is-submitted' : hasSuspended && allEnded ? 'is-revoked' : '';
       const items = collection.items.map(item => esc(item.label) + (Number(item.quantity) > 1 ? ' × ' + Number(item.quantity) : '') + (Number(item.required) ? ' *' : ' (opcional)')).join(' · ');
       const mode = multiUse ? '<span class="collection-mode-badge"><i class="fas fa-users"></i> Link multiuso</span>' : collection.single_link ? '<span class="collection-mode-badge"><i class="fas fa-link"></i> Link único</span>' : '<span class="collection-mode-badge"><i class="fas fa-users"></i> Links individuais</span>';
       const accessMode = Number(collection.exclusive_access) ? '<span class="collection-mode-badge"><i class="fas fa-lock"></i> Uma pessoa por vez</span>' : '';
+      const destination = collection.destination_type === 'library'
+        ? '<i class="fas fa-bookmark"></i> Meu Acervo' + (collection.library_space_name ? ' · ' + esc(collection.library_space_name) + (collection.library_bookcase_name ? ' · ' + esc(collection.library_bookcase_name === 'Geral' ? 'Principal' : collection.library_bookcase_name) : '') : '')
+        : '<i class="fas fa-folder"></i> ' + esc(collection.room_name || 'Sala');
       const senderNames = [...new Set((multiUse ? submissions.map(submission => submission.sender_name) : completedRecipients.map(recipient => recipient.participant_name)).filter(Boolean))];
       const senderLabel = senderNames.slice(0, 3).join(', ') + (senderNames.length > 3 ? ' +' + (senderNames.length - 3) : '');
       const tray = completed ? '<div class="collection-download-tray"><div class="collection-download-senders"><strong>Enviado por</strong><span title="' + esc(senderNames.join(', ')) + '">' + esc(senderLabel) + '</span></div><button class="btn btn-sm btn-green" type="button" data-download="' + esc(collection.id) + '"><i class="fas fa-file-zipper"></i> Baixar tudo · ZIP</button></div>' : '';
-      return '<div class="collection-card-wrap"><article class="collection-card"><div class="collection-card-head"><div><h3>' + esc(collection.title) + '</h3><div class="collection-card-meta"><i class="fas fa-folder"></i> ' + esc(collection.room_name) + ' · prazo ' + esc(dateLabel(collection.expires_at)) + '</div>' + mode + accessMode + '</div><span class="collection-status ' + statusClass + '">' + esc(statusText) + '</span></div>' +
+      const lifecycleAvailable = collection.expires_at > new Date().toISOString().slice(0, 19).replace('T', ' ');
+      const lifecycleActions = lifecycleAvailable && collection.status === 'active'
+        ? '<button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="suspend" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-pause"></i> Suspender coleta</button><button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="close" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-stop"></i> Encerrar coleta</button>'
+        : lifecycleAvailable && collection.status === 'suspended'
+          ? '<button class="btn btn-sm btn-outline" type="button" data-collection-status="resume" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-play"></i> Reativar coleta</button><button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="close" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-stop"></i> Encerrar definitivamente</button>'
+          : '';
+      return '<div class="collection-card-wrap"><article class="collection-card"><div class="collection-card-head"><div><h3>' + esc(collection.title) + '</h3><div class="collection-card-meta">' + destination + ' · prazo ' + esc(dateLabel(collection.expires_at)) + '</div>' + mode + accessMode + '</div><span class="collection-status ' + statusClass + '">' + esc(statusText) + '</span></div>' +
+        (lifecycleActions ? '<div class="collection-card-actions">' + lifecycleActions + '</div>' : '') +
         (collection.instructions ? '<p class="collection-card-meta collection-instructions">' + esc(collection.instructions) + '</p>' : '') +
         '<p class="collection-card-meta">' + (multiUse ? completed + (completed === 1 ? ' envio recebido' : ' envios recebidos') + ' · link ativo até o prazo' : completed + ' de ' + collection.recipients.length + ' concluíram') + ' · ' + esc(items) + '</p>' +
         '<div class="collection-participant-list">' + collection.recipients.map(recipient => participantMarkup(multiUse ? { ...recipient, participant_name: 'Link multiuso' } : recipient, collection.id, collection.single_link)).join('') + '</div></article>' + tray + '</div>';
@@ -179,8 +228,8 @@
   }
   function setTab(active) {
     const panels = { rooms: 'roomsPanel', collections: 'collectionsPanel', library: 'libraryPanel' };
-    const tabs = { rooms: 'roomsTab', collections: 'collectionsTab', library: 'libraryTab' };
-    const titles = { rooms: 'Salas', collections: 'Coletas', library: 'Meu Acervo' };
+    const tabs    = { rooms: 'roomsTab',  collections: 'collectionsTab',  library: 'libraryTab'  };
+    const titles  = { rooms: 'Salas',      collections: 'Coletas',           library: 'Meu Acervo'   };
     Object.entries(panels).forEach(([key, panelId]) => {
       const selected = key === active;
       $(panelId).hidden = !selected;
@@ -192,13 +241,147 @@
     if (titles[active]) document.title = 'FileShare - ' + titles[active];
     if (active === 'collections') { loadRoomsForSelect(); loadCollections(); }
     if (active === 'library') window.loadLibrary?.();
+    updateLiquidIndicator(active);
   }
+
+  /* ── LIQUID TAB INDICATOR ─
+     O indicador é esticado, comprimido e deformado durante o deslocamento,
+     reproduzindo o efeito "melt/liquid" em vez de apenas deslizar. */
+  let liquidIndicator = null;
+  let liquidAnimation = null;
+  let liquidState = null;
+  let liquidActive = null;
+
+  function liquidReducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function setLiquidState(state) {
+    liquidIndicator.style.left = state.left + 'px';
+    liquidIndicator.style.top = state.top + 'px';
+    liquidIndicator.style.width = state.width + 'px';
+    liquidIndicator.style.height = state.height + 'px';
+  }
+
+  function updateLiquidIndicator(active, options = {}) {
+    const id = active === 'rooms' ? 'roomsTab' : active === 'collections' ? 'collectionsTab' : 'libraryTab';
+    const tabsHost = document.querySelector('.dashboard-tabs');
+    const activeBtn = $(id);
+    if (!tabsHost || !activeBtn) return;
+    liquidIndicator = liquidIndicator || tabsHost.querySelector('.dashboard-tabs-liquid');
+    if (!liquidIndicator) {
+      liquidIndicator = document.createElement('span');
+      liquidIndicator.className = 'dashboard-tabs-liquid';
+      liquidIndicator.setAttribute('aria-hidden', 'true');
+      tabsHost.prepend(liquidIndicator);
+    }
+
+    const hostRect = tabsHost.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+    const target = {
+      left: btnRect.left - hostRect.left,
+      top: btnRect.top - hostRect.top,
+      width: btnRect.width,
+      height: btnRect.height
+    };
+    const shouldAnimate = options.animate !== false && !liquidReducedMotion() && liquidState && liquidActive !== active;
+
+    if (liquidAnimation) {
+      const currentRect = liquidIndicator.getBoundingClientRect();
+      liquidAnimation.cancel();
+      liquidAnimation = null;
+      liquidIndicator.classList.remove('is-morphing');
+      liquidState = {
+        left: currentRect.left - hostRect.left,
+        top: currentRect.top - hostRect.top,
+        width: currentRect.width,
+        height: currentRect.height
+      };
+      setLiquidState(liquidState);
+    }
+
+    if (!shouldAnimate) {
+      setLiquidState(target);
+      liquidIndicator.style.opacity = '1';
+      liquidIndicator.style.transform = '';
+      liquidIndicator.style.filter = '';
+      liquidIndicator.style.borderRadius = Math.min(target.height / 2, 9) + 'px';
+      liquidState = target;
+      liquidActive = active;
+      return;
+    }
+
+    const from = liquidState;
+    const fromCenter = from.left + from.width / 2;
+    const targetCenter = target.left + target.width / 2;
+    const midWidth = Math.max(from.width, target.width);
+    const midHeight = Math.max(1, Math.min(from.height, target.height) * .86);
+    const distance = Math.abs(targetCenter - fromCenter);
+    const stretch = Math.min(1.72, Math.max(1.18, 1 + distance / Math.max(midWidth, 1) * .42));
+    const mid = {
+      left: (fromCenter + targetCenter) / 2 - midWidth / 2,
+      top: (from.top + target.top) / 2 + (Math.max(from.height, target.height) - midHeight) / 2,
+      width: midWidth,
+      height: midHeight
+    };
+    const targetRadius = Math.min(target.height / 2, 9) + 'px';
+
+    setLiquidState(from);
+    liquidIndicator.style.opacity = '1';
+    liquidIndicator.classList.remove('is-morphing');
+    void liquidIndicator.offsetWidth;
+    liquidIndicator.classList.add('is-morphing');
+    liquidAnimation = liquidIndicator.animate([
+      {
+        left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px',
+        borderRadius: targetRadius, transform: 'scale(1)', filter: 'blur(0)'
+      },
+      {
+        left: mid.left + 'px', top: mid.top + 'px', width: mid.width + 'px', height: mid.height + 'px',
+        borderRadius: '52% 48% 48% 52%', transform: 'scaleX(' + stretch + ') scaleY(.72)', filter: 'blur(.25px)',
+        offset: .46
+      },
+      {
+        left: target.left + 'px', top: target.top + 'px', width: target.width + 'px', height: target.height + 'px',
+        borderRadius: targetRadius, transform: 'scale(1)', filter: 'blur(0)'
+      }
+    ], { duration: 460, easing: 'cubic-bezier(.22,.9,.28,1)', fill: 'forwards' });
+    liquidAnimation.onfinish = () => {
+      setLiquidState(target);
+      liquidIndicator.style.opacity = '1';
+      liquidIndicator.style.transform = '';
+      liquidIndicator.style.filter = '';
+      liquidIndicator.style.borderRadius = targetRadius;
+      liquidIndicator.classList.remove('is-morphing');
+      liquidAnimation = null;
+    };
+    liquidState = target;
+    liquidActive = active;
+  }
+
   $('roomsTab').addEventListener('click', () => setTab('rooms'));
   $('collectionsTab').addEventListener('click', () => setTab('collections'));
   $('libraryTab').addEventListener('click', () => setTab('library'));
   $('refreshCollectionsBtn').addEventListener('click', loadCollections);
+  $('collectionDestination').addEventListener('change', () => { renderCollectionDestination(); if ($('collectionDestination').value === 'library') loadLibraryLocationsForSelect(); });
+  $('collectionLibrarySpace').addEventListener('change', () => renderCollectionLibraryBookcases());
   setInterval(() => { if (!document.hidden && !$('collectionsPanel').hidden) loadCollections(true); }, 2000);
   setInterval(() => { if (!document.hidden && !$('libraryPanel').hidden) window.loadLibrary?.(true); }, 2000);
+
+  // Inicializa o indicador líquido na aba ativa já no carregamento e
+  // reposiciona sem animar ao redimensionar a janela.
+  (function initLiquid() {
+    const active = document.querySelector('.dashboard-tab.is-active');
+    if (!active) return;
+    const key = active.id === 'roomsTab' ? 'rooms' : active.id === 'collectionsTab' ? 'collections' : 'library';
+    updateLiquidIndicator(key, { animate: false });
+  })();
+  window.addEventListener('resize', () => {
+    const active = document.querySelector('.dashboard-tab.is-active');
+    if (!active) return;
+    const key = active.id === 'roomsTab' ? 'rooms' : active.id === 'collectionsTab' ? 'collections' : 'library';
+    updateLiquidIndicator(key, { animate: false });
+  });
 
   $('addCollectionItem').addEventListener('click', () => {
     const host = $('collectionItems');
@@ -257,17 +440,25 @@
     if (items.reduce((total, item) => total + item.quantity, 0) > 200) { toast('A soma das quantidades não pode passar de 200 arquivos por pessoa.', 'error'); return; }
     const deadline = new Date($('collectionDeadline').value);
     if (!Number.isFinite(deadline.getTime())) { toast('Escolha um prazo para a coleta.', 'error'); return; }
+    const destinationType = $('collectionDestination').value;
+    if (destinationType === 'library' && (!$('collectionLibrarySpace').value || !$('collectionLibraryBookcase').value)) {
+      toast('Escolha o espaço e a prateleira do Acervo.', 'error'); return;
+    }
     const submit = event.submitter || $('collectionForm').querySelector('[type=submit]');
     submit.disabled = true;
     try {
       const created = await api('/api/coletas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        title: $('collectionTitle').value.trim(), room_id: $('collectionRoom').value,
+        title: $('collectionTitle').value.trim(), destination_type: destinationType, room_id: destinationType === 'room' ? $('collectionRoom').value : null,
+        library_space_id: destinationType === 'library' ? $('collectionLibrarySpace').value : null,
+        library_bookcase_id: destinationType === 'library' ? $('collectionLibraryBookcase').value : null,
         instructions: $('collectionInstructions').value.trim(), expires_at: deadline.toISOString(), items,
         participants: multiUseLink || singleLink ? [] : participantNames, single_link: singleLink, multi_use_link: multiUseLink,
         exclusive_access: multiUseLink || $('collectionExclusiveAccess').checked
       }) });
       showCreatedLinks(created, created.recipients);
       $('collectionForm').reset(); $('collectionExclusiveAccess').disabled = false; exclusiveBeforeMultiUse = false; participantNames = []; renderParticipants(); $('collectionParticipantsGroup').hidden = false;
+      renderCollectionDestination();
+      renderCollectionLibraryBookcases();
       updateCollectionSubmitLabel();
       $('collectionItems').innerHTML = '<div class="collection-item-input"><input type="text" maxlength="120" placeholder="Ex.: Foto" required><label class="collection-quantity-label">Qtd.<input type="number" min="1" max="200" value="1" inputmode="numeric" aria-label="Quantidade solicitada"></label><label class="collection-required-label"><input type="checkbox" checked> Obrigatório</label><button class="btn btn-sm btn-outline collection-remove-item" type="button" title="Remover item" aria-label="Remover item"><i class="fas fa-xmark"></i></button></div>';
       $('collectionFriendPicker').hidden = true; $('collectionFriendsBtn').setAttribute('aria-expanded', 'false'); await loadCollections(); toast('Coleta criada e links gerados.');
@@ -312,9 +503,29 @@
       finally { revoke.disabled = false; }
       return;
     }
+    const lifecycle = event.target.closest('[data-collection-status]');
+    if (lifecycle) {
+      const action = lifecycle.dataset.collectionStatus;
+      const messages = {
+        suspend: 'Suspender a coleta bloqueará os dois tipos de link e removerá apenas os arquivos enviados parcialmente. Reativar depois será possível até o prazo. Continuar?',
+        resume: 'Reativar a coleta liberará novamente os links que ainda não foram concluídos. Continuar?',
+        close: 'Encerrar a coleta bloqueará definitivamente os dois tipos de link e removerá apenas os arquivos enviados parcialmente. Continuar?'
+      };
+      if (!confirm(messages[action] || 'Alterar o estado desta coleta?')) return;
+      lifecycle.disabled = true;
+      try {
+        await api('/api/coletas/' + encodeURIComponent(lifecycle.dataset.collectionId) + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+        toast(action === 'suspend' ? 'Coleta suspensa.' : action === 'resume' ? 'Coleta reativada.' : 'Coleta encerrada.');
+        await loadCollections();
+      } catch (error) { toast(error.message, 'error'); }
+      finally { if (lifecycle.isConnected) lifecycle.disabled = false; }
+      return;
+    }
     const download = event.target.closest('[data-download]');
     if (download) window.location.href = '/api/coletas/' + encodeURIComponent(download.dataset.download) + '/zip';
   });
   renderParticipants();
+  renderCollectionDestination();
   loadRoomsForSelect();
+  loadLibraryLocationsForSelect();
 })();

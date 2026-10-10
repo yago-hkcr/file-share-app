@@ -1,0 +1,228 @@
+/* ============================================================
+   CORREÇÃO DE ROLAGEM NO CELULAR  (carregado por último)
+   - overflow-x: clip no root (hidden mata o momentum scroll)
+   - scrollers com touch-action: pan-y + overscroll contain
+   - cadeia flex do modal da sala com min-height: 0 correto
+   ============================================================ */
+
+/* 1) RAIZ — BUG: html{overflow-x:clip} quebra a rolagem do documento no
+   Chrome (wheel/swipe deixam de rolar o documento inteiro — scrollY fica 0,
+   nem body nem documentElement rolam; só scroll programático funcionava).
+   Reproduzido e isolado: removendo APENAS o clip do html, tudo volta a
+   rolar; restaurando, trava de novo. O clip horizontal agora é só no body
+   (inofensivo, testado junto com o resto). */
+html {
+  overflow-x: visible !important;
+  overflow-y: visible;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  overflow-x: clip !important;
+  overflow-y: auto !important;
+  max-width: 100%;
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+}
+/* body.auth-page tinha overflow:hidden que travava TODO o scroll. */
+body.auth-page { overflow-y: auto !important; }
+/* O tour de onboarding (fs-tour-overlay) é position:fixed inset:0 e, quando
+   NÃO está ativo (.show), ainda assim fica full-screen. E body.fs-tour-open
+   colocava overflow:hidden no body — isso travava a rolagem da página.
+   Correção: overlay só captura eventos quando .show; body nunca trava scroll. */
+.fs-tour-overlay:not(.show) { display: none !important; }
+body.fs-tour-open { overflow-y: auto !important; overflow-x: clip !important; }
+.fs-tour-overlay.show { -webkit-overflow-scrolling: touch; }
+/* canvas/chuva cyber cobrem a tela em fixed — nunca devem capturar o scroll/toque. */
+canvas#fxCanvas, canvas#cyberRain, .cy-scan, .cy-grid, .cy-bubble, .cy-dot,
+.cy-trail, .cy-ripple, .intro-atmosphere, .intro-atmosphere > * {
+  pointer-events: none !important;
+}
+
+/* 2) Todo scroller vertical do app ganha rolagem nativa suave no toque. */
+.chat-list,
+.file-list,
+.direct-message-list,
+.modal-body,
+.admin-select-list,
+.library-grid,
+.collections-list,
+.room-submission-files,
+.room-files,
+#roomFiles,
+.dashboard-content,
+.tab-content {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+/* 3) Página inteira rola com gesto nativo. */
+body.app-page,
+body.sala-page,
+body.auth-page {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ============================================================
+   MODAL DA SALA (chat + arquivos) — cadeia flex corrigida
+   Estrutura real: .modal-body > (form, section-title, #roomFiles,
+   section-title, #typingIndicator, .chat-box > (#chatList, #messageForm))
+   O .modal-body é o ÚNICO scroller: tudo rola dentro dele.
+   ============================================================ */
+@media (max-width: 640px) {
+  #roomModal { padding: 0; align-items: flex-end !important; overflow: hidden; }
+  #roomModal .modal-content {
+    display: flex !important;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    padding-bottom: 0;
+  }
+  #roomModal .modal-header { flex: 0 0 auto !important; position: static !important; }
+  /* O corpo inteiro ROLA. É aqui que estava o bug: overflow:hidden prendia tudo. */
+  #roomModal .modal-body {
+    display: block !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    padding: 0 12px 0 12px;
+  }
+  /* Lista de arquivos: só limita a altura se passar de ~40% da tela. */
+  #roomModal #roomFiles {
+    max-height: 40dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  /* Chat: NÃO força altura — deixa o modal-body rolar naturalmente. */
+  #roomModal .chat-box {
+    display: block !important;
+    height: auto !important;
+    min-height: 0;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  #roomModal .chat-list {
+    height: auto !important;
+    min-height: 180px !important;
+    max-height: none !important;
+    max-height: 50dvh !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding: 12px 4px;
+  }
+  /* Compositor sempre alcançável ao rolar. */
+  #roomModal #messageForm.chat-compose {
+    display: flex !important;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom, 0px));
+    margin: 0;
+    position: relative;
+    z-index: 5;
+  }
+  #roomModal #messageInput {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    height: 48px;
+    font-size: 16px !important;
+    touch-action: auto;
+  }
+  #roomModal #ocrButton { flex: 0 0 44px; width: 44px; }
+  #roomModal #chatSendBtn { flex: 0 0 48px; width: 48px; }
+}
+
+@media (max-width: 380px) {
+  #roomModal #messageForm.chat-compose {
+    grid-template-columns: minmax(0, 1fr) 42px 46px !important;
+    gap: 6px;
+  }
+}
+
+/* Landscape baixo: aproveita melhor a tela */
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 640px) {
+  #roomModal .modal-content {
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    max-height: 100dvh !important;
+  }
+  #roomModal #roomFiles { max-height: 18dvh; }
+}
+
+/* ============================================================
+   ABAS DA SIDEBAR (Salas / Coletas / Meu Acervo)
+   BUG: o texto quebrava uma LETRA por linha porque
+   .dashboard-tab-copy colapsava (min-width) e o adaptive.css
+   força overflow-wrap:anywhere em <span>/<strong>/<small>.
+   Correção: dar largura real ao copy e quebrar só por palavra.
+   ============================================================ */
+@media (max-width: 760px) {
+  /* O container das abas PRECISA ser coluna única (senão as 3 abas
+     ficam lado a lado estreitas e o texto quebra letra por letra). */
+  .dashboard-sidebar .dashboard-tabs {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-auto-flow: row !important;
+    gap: 8px;
+    width: 100%;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+  .dashboard-sidebar .dashboard-tab {
+    display: flex !important;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 62px;
+  }
+  .dashboard-sidebar .dashboard-tab > i {
+    flex: 0 0 36px !important;
+    width: 36px;
+    height: 36px;
+  }
+  .dashboard-sidebar .dashboard-tab .dashboard-tab-copy,
+  .dashboard-tab-copy {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    width: auto;
+    max-width: 100%;
+    overflow: visible;
+  }
+  /* texto NUNCA quebra por caractere — só por palavra */
+  .dashboard-tab-copy strong,
+  .dashboard-tab-copy small {
+    display: block;
+    width: 100%;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+    overflow-wrap: break-word !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+  }
+  .dashboard-tab-copy strong { font-size: 13px; }
+  .dashboard-tab-copy small { font-size: 10px; }
+}
+
