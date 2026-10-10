@@ -5,9 +5,14 @@
    - cadeia flex do modal da sala com min-height: 0 correto
    ============================================================ */
 
-/* 1) Raiz: "clip" não cria scroll-container e preserva a rolagem vertical nativa. */
+/* 1) RAIZ — BUG: html{overflow-x:clip} quebra a rolagem do documento no
+   Chrome (wheel/swipe deixam de rolar o documento inteiro — scrollY fica 0,
+   nem body nem documentElement rolam; só scroll programático funcionava).
+   Reproduzido e isolado: removendo APENAS o clip do html, tudo volta a
+   rolar; restaurando, trava de novo. O clip horizontal agora é só no body
+   (inofensivo, testado junto com o resto). */
 html {
-  overflow-x: clip !important;
+  overflow-x: visible !important;
   overflow-y: visible;
   -webkit-text-size-adjust: 100%;
 }
