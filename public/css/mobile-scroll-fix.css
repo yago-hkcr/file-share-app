@@ -1,0 +1,157 @@
+/* ============================================================
+   CORREÇÃO DE ROLAGEM NO CELULAR  (carregado por último)
+   - overflow-x: clip no root (hidden mata o momentum scroll)
+   - scrollers com touch-action: pan-y + overscroll contain
+   - cadeia flex do modal da sala com min-height: 0 correto
+   ============================================================ */
+
+/* 1) Raiz: "clip" não cria scroll-container e preserva a rolagem vertical nativa. */
+html {
+  overflow-x: clip !important;
+  overflow-y: visible;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  overflow-x: clip !important;
+  overflow-y: visible;
+  max-width: 100%;
+  overscroll-behavior-y: none;
+}
+
+/* 2) Todo scroller vertical do app ganha rolagem nativa suave no toque. */
+.chat-list,
+.file-list,
+.direct-message-list,
+.modal-body,
+.admin-select-list,
+.library-grid,
+.collections-list,
+.room-submission-files,
+.room-files,
+#roomFiles,
+.dashboard-content,
+.tab-content {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+/* 3) Página inteira rola com gesto nativo. */
+body.app-page,
+body.sala-page,
+body.auth-page {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ============================================================
+   MODAL DA SALA (chat + arquivos) — cadeia flex corrigida
+   ============================================================ */
+@media (max-width: 640px) {
+  #roomModal {
+    padding: 0;
+    align-items: flex-end !important;
+    overflow: hidden;
+  }
+  #roomModal .modal-content {
+    display: flex !important;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    height: min(94dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
+    max-height: min(94dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
+    overflow: hidden !important;
+    padding-bottom: 0;
+  }
+  #roomModal .modal-header {
+    flex: 0 0 auto !important;
+    position: static !important;
+  }
+  /* corpo do modal: só o cabeçalho e o compositor ficam fixos */
+  #roomModal .modal-body {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-direction: column;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    padding: 0 12px 0 12px;
+  }
+  /* lista de arquivos: rola sozinha, altura limitada */
+  #roomModal #roomFiles {
+    flex: 0 1 auto !important;
+    min-height: 0;
+    max-height: min(30dvh, 240px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  /* caixa do chat ocupa o resto e rola internamente */
+  #roomModal .chat-box {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+    height: auto !important;
+    overflow: hidden !important;
+  }
+  /* A LISTA: aqui estava o bug — height:0 !important travava a rolagem */
+  #roomModal .chat-list {
+    flex: 1 1 auto !important;
+    width: 100%;
+    min-width: 0;
+    min-height: 120px !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding: 12px 4px;
+  }
+  /* compositor sempre visível, nunca coberto pela rolagem */
+  #roomModal #messageForm.chat-compose {
+    flex: 0 0 auto !important;
+    position: relative;
+    z-index: 20;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 44px 48px !important;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 4px max(8px, env(safe-area-inset-bottom, 0px));
+    margin: 0;
+  }
+  #roomModal #messageInput {
+    grid-column: 1;
+    width: 100%;
+    height: 48px;
+    font-size: 16px !important;
+    touch-action: auto;
+  }
+  #roomModal #ocrButton { grid-column: 2; }
+  #roomModal #chatSendBtn { grid-column: 3; }
+}
+
+@media (max-width: 380px) {
+  #roomModal #messageForm.chat-compose {
+    grid-template-columns: minmax(0, 1fr) 42px 46px !important;
+    gap: 6px;
+  }
+}
+
+/* Landscape baixo: aproveita melhor a tela */
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 640px) {
+  #roomModal .modal-content {
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    max-height: 100dvh !important;
+  }
+  #roomModal #roomFiles { max-height: 18dvh; }
+}

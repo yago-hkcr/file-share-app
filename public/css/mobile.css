@@ -324,19 +324,22 @@
   }
   #roomModal .chat-box {
     display: flex;
-    flex: 1 1 0;
+    flex: 1 1 auto;
     flex-direction: column;
-    height: 0;
+    height: auto;
+    min-height: 0;
     overflow: hidden;
   }
   #roomModal .chat-list {
-    flex: 1 1 0;
-    height: 0 !important;
-    max-height: none !important;
+    flex: 1 1 auto;
+    min-height: 120px;
+    height: auto;
+    max-height: none;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
   #roomModal #messageForm.chat-compose {
     flex: 0 0 auto;
