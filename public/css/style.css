@@ -1446,7 +1446,8 @@ html[data-theme="dark"] .kind-badge { color: #ddd0ff; }
 .room-head-btns { display: flex; align-items: center; gap: 8px; flex: none; }
 .chat-list { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
 .file-list { max-height: none; }
-html, body { overflow-x: clip; }
+/* html com overflow-x:clip quebrava a rolagem do documento no Chrome (wheel/swipe travados). Clip só no body. */
+body { overflow-x: clip; }
 body.app-page, body.sala-page { overflow-y: auto; touch-action: pan-y; }
 @media (max-width: 600px) { .modal-content { max-height: 94dvh; } .modal-body { max-height: none !important; } }
 
