@@ -13,9 +13,24 @@ html {
 }
 body {
   overflow-x: clip !important;
-  overflow-y: visible;
+  overflow-y: auto !important;
   max-width: 100%;
+  min-height: 100dvh;
   overscroll-behavior-y: none;
+}
+/* body.auth-page tinha overflow:hidden que travava TODO o scroll. */
+body.auth-page { overflow-y: auto !important; }
+/* O tour de onboarding (fs-tour-overlay) é position:fixed inset:0 e, quando
+   NÃO está ativo (.show), ainda assim fica full-screen. E body.fs-tour-open
+   colocava overflow:hidden no body — isso travava a rolagem da página.
+   Correção: overlay só captura eventos quando .show; body nunca trava scroll. */
+.fs-tour-overlay:not(.show) { display: none !important; }
+body.fs-tour-open { overflow-y: auto !important; overflow-x: clip !important; }
+.fs-tour-overlay.show { -webkit-overflow-scrolling: touch; }
+/* canvas/chuva cyber cobrem a tela em fixed — nunca devem capturar o scroll/toque. */
+canvas#fxCanvas, canvas#cyberRain, .cy-scan, .cy-grid, .cy-bubble, .cy-dot,
+.cy-trail, .cy-ripple, .intro-atmosphere, .intro-atmosphere > * {
+  pointer-events: none !important;
 }
 
 /* 2) Todo scroller vertical do app ganha rolagem nativa suave no toque. */
