@@ -473,6 +473,9 @@ async function createTables() {
   await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS room_name TEXT');
   await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS uploader_name TEXT');
   await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS snapshot_ready INTEGER DEFAULT 0');
+  // Uploads diretos do Acervo não apontam para uma sala; por isso o vínculo
+  // opcional com files precisa funcionar também em bancos criados antes desse fluxo.
+  await q('ALTER TABLE personal_library_items ALTER COLUMN file_id DROP NOT NULL');
   await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_library_shelves_user_name ON personal_library_shelves (user_id, LOWER(name))');
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_shelves_user_created ON personal_library_shelves (user_id, created_at)');
   await q('ALTER TABLE personal_library_items ADD COLUMN IF NOT EXISTS space_id TEXT');

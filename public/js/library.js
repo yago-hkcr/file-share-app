@@ -489,11 +489,6 @@
   $('createLibrarySpaceBtn').addEventListener('click', () => openSpaceModal('space'));
   $('createLibraryBookcaseBtn').addEventListener('click', () => openSpaceModal('bookcase'));
   $('uploadLibraryBtn')?.addEventListener('click', () => {
-    if (!spaces.length) {
-      window.toast?.('Crie seu primeiro espaço para enviar arquivos.');
-      openSpaceModal('space');
-      return;
-    }
     $('uploadLibraryInput').click();
   });
   $('uploadLibraryInput')?.addEventListener('change', async () => {
@@ -503,12 +498,16 @@
     if (!picked.length) return;
     const spaceId = selectedSpaceId() || spaces[0]?.id || '';
     const space = spaces.find(entry => entry.id === spaceId) || spaces[0];
-    if (!space) { window.toast?.('Crie seu primeiro espaço para enviar arquivos.', 'error'); return; }
     const bookcaseId = (space.shelves && space.shelves[0] && space.shelves[0].id) || '';
     const form = new FormData();
     picked.slice(0, 5).forEach(file => form.append('files', file));
-    form.append('space_id', space.id);
-    if (bookcaseId) form.append('bookcase_id', bookcaseId);
+    // Sem espaços, o servidor cria automaticamente "Guardados" e a pessoa
+    // pode organizar o arquivo depois. Isso mantém o botão funcional no
+    // primeiro uso, inclusive no celular.
+    if (space) {
+      form.append('space_id', space.id);
+      if (bookcaseId) form.append('bookcase_id', bookcaseId);
+    }
     try {
       window.toast?.('Enviando ' + Math.min(picked.length, 5) + ' arquivo(s) ao Acervo...');
       const res = await fetch('/api/library/upload', { method: 'POST', credentials: 'same-origin', body: form });
