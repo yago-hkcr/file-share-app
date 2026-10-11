@@ -266,6 +266,10 @@ async function resolvePersonalLibraryLocation(userId, body = {}) {
 // ---------------------------------------------------------------------------
 const LIBRARY_BLOB_PREFIX = 'library/';
 const isLibraryBlobPath = name => typeof name === 'string' && name.startsWith(LIBRARY_BLOB_PREFIX);
+// Acima deste tamanho, download/preview é redirecionado direto ao Blob (a CDN entrega o
+// arquivo), em vez de passar por dentro da função serverless. É o que permite baixar
+// arquivos de até 50 GB sem estourar o maxDuration da função.
+const BLOB_REDIRECT_MIN_BYTES = 100 * 1024 * 1024;
 
 // Le os bytes de um arquivo de sala (Blob privado ou Postgres) para copiar ao Acervo.
 async function readRoomFileBytes(file) {
@@ -324,6 +328,25 @@ async function copyCollectionUploadToLibrary(upload, libraryItemId) {
   return writeLibraryBlob(libraryItemId, Buffer.from(row.data, 'base64'), upload.mime_type);
 }
 
+// Copia um arquivo de sala para o Acervo sem carregar os bytes em memória quando ambos
+// estiverem no Blob (copy server-side). Assim arquivos de até 50 GB não estouram a função.
+async function copyRoomFileToLibrary(file, libraryItemId) {
+  const storedName = `${LIBRARY_BLOB_PREFIX}${libraryItemId}`;
+  if (isBlobPath(file.stored_name) && blobEnabled()) {
+    const { copy } = await blobSdk();
+    await copy(file.stored_name, storedName, {
+      access: 'private',
+      contentType: file.mime_type || 'application/octet-stream',
+      addRandomSuffix: false,
+      allowOverwrite: true
+    });
+    return storedName;
+  }
+  const bytes = await readRoomFileBytes(file);
+  if (!bytes) return null;
+  return writeLibraryBlob(libraryItemId, bytes);
+}
+
 async function deleteLibraryBlobs(items) {
   const blobPaths = items.map(i => i.stored_name).filter(isLibraryBlobPath);
   if (blobPaths.length) await deleteBlobs(blobPaths);
@@ -336,9 +359,8 @@ async function backfillLibrarySnapshot(item) {
   if (!item || item.snapshot_ready) return item;
   const file = await one('SELECT id, original_name, size, mime_type, stored_name FROM files WHERE id = $1', [item.file_id]);
   if (!file) return item; // sala ja excluida e sem copia: mantem metadados, sem download
-  const bytes = await readRoomFileBytes(file);
-  if (!bytes) return item;
-  const storedName = await writeLibraryBlob(item.id, bytes);
+  const storedName = await copyRoomFileToLibrary(file, item.id);
+  if (!storedName) return item;
   await q(`UPDATE personal_library_items
     SET original_name = $1, size = $2, mime_type = $3, stored_name = $4, room_name = COALESCE(NULLIF(room_name, ''), $5),
       uploader_name = COALESCE(NULLIF(uploader_name, ''), $6), snapshot_ready = 1, updated_at = $7
@@ -1675,10 +1697,10 @@ app.post('/api/library', asMember, wrap(async (req, res) => {
       [itemId, req.user.id, file.id, location.bookcase.name, location.space.id, location.bookcase.id, note, favorite,
         file.original_name, file.size, file.mime_type, '', file.room_name || '', file.uploader_name || '', now]);
   }
-  // Copia os bytes agora: vira snapshot independente da sala.
-  const bytes = await readRoomFileBytes(file);
-  if (!bytes) return res.status(404).json({ error: 'O arquivo original não está mais disponível.' });
-  const storedName = await writeLibraryBlob(itemId, bytes);
+  // Copia agora (copy server-side no Blob, sem carregar em memória): vira snapshot
+  // independente da sala e aguenta arquivos de até 50 GB.
+  const storedName = await copyRoomFileToLibrary(file, itemId);
+  if (!storedName) return res.status(404).json({ error: 'O arquivo original não está mais disponível.' });
   const saved = await one(`UPDATE personal_library_items SET shelf = $1, space_id = $2, bookcase_id = $3, note = $4,
       is_favorite = $5, original_name = $6, size = $7, mime_type = $8, stored_name = $9,
       room_name = COALESCE(NULLIF(room_name, ''), $10), uploader_name = COALESCE(NULLIF(uploader_name, ''), $11),
@@ -1766,6 +1788,12 @@ app.get('/download/library/:itemId', requireAuth, wrap(async (req, res) => {
   if (!item) return res.status(404).send('Arquivo não encontrado no seu Acervo');
   try { item = await backfillLibrarySnapshot(item); } catch (e) { console.error('snapshot do Acervo:', e && e.message); }
   if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+  // Arquivos grandes: redireciona direto ao Blob (a CDN entrega) para não estourar a função.
+  if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
+    const { get } = await blobSdk();
+    const result = await get(item.stored_name, { access: 'private' });
+    if (result && result.url) return res.redirect(302, result.downloadUrl || result.url);
+  }
   const bytes = await readLibraryBlob(item);
   if (!bytes) return res.status(404).send('A cópia deste arquivo não está mais disponível');
   const ascii = String(item.original_name || 'arquivo').replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
@@ -1780,6 +1808,12 @@ app.get('/preview/library/:itemId', requireAuth, wrap(async (req, res) => {
   if (!item) return res.status(404).send('Arquivo não encontrado no seu Acervo');
   try { item = await backfillLibrarySnapshot(item); } catch (e) { console.error('snapshot do Acervo:', e && e.message); }
   if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+  // Grandes arquivos (ex.: vídeo): redireciona ao Blob para o CDN entregar com suporte a Range.
+  if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
+    const { get } = await blobSdk();
+    const result = await get(item.stored_name, { access: 'private' });
+    if (result && result.url) return res.redirect(302, result.url);
+  }
   const bytes = await readLibraryBlob(item);
   if (!bytes) return res.status(404).send('A cópia deste arquivo não está mais disponível');
   const declaredMime = String(item.mime_type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
@@ -2766,7 +2800,7 @@ app.patch('/api/files/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 app.get('/download/:fileId', asMember, wrap(async (req, res) => {
-  const file = await one('SELECT id, room_id, original_name, mime_type, stored_name FROM files WHERE id = $1', [req.params.fileId]);
+  const file = await one('SELECT id, room_id, original_name, mime_type, stored_name, size FROM files WHERE id = $1', [req.params.fileId]);
   if (!file) return res.status(404).send('Arquivo não encontrado');
   if (!(await canUseRoom(req.user, file.room_id))) return res.status(403).send('Sem permissão para baixar este arquivo');
   const ascii = file.original_name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
@@ -2778,7 +2812,11 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
   if (isBlobPath(file.stored_name)) {
     const { get } = await blobSdk();
     const result = await get(file.stored_name, { access: 'private' });
-    if (!result || !result.stream) return res.status(404).send('Arquivo não encontrado');
+    if (!result || !result.url) return res.status(404).send('Arquivo não encontrado');
+    // Arquivos grandes: redireciona direto ao Blob (a CDN entrega, sem passar pela função).
+    // É isto que permite baixar arquivos de até 50 GB sem estourar o tempo da função.
+    if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) return res.redirect(302, result.downloadUrl || result.url);
+    if (!result.stream) return res.status(404).send('Arquivo não encontrado');
     headers();
     const stream = Readable.fromWeb(result.stream);
     stream.on('error', err => { console.error('Erro no download:', err && err.message); res.destroy(err); });
@@ -2794,7 +2832,7 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
 
 // Visualização inline de arquivo (mesmas permissões do download).
 app.get('/preview/:fileId', asMember, wrap(async (req, res) => {
-  const file = await one('SELECT id, room_id, original_name, mime_type, stored_name FROM files WHERE id = $1', [req.params.fileId]);
+  const file = await one('SELECT id, room_id, original_name, mime_type, stored_name, size FROM files WHERE id = $1', [req.params.fileId]);
   if (!file) return res.status(404).send('Arquivo não encontrado');
   if (!(await canUseRoom(req.user, file.room_id))) return res.status(403).send('Sem permissão para visualizar este arquivo');
   const declaredMime = String(file.mime_type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
@@ -2809,7 +2847,11 @@ app.get('/preview/:fileId', asMember, wrap(async (req, res) => {
   if (isBlobPath(file.stored_name)) {
     const { get } = await blobSdk();
     const result = await get(file.stored_name, { access: 'private' });
-    if (!result || !result.stream) return res.status(404).send('Arquivo não encontrado');
+    if (!result || !result.url) return res.status(404).send('Arquivo não encontrado');
+    // Grandes arquivos (ex.: vídeo): redireciona ao Blob para o CDN entregar com suporte a
+    // Range (busca no player), sem travar a função serverless em transfers longos.
+    if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) return res.redirect(302, result.url);
+    if (!result.stream) return res.status(404).send('Arquivo não encontrado');
     const stream = Readable.fromWeb(result.stream);
     stream.on('error', err => { console.error('Erro na visualização:', err && err.message); if (!res.headersSent) res.status(500).end(); else res.destroy(err); });
     return stream.pipe(res);
