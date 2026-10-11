@@ -8,7 +8,7 @@
   overflow: hidden;
   isolation: isolate;
   color: #f8f6ff;
-  background: #07060c;
+  background: #000000;
   opacity: 1;
   visibility: visible;
   transition: opacity .65s cubic-bezier(.22,1,.36,1), visibility .65s;
@@ -16,14 +16,14 @@
 .login-intro.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 .login-intro * { box-sizing: border-box; }
 .intro-atmosphere, .intro-atmosphere > * { position: absolute; inset: 0; pointer-events: none; }
-.intro-atmosphere { z-index: -1; overflow: hidden; background: radial-gradient(ellipse at 50% 48%, #181127 0%, #0b0911 42%, #07060c 76%); }
+.intro-atmosphere { z-index: -1; overflow: hidden; background: radial-gradient(ellipse at 50% 48%, #0a0505 0%, #000000 42%, #000000 76%); }
 .atmosphere-glow { inset: auto!important; width: min(65vw, 850px); aspect-ratio: 1; border-radius: 50%; filter: blur(90px); opacity: .17; will-change: transform; }
 .glow-a { top: -34%; left: -15%; background: #e22c3b; animation: introDriftA 15s ease-in-out infinite alternate; }
 .glow-b { right: -18%; bottom: -45%; background: #e22c3b; opacity: .15; animation: introDriftB 19s ease-in-out infinite alternate; }
 .atmosphere-grid { inset: -55% -25% -15%; opacity: .085; background-image: linear-gradient(#f0566a 1px, transparent 1px), linear-gradient(90deg, #f0566a 1px, transparent 1px); background-size: 74px 74px; transform: perspective(850px) rotateX(61deg) translateY(30%); transform-origin: center bottom; mask-image: linear-gradient(transparent 4%, #000 44%, transparent 96%); animation: introGrid 28s linear infinite; }
 .atmosphere-grain { opacity: .04; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.84' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
 .login-intro-stage { position: relative; display: grid; grid-template-rows: 40px minmax(0,1fr) 90px; width: min(1440px, 100%); height: 100%; min-height: 0; margin: 0 auto; padding: 26px clamp(22px,5.6vw,88px) 22px; }
-.intro-topline { display: flex; align-items: center; justify-content: space-between; color: #f5efff; }
+.intro-topline { display: flex; align-items: center; justify-content: space-between; color: #ffebee; }
 .intro-brand-lockup { display: inline-flex; align-items: center; gap: 11px; }
 .intro-brand-lockup > i { color: var(--intro-red); font-size: 19px; filter: drop-shadow(0 0 12px #f0566a99); }
 .intro-brand-lockup b { font: 800 13px/1 Orbitron, Inter, sans-serif; letter-spacing: .16em; }
@@ -84,7 +84,7 @@
 .motion-file-row { display:flex;align-items:center;gap:12px;min-height:54px;padding:10px 13px;border:1px solid #ffffff12;border-radius:12px;background:#ffffff06;animation:fileArrive .6s cubic-bezier(.2,.8,.2,1) both; }
 .motion-file-row > i { color:#f0566a;font-size:16px; }.motion-file-row > span:nth-child(2) { display:grid;gap:4px;min-width:0;flex:1; }.motion-file-row b { overflow:hidden;color:#eee8fa;font:600 10px Inter,sans-serif;text-overflow:ellipsis;white-space:nowrap; }.motion-file-row small { color:#ffffff52;font:400 8px Inter,sans-serif; }.motion-check { display:grid;place-items:center;width:22px;height:22px;border-radius:50%;color:#87e6bf;background:#65d7a51b;animation:checkPop .45s .6s both; }.motion-check i { font-size:10px; }.motion-file-row.second { animation-delay:.35s; }
 .motion-progress { height:3px;margin:8px 4px 12px;overflow:hidden;border-radius:9px;background:#ffffff10; }.motion-progress i { display:block;width:100%;height:100%;transform:scaleX(.18);transform-origin:left;background:linear-gradient(90deg,#e22c3b,#e22c3b);box-shadow:0 0 12px #e22c3b;animation:uploadProgress 3.2s .5s cubic-bezier(.2,.7,.2,1) infinite alternate; }
-.motion-cursor { position:absolute;right:4%;top:27%;display:grid;gap:4px;color:#fff;font-size:24px;filter:drop-shadow(0 4px 8px #000b);animation:cursorDrop 3.2s ease-in-out infinite; }.motion-cursor small { padding:5px 7px;border:1px solid #ffffff24;border-radius:8px;color:#eee7ff;background:#161322;font:600 8px Inter,sans-serif;white-space:nowrap; }
+.motion-cursor { position:absolute;right:4%;top:27%;display:grid;gap:4px;color:#fff;font-size:24px;filter:drop-shadow(0 4px 8px #000b);animation:cursorDrop 3.2s ease-in-out infinite; }.motion-cursor small { padding:5px 7px;border:1px solid #ffffff24;border-radius:8px;color:#e22c3b;background:#161322;font:600 8px Inter,sans-serif;white-space:nowrap; }
 .motion-room-stage { position:relative;display:grid;place-items:center;width:100%;padding:28px 0; }.motion-room-card { width:min(540px,94%);padding:24px;transform:rotateY(4deg) rotateX(2deg);animation:productFloat 6.5s ease-in-out infinite reverse; }
 .motion-room-head { display:flex;align-items:center;gap:10px; }.motion-room-icon { display:grid;place-items:center;width:35px;height:35px;border:1px solid #f0566a45;border-radius:11px;color:#f0566a;background:#f0566a17; }.motion-room-icon i { font-size:15px; }.motion-room-label { color:#ffffff56;font:700 9px "Share Tech Mono",monospace;letter-spacing:.13em; }.motion-room-live { display:flex;align-items:center;gap:6px;margin-left:auto;color:#9ae1c2;font:600 9px Inter,sans-serif; }
 .motion-room-name { margin-top:23px;color:#f6f2ff;font:750 clamp(20px,2.6vw,28px) Inter,sans-serif;letter-spacing:-.04em; }.motion-room-meta { margin-top:7px;color:#ffffff65;font:400 11px Inter,sans-serif; }
