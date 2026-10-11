@@ -1,4 +1,4 @@
-// Transição visual curta entre login e cadastro; os formulários continuam
+// Transição visual entre login e cadastro; os formulários continuam
 // navegando pelas rotas existentes e a preferência de tema permanece intacta.
 (function () {
   'use strict';
@@ -13,7 +13,7 @@
 
   if (entering && !reduceMotion) {
     document.body.classList.add('auth-enter');
-    window.setTimeout(() => document.body.classList.remove('auth-enter'), 760);
+    window.setTimeout(() => document.body.classList.remove('auth-enter'), 800);
   }
 
   document.addEventListener('click', event => {
@@ -27,7 +27,16 @@
 
     try { sessionStorage.setItem(TRANSITION_KEY, '1'); } catch (_) {}
     document.body.classList.add('auth-exit');
-    window.setTimeout(() => window.location.assign(target.href), 300);
+    // Timeout maior (500ms) para redes lentas / mobile; navigation
+    // pode demorar — o body fica com auth-exit até a próxima página carregar.
+    const timer = window.setTimeout(() => {
+      // Se por algum motivo a navegação não aconteceu, força o redirect
+      // limpando a flag para não criar loop de transição.
+      try { sessionStorage.removeItem(TRANSITION_KEY); } catch (_) {}
+      window.location.assign(target.href);
+    }, 500);
+    // Cancelar o timer de fallback se a navegação real começar antes.
+    window.addEventListener('pageshow', () => clearTimeout(timer), { once: true });
   });
 
   // O seletor de tema global também controla as cores de código e do painel.
@@ -39,5 +48,5 @@
   // algum campo ainda estiver preso no estado inicial (motor de animação
   // congelado em aparelhos lentos), a classe abaixo zera as animações e
   // devolve todos os elementos ao estado visível normal.
-  window.setTimeout(() => root.classList.add('auth-fx-done'), 1800);
+  window.setTimeout(() => root.classList.add('auth-fx-done'), 2200);
 })();

@@ -1013,7 +1013,7 @@ body.auth-page::after { bottom: -110px; left: 8%; animation-delay: -4s; transfor
 .room-card-header > i { color: var(--accent); font-size: 22px; }
 .badge-green { background: #d9f7e9; color: #168052; }
 .badge-yellow { background: #fff1cc; color: #986a00; }
-.badge-blue { background: #dcecff; color: #2564a5; }
+.badge-blue { background: rgba(226,44,59,.1); color: #a00e2c; }
 .avatar { width: 30px; height: 30px; display: inline-grid; place-items: center; border-radius: 50%; color: white; font-weight: 700; font-size: 13px; }
 .modal-content { border: 1px solid var(--line); border-radius: 20px; }
 .modal-overlay { background: rgba(14, 25, 42, .58); }
@@ -1165,7 +1165,7 @@ html[data-theme="dark"] .form-group input:focus, html[data-theme="dark"] .rename
 html[data-theme="dark"] .header-left .badge { background: rgba(53,242,139,.22); color: #7ef2ae; }
 html[data-theme="dark"] .badge-green { background: rgba(34,197,94,.16); color: #86efac; }
 html[data-theme="dark"] .badge-yellow { background: rgba(245,158,11,.16); color: #fcd34d; }
-html[data-theme="dark"] .badge-blue { background: rgba(96,165,250,.16); color: #93c5fd; }
+html[data-theme="dark"] .badge-blue { background: rgba(53,242,139,.16); color: #35f28b; }
 html[data-theme="dark"] .badge-red { background: rgba(239,68,68,.16); color: #fca5a5; }
 html[data-theme="dark"] .alert-error, html[data-theme="dark"] .rename-error { color: #fca5a5; background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.35); }
 html[data-theme="dark"] .alert-success { color: #86efac; background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.35); }
@@ -1414,11 +1414,12 @@ body.app-page::after, body.sala-page::after { content: none; }
 .msg-avatar.is-admin { box-shadow: 0 0 0 2px #fbbf24; }
 html[data-theme="dark"] .uploader-tag.is-admin { color: #fde68a; background: rgba(251,191,36,.16); border-color: rgba(251,191,36,.7); }
 html[data-theme="dark"] .msg-meta.is-admin b { color: #fbbf24; }
-.chat-link { color: #2563eb; text-decoration: underline; word-break: break-all; }
-html[data-theme="dark"] .chat-link { color: #7dd3fc; }
+.chat-link { color: #0a4699; text-decoration: underline; word-break: break-all; }
+html[data-theme="dark"] .chat-link { color: #35f28b; }
+html[data-theme="light"] .chat-link { color: #0369a1; }
 .file-meta-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; margin-top: 3px; }
-.kind-badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600; background: rgba(226,44,59,.12); color: #c2410c; border: 1px solid rgba(226,44,59,.35); }
-html[data-theme="dark"] .kind-badge { color: #ddd0ff; }
+.kind-badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600; background: rgba(226,44,59,.12); color: #a00e2c; border: 1px solid rgba(226,44,59,.35); }
+html[data-theme="dark"] .kind-badge { color: #b8f8d0; }
 .time-ago { color: var(--muted, #6b7280); white-space: nowrap; }
 .intro-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .duration-pick { display: flex; gap: 8px; }
