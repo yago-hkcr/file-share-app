@@ -34,8 +34,8 @@
   overflow: hidden;
   border: 1px solid rgba(123,255,177,.3);
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(53,242,139,.13), rgba(28,20,50,.94) 72%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.055), 0 5px 18px rgba(5,2,15,.13);
+  background: linear-gradient(135deg, rgba(220,38,54,.13), rgba(28,20,50,.94) 72%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.055), 0 5px 18px rgba(17,5,5,.13);
   color: var(--ink, #eee8ff);
   font: inherit;
   font-weight: 600;
@@ -46,15 +46,15 @@
   transition: border-color .2s ease, box-shadow .25s ease, background .25s ease, transform .2s ease;
 }
 .fs-select__trigger:hover:not(:disabled) {
-  border-color: rgba(53,242,139,.72);
-  background: linear-gradient(135deg, rgba(53,242,139,.2), rgba(4,16,10,.97) 75%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 8px 24px rgba(5,2,15,.2), 0 0 20px rgba(53,242,139,.11);
+  border-color: rgba(220,38,54,.72);
+  background: linear-gradient(135deg, rgba(220,38,54,.2), rgba(16,5,5,.97) 75%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 8px 24px rgba(17,5,5,.2), 0 0 20px rgba(220,38,54,.11);
   transform: translateY(-1px);
 }
 .fs-select__trigger:focus-visible {
   outline: none;
-  border-color: #7ef2ae;
-  box-shadow: 0 0 0 3px rgba(53,242,139,.22), 0 8px 24px rgba(5,2,15,.2);
+  border-color: #f0566a;
+  box-shadow: 0 0 0 3px rgba(220,38,54,.22), 0 8px 24px rgba(17,5,5,.2);
 }
 .fs-select__trigger:disabled {
   opacity: .56;
@@ -70,7 +70,7 @@
 }
 .fs-select__hint {
   flex: 0 0 auto;
-  color: var(--muted, #a0b8aa);
+  color: var(--muted, #b88a8a);
   font-family: var(--mono, ui-monospace, monospace);
   font-size: .72em;
   letter-spacing: .08em;
@@ -83,7 +83,7 @@
   margin: -4px 2px 0 2px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
-  color: #a0d8b8;
+  color: #feb2aa;
   opacity: .9;
   transform: rotate(45deg);
   transition: transform .22s cubic-bezier(.2,.8,.2,1), color .2s ease;
@@ -91,7 +91,7 @@
 .fs-select--open .fs-select__chevron {
   margin-top: 5px;
   transform: rotate(225deg);
-  color: #c8f0d4;
+  color: #ffc3bb;
 }
 .fs-select__menu {
   position: fixed;
@@ -101,18 +101,18 @@
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border: 1px solid rgba(53,242,139,.38);
+  border: 1px solid rgba(220,38,54,.38);
   border-radius: 16px;
-  background: linear-gradient(145deg, rgba(8,22,15,.985), rgba(4,12,8,.99));
-  box-shadow: 0 22px 58px rgba(3,1,12,.52), 0 0 0 1px rgba(255,255,255,.035), 0 0 34px rgba(53,242,139,.16);
-  color: #e8f8ee;
+  background: linear-gradient(145deg, rgba(22,5,5,.985), rgba(12,4,4,.99));
+  box-shadow: 0 22px 58px rgba(12,5,5,.52), 0 0 0 1px rgba(255,255,255,.035), 0 0 34px rgba(220,38,54,.16);
+  color: #ffe8e8;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transform: translateY(-7px) scale(.985);
   transform-origin: top center;
   transition: opacity .16s ease, transform .22s cubic-bezier(.2,.85,.25,1), visibility 0s linear .22s;
-  scrollbar-color: rgba(53,242,139,.62) rgba(255,255,255,.04);
+  scrollbar-color: rgba(220,38,54,.62) rgba(255,255,255,.04);
   scrollbar-width: thin;
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
@@ -136,7 +136,7 @@
   padding: 9px 12px;
   border: 1px solid transparent;
   border-radius: 10px;
-  color: rgba(224,248,234,.84);
+  color: rgba(255,200,200,.84);
   font: inherit;
   font-size: .96em;
   line-height: 1.25;
@@ -147,20 +147,20 @@
 .fs-select__option:hover,
 .fs-select__option.is-active {
   padding-left: 15px;
-  border-color: rgba(53,242,139,.17);
-  background: linear-gradient(90deg, rgba(53,242,139,.22), rgba(0,201,107,.09));
+  border-color: rgba(220,38,54,.17);
+  background: linear-gradient(90deg, rgba(220,38,54,.22), rgba(169,14,44,.09));
   color: #fff;
 }
 .fs-select__option[aria-selected="true"] {
-  color: #b8f8d0;
+  color: #feb2aa;
   font-weight: 700;
 }
 .fs-select__option[aria-selected="true"]::after {
   content: "✓";
   margin-left: auto;
-  color: #35f28b;
+  color: #e22c3b;
   font-size: 1.05em;
-  text-shadow: 0 0 12px rgba(53,242,139,.7);
+  text-shadow: 0 0 12px rgba(220,38,54,.7);
 }
 .fs-select__option[aria-disabled="true"] {
   opacity: .38;
@@ -173,16 +173,16 @@
 }
 html:not([data-theme="dark"]) .fs-select__trigger {
   background: linear-gradient(135deg, rgba(226,44,59,.08), rgba(255,255,255,.97) 74%);
-  box-shadow: inset 0 1px 0 #fff, 0 5px 18px rgba(20,13,36,.07);
+  box-shadow: inset 0 1px 0 #fff, 0 5px 18px rgba(60,20,20,.07);
 }
 html:not([data-theme="dark"]) .fs-select__trigger:hover:not(:disabled) {
   background: linear-gradient(135deg, rgba(226,44,59,.15), #fff 78%);
   box-shadow: 0 8px 24px rgba(122,20,32,.12), 0 0 18px rgba(226,44,59,.10);
 }
 html:not([data-theme="dark"]) .fs-select__menu {
-  border-color: rgba(0,201,107,.24);
+  border-color: rgba(169,14,44,.24);
   background: rgba(255,255,255,.985);
-  box-shadow: 0 20px 50px rgba(30,19,55,.2), 0 0 0 1px rgba(0,201,107,.04);
+  box-shadow: 0 20px 50px rgba(30,19,55,.2), 0 0 0 1px rgba(169,14,44,.04);
   color: #25183c;
 }
 html:not([data-theme="dark"]) .fs-select__option {
@@ -220,16 +220,16 @@ html:not([data-theme="dark"]) .fs-select__option[aria-selected="true"] {
   min-height: 42px;
   margin: 0 0 6px;
   padding: 9px 12px;
-  border: 1px solid rgba(53,242,139,.34);
+  border: 1px solid rgba(220,38,54,.34);
   border-radius: 10px;
   outline: none;
-  background: rgba(8,18,12,.96);
-  color: #e8f8ee;
+  background: rgba(18,5,5,.96);
+  color: #ffe8e8;
   font: inherit;
 }
-.fs-select__search::placeholder { color: rgba(180,220,196,.68); }
-.fs-select__search:focus { border-color: #7ef2ae; box-shadow: 0 0 0 3px rgba(53,242,139,.18); }
-.fs-select__empty { padding: 12px; color: var(--muted, #a0b8aa); font-size: .9em; text-align: center; }
+.fs-select__search::placeholder { color: rgba(255,180,180,.68); }
+.fs-select__search:focus { border-color: #f0566a; box-shadow: 0 0 0 3px rgba(220,38,54,.18); }
+.fs-select__empty { padding: 12px; color: var(--muted, #b88a8a); font-size: .9em; text-align: center; }
 html:not([data-theme="dark"]) .fs-select__search { border-color: rgba(169,14,44,.22); background: rgba(255,255,255,.98); color: #241a3a; }
-html:not([data-theme="dark"]) .fs-select__search::placeholder { color: #7a6a8a; }
+html:not([data-theme="dark"]) .fs-select__search::placeholder { color: #8a6a7a; }
 html:not([data-theme="dark"]) .fs-select__empty { color: #716569; }
