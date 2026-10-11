@@ -277,8 +277,8 @@ body.auth-page {
   padding: 0 !important;
   vertical-align: middle;
 }
-/* Ícone "+" em SVG (círculo preto + "+" branco) dentro do botão
-   "Criar sala temporária".
+/* Ícone "+" em SVG (só o "+", branco) dentro dos botões
+   "Criar sala temporária" / "Sala temporária" / "Nova sala".
    O botão é flex com align-items:center (regra .empty-state .btn acima),
    então o centro vertical é resolvido pelo container. NÃO usar
    transform/translateY aqui — isso empurra o ícone para baixo e o deixa
