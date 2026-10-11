@@ -67,7 +67,7 @@
   const actions = document.querySelector('.intro-actions');
   if (actions) {
     actions.insertAdjacentHTML('afterbegin', '<button id="friendsBtn" class="btn btn-outline" onclick="showFriends()"><i class="fas fa-user-group"></i> Amigos</button>');
-    const nb = $('newRoomBtn'); if (nb) nb.innerHTML = '<svg class="btn-plus-icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="24" fill="#000"/><rect x="21" y="11" width="6" height="26" rx="3" fill="#fff"/><rect x="11" y="21" width="26" height="6" rx="3" fill="#fff"/></svg> Nova sala';
+    const nb = $('newRoomBtn'); if (nb) nb.innerHTML = '<svg class="btn-plus-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="10" y="2" width="4" height="20" rx="2" fill="#fff"/><rect x="2" y="10" width="20" height="4" rx="2" fill="#fff"/></svg> Nova sala';
   }
 
   // ADM: atalho de volta ao painel administrativo, visível somente para administradores.
