@@ -258,7 +258,11 @@ body.auth-page {
   border-radius: 10px;
   white-space: nowrap;
 }
-/* Ícone "+" perfeitamente alinhado ao centro do texto. */
+/* Ícone "+" perfeitamente alinhado ao centro do texto.
+   IMPORTANTE: as regras ".empty-state i" (style.css e <style> do
+   dashboard) dão font-size:42-48px + margin-bottom:12-16px para TODO
+   <i> dentro do empty-state — inclusive o "+" dentro do botão.
+   Sem este reset o "+" fica gigante/deslocado (= "torto"). */
 .empty-state .btn i,
 .empty-state .btn > i {
   line-height: 1 !important;
@@ -267,7 +271,11 @@ body.auth-page {
   justify-content: center;
   align-self: center;
   height: 1em;
-  font-size: 1.05em;
+  width: 1em;
+  font-size: 14px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  vertical-align: middle;
 }
 /* Celular: botão confortável ao toque, sem estourar a largura. */
 @media (max-width: 640px) {
