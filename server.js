@@ -1334,7 +1334,7 @@ app.post('/api/register', wrap(async (req, res) => {
   if (!passwordMeetsPolicy(password)) return res.status(400).json({ error: `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres (até ${MAX_PASSWORD_LENGTH}).` });
   if (await one('SELECT id FROM users WHERE username = $1 OR email = $2', [username, email])) return res.status(400).json({ error: 'Não foi possível criar a conta com esses dados.' });
 
-  const colors = ['#4f46e5', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+  const colors = ['#35f28b','#e22c3b','#f59e0b','#0ea5e9','#22c55e','#ef4444','#f97316','#06b6d4'];
   try {
     await q('INSERT INTO users (id, username, email, password_hash, avatar_color, created_at, status) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [uuidv4(), username, email, await hashPassword(password), colors[Math.floor(Math.random() * colors.length)], ts(), regMode === 'auto' ? 'approved' : 'pending']);
