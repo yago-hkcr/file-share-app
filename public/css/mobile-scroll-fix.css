@@ -277,6 +277,26 @@ body.auth-page {
   padding: 0 !important;
   vertical-align: middle;
 }
+/* Ícone "+" em SVG (círculo preto + "+" branco) dentro do botão
+   "Criar sala temporária" — mesmo tratamento do reset acima. */
+.empty-state .btn .btn-plus-icon {
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  display: inline-block !important;
+  flex: 0 0 auto;
+  vertical-align: middle;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+  transform: translateY(1px); /* compensa o descenso óptico do texto */
+}
+.btn .btn-plus-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
 /* Celular: botão confortável ao toque, sem estourar a largura. */
 @media (max-width: 640px) {
   .empty-state { padding: 40px 16px; }
