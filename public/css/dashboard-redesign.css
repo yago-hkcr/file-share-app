@@ -61,11 +61,11 @@
   place-items: center;
   width: 42px;
   height: 42px;
-  border: 1px solid rgba(79, 70, 229, .24);
+  border: 1px solid rgba(226, 44, 59, .24);
   border-radius: 14px;
   color: var(--primary);
   background: linear-gradient(145deg, var(--primary-bg), color-mix(in srgb, var(--primary-bg) 45%, transparent));
-  box-shadow: 0 8px 18px rgba(79, 70, 229, .12);
+  box-shadow: 0 8px 18px rgba(226, 44, 59, .12);
 }
 
 .dashboard-sidebar-label {
@@ -146,15 +146,15 @@
 }
 
 .dashboard-sidebar .dashboard-tab.is-active {
-  border-color: rgba(79, 70, 229, .18);
+  border-color: rgba(226, 44, 59, .18);
   color: var(--primary-dark);
   background: linear-gradient(135deg, var(--primary-bg), color-mix(in srgb, var(--primary-bg) 42%, var(--gray-50)));
-  box-shadow: inset 0 0 0 1px rgba(79, 70, 229, .04), 0 8px 20px rgba(79, 70, 229, .08);
+  box-shadow: inset 0 0 0 1px rgba(226, 44, 59, .04), 0 8px 20px rgba(226, 44, 59, .08);
 }
 
 .dashboard-sidebar .dashboard-tab.is-active > i {
   color: var(--primary);
-  background: rgba(79, 70, 229, .13);
+  background: rgba(226, 44, 59, .13);
 }
 
 .dashboard-sidebar-footer {
@@ -272,7 +272,7 @@
 }
 
 .dashboard-collapsible-heading:focus-visible {
-  outline: 3px solid rgba(79, 70, 229, .24);
+  outline: 3px solid rgba(226, 44, 59, .24);
   outline-offset: 4px;
   border-radius: 8px;
 }

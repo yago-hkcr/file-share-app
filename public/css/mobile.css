@@ -82,8 +82,8 @@
   .personal-sheet .direct-compose .chat-send {
     color: #fff;
     border: 0;
-    background: linear-gradient(145deg, #a85cf7, #6657ed);
-    box-shadow: 0 6px 18px rgba(112, 75, 226, .25);
+    background: linear-gradient(145deg, #e22c3b, #e22c3b);
+    box-shadow: 0 6px 18px rgba(226, 44, 59, .25);
     transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
   }
   .personal-sheet .direct-compose .chat-send:not(:disabled):active { transform: scale(.96); }

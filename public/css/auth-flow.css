@@ -1,16 +1,16 @@
 /* Identidade cibernética das telas de acesso, isolada do restante do app. */
 body.auth-page {
-  --cy: #35f28b;
-  --cy2: #00c96b;
-  --cy-rgb: 53, 242, 139;
-  --cy-bg-rgb: 4, 13, 10;
-  --auth-bg: #050a08;
-  --auth-panel: rgba(10, 19, 15, .94);
-  --auth-panel-soft: rgba(14, 28, 21, .82);
-  --auth-ink: #effff5;
-  --auth-muted: #a0b8aa;
-  --auth-line: rgba(123, 255, 177, .16);
-  --auth-input: rgba(2, 10, 6, .76);
+  --cy: #e22c3b;
+  --cy2: #a90e2c;
+  --cy-rgb: 226, 44, 59;
+  --cy-bg-rgb: 26, 10, 10;
+  --auth-bg: #0a0505;
+  --auth-panel: rgba(26, 10, 10, .94);
+  --auth-panel-soft: rgba(34, 11, 11, .82);
+  --auth-ink: #fff5f5;
+  --auth-muted: #b88a8a;
+  --auth-line: rgba(255, 116, 116, .16);
+  --auth-input: rgba(10, 6, 6, .76);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -23,24 +23,24 @@ body.auth-page {
   background-image:
     radial-gradient(ellipse at 12% 8%, rgba(var(--cy-rgb), .14), transparent 35%),
     radial-gradient(ellipse at 88% 92%, rgba(var(--cy-rgb), .09), transparent 34%),
-    linear-gradient(135deg, #050a08, #09140e 58%, #060b09);
+        linear-gradient(135deg, #0a0505, #1a0a0a 58%, #060505);
   transition: background-color .35s ease, color .35s ease;
 }
 
 /* A regra antiga do login cibernético tem maior especificidade; reafirmamos a
    paleta verde no tema escuro sem alterar as demais telas que usam esse CSS. */
 html[data-theme="dark"] body.auth-page {
-  --cy: #35f28b;
-  --cy2: #00c96b;
-  --cy-rgb: 53, 242, 139;
-  --cy-bg-rgb: 4, 13, 10;
-  --auth-bg: #050a08;
-  --auth-panel: rgba(10, 19, 15, .94);
-  --auth-panel-soft: rgba(14, 28, 21, .82);
-  --auth-ink: #effff5;
-  --auth-muted: #a0b8aa;
-  --auth-line: rgba(123, 255, 177, .16);
-  --auth-input: rgba(2, 10, 6, .76);
+  --cy: #e22c3b;
+  --cy2: #a90e2c;
+  --cy-rgb: 226, 44, 59;
+  --cy-bg-rgb: 26, 10, 10;
+  --auth-bg: #0a0505;
+  --auth-panel: rgba(26, 10, 10, .94);
+  --auth-panel-soft: rgba(34, 11, 11, .82);
+  --auth-ink: #fff5f5;
+  --auth-muted: #b88a8a;
+  --auth-line: rgba(255, 116, 116, .16);
+  --auth-input: rgba(10, 6, 6, .76);
   background-color: var(--auth-bg);
 }
 
