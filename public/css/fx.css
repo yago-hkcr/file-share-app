@@ -1,7 +1,7 @@
 /* ===== FX: animações leves (só transform/opacity, sem blur animado). Desligam com "reduzir movimento". ===== */
-:root { --fx-rgb: 255,107,74; }
-html[data-theme="dark"] { --fx-rgb: 168,85,247; }
-body.auth-page { --fx-rgb: var(--cy-rgb, 168,85,247); }
+:root { --fx-rgb: 226,44,59; }
+html[data-theme="dark"] { --fx-rgb: 53,242,139; }
+body.auth-page { --fx-rgb: var(--cy-rgb, 53,242,139); }
 
 /* Fundo vivo: rede de partículas (canvas), luzes à deriva e brilho que acompanha o ponteiro/toque */
 .fx-pointer-glow { position:fixed; z-index:-1; left:0; top:0; width:min(62vmax,620px); aspect-ratio:1; border-radius:50%; pointer-events:none; opacity:0; background:radial-gradient(circle, rgba(var(--fx-rgb),.25) 0%, rgba(var(--fx-rgb),.10) 34%, rgba(var(--fx-rgb),0) 70%); mix-blend-mode:screen; transform:translate3d(var(--fx-pointer-x,-1000px),var(--fx-pointer-y,-1000px),0) translate(-50%,-50%); transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .38s ease; }
@@ -100,7 +100,7 @@ body.auth-page .auth-settings-btn i { display: block; line-height: 1; }
 .gfx-modal-card { width: min(430px, 100%); }
 .gfx-options { display: grid; gap: 10px; }
 .gfx-option { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 12px; border: 1px solid var(--gray-300, #ddd); border-radius: 12px; background: transparent; font: inherit; text-align: left; cursor: pointer; color: inherit; }
-.gfx-option.is-active { border-color: var(--primary, #f97316); box-shadow: 0 0 0 3px rgba(249, 115, 22, .18); }
+.gfx-option.is-active { border-color: var(--primary, #e22c3b); box-shadow: 0 0 0 3px rgba(226, 44, 59, .18); }
 .gfx-option i { margin-top: 2px; }
 .gfx-option strong { display: block; font-size: 14px; }
 .gfx-option small { display: block; font-size: 12px; opacity: .75; }

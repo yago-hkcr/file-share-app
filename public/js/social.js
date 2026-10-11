@@ -13,7 +13,7 @@
     }
     return el;
   }
-  const avatar = u => '<span class="avatar" style="background:' + esc(u.avatar_color || '#8b5cf6') + '">' + (u.avatar_image ? '<img src="' + esc(u.avatar_image) + '" alt="Foto de ' + esc(u.username || 'usuário') + '">' : esc(String(u.username || '?')[0].toUpperCase())) + '</span>';
+  const avatar = u => '<span class="avatar" style="background:' + esc(u.avatar_color || '#35f28b') + '">' + (u.avatar_image ? '<img src="' + esc(u.avatar_image) + '" alt="Foto de ' + esc(u.username || 'usuário') + '">' : esc(String(u.username || '?')[0].toUpperCase())) + '</span>';
   const admTag = r => r === 'admin' ? '<span class="adm-tag">ADM</span>' : '';
 
   // ---------------- AMIGOS ----------------

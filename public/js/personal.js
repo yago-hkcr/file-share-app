@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   const escHtml = value => { const el = document.createElement('div'); el.textContent = value == null ? '' : String(value); return el.innerHTML; };
   const post = (url, body, method = 'POST') => api(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
-  const avatar = user => '<span class="personal-avatar" style="--avatar-color:' + escHtml(user.avatar_color || '#8b5cf6') + '">' + (user.avatar_image ? '<img src="' + escHtml(user.avatar_image) + '" alt="">' : escHtml(String(user.username || '?').slice(0, 1).toUpperCase())) + '</span>';
+  const avatar = user => '<span class="personal-avatar" style="--avatar-color:' + escHtml(user.avatar_color || '#35f28b') + '">' + (user.avatar_image ? '<img src="' + escHtml(user.avatar_image) + '" alt="">' : escHtml(String(user.username || '?').slice(0, 1).toUpperCase())) + '</span>';
   const humanTime = value => value ? new Date(String(value).replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   const modal = (id, title, extraClass) => {
     let node = $(id);
@@ -239,7 +239,7 @@
     return user.avatar_image ? '<img src="' + escHtml(user.avatar_image) + '" alt="Foto do perfil">' : escHtml(String(user.username || '?').slice(0, 1).toUpperCase());
   }
   function paintAvatarPreview() {
-    const preview = $('settingsAvatarPreview'); if (preview) { preview.style.setProperty('--avatar-color', typeof me !== 'undefined' && me && me.avatar_color || '#8b5cf6'); preview.innerHTML = currentAvatar(); }
+    const preview = $('settingsAvatarPreview'); if (preview) { preview.style.setProperty('--avatar-color', typeof me !== 'undefined' && me && me.avatar_color || '#35f28b'); preview.innerHTML = currentAvatar(); }
   }
   function permissionStatus() {
     const status = $('notificationPermissionStatus'); if (!status) return;
@@ -250,7 +250,7 @@
   }
   function paintUserAvatar() {
     const host = $('userAvatar'); if (!host || typeof me === 'undefined' || !me) return;
-    host.style.background = me.avatar_color || '#8b5cf6'; host.innerHTML = currentAvatar();
+    host.style.background = me.avatar_color || '#35f28b'; host.innerHTML = currentAvatar();
   }
   $('personalSettingsBtn')?.addEventListener('click', async () => { open(settings); await loadPreferences(); paintAvatarPreview(); });
   $('settingsPassword').addEventListener('click', () => { settings.style.display = 'none'; if (typeof showPasswordModal === 'function') showPasswordModal(); });

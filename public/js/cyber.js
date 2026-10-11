@@ -20,7 +20,11 @@
   const ctx = canvas.getContext('2d');
   const chars = '01ABCDEF<>/{}[]#$%=+*'.split('');
   const size = 16;
-  let cols = 0, drops = [], rgb = '255,107,74', w = 0, h = 0, last = 0;
+  let cols = 0, drops = [], rgb = '53,242,139', w = 0, h = 0, last = 0;
+
+  function isDarkTheme() {
+    return document.documentElement.getAttribute('data-theme') !== 'light';
+  }
 
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -29,7 +33,8 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     cols = Math.ceil(w / size);
     drops = Array.from({ length: cols }, () => Math.random() * -50);
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = isDarkTheme() ? 'rgb(5,10,8)' : 'rgb(248,245,245)';
+    ctx.fillRect(0, 0, w, h);
   }
   const readColor = () => {
     const v = getComputedStyle(document.body).getPropertyValue('--cy-rgb').trim();
@@ -43,7 +48,7 @@
     requestAnimationFrame(frame);
     if (document.hidden || t - last < 55) return; // ~18 quadros/s: leve e com ar "de terminal"
     last = t;
-    ctx.fillStyle = 'rgba(8,4,14,0.16)'; // deixa o rastro esmaecer
+    ctx.fillStyle = isDarkTheme() ? 'rgba(5,10,8,0.16)' : 'rgba(248,245,245,0.22)'; // esmaece o rastro sem escurecer o tema claro
     ctx.fillRect(0, 0, w, h);
     ctx.font = size + 'px "Share Tech Mono", monospace';
     for (let i = 0; i < cols; i++) {

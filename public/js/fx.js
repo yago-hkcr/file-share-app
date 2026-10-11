@@ -25,14 +25,14 @@
     addEventListener('pointermove', moveGlow, { passive:true }); addEventListener('pointerdown', moveGlow, { passive:true });
     addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && e.pointerType !== 'pen') glow.classList.remove('is-visible'); });
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    let W = 0, H = 0, N = mobile ? 22 : (weak ? 34 : 54), nodes = [], pulses = [], mx = -999, my = -999, rgb = '168,85,247';
+    let W = 0, H = 0, N = mobile ? 22 : (weak ? 34 : 54), nodes = [], pulses = [], mx = -999, my = -999, rgb = '53,242,139';
     const LINK = mobile ? 110 : 140;
     const rnd = (a, b) => a + Math.random() * (b - a);
     function size() { W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
     function seed() { nodes = Array.from({ length: N }, () => ({ x: rnd(0, W), y: rnd(0, H), vx: rnd(-.25, .25), vy: rnd(-.25, .25), r: rnd(1, 2.2) })); }
     function color() {
       const v = getComputedStyle(document.body).getPropertyValue('--cy-rgb').trim();
-      rgb = v || (root.getAttribute('data-theme') === 'dark' ? '168,85,247' : '255,107,74');
+      rgb = v || (root.getAttribute('data-theme') === 'dark' ? '53,242,139' : '226,44,59');
     }
     addEventListener('resize', () => { size(); seed(); }, { passive: true });
     addEventListener('pointermove', e => { mx = e.clientX; my = e.clientY; }, { passive: true });
