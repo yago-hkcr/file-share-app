@@ -93,8 +93,10 @@ html[data-gfx="low"] #cyberRain, html[data-gfx="low"] .cy-grid, html[data-gfx="l
 html[data-gfx="low"] *, html[data-gfx="low"] *::before, html[data-gfx="low"] *::after { animation: none !important; transition: none !important; }
 html[data-gfx="medium"] .fx-orb, html[data-gfx="medium"] .fx-pointer-glow { display: none !important; }
 html[data-gfx="medium"] #fxCanvas { opacity: .55; }
-/* Botao de engrenagem no cartao de login/cadastro */
-.auth-settings-btn { position: absolute; top: 12px; right: 12px; min-width: 40px; min-height: 40px; padding: 0 10px; border-radius: 12px; animation: none !important; transform: none !important; }
+/* Engrenagem ancorada ao canto superior direito do cartao (dentro dele), sempre enquadrada. */
+body.auth-page .auth-card > .auth-settings-btn { position: absolute !important; top: 14px; right: 16px; z-index: 6; display: grid; place-items: center; width: 42px; height: 42px; min-width: 42px; min-height: 42px; padding: 0; border: 1px solid var(--cy); border-radius: 2px; color: var(--cy); background: rgba(10,6,16,.55); line-height: 1; animation: none !important; transform: none !important; }
+body.auth-page .auth-card > .auth-settings-btn:hover { background: rgba(10,6,16,.85); }
+body.auth-page .auth-settings-btn i { display: block; line-height: 1; }
 .gfx-modal-card { width: min(430px, 100%); }
 .gfx-options { display: grid; gap: 10px; }
 .gfx-option { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 12px; border: 1px solid var(--gray-300, #ddd); border-radius: 12px; background: transparent; font: inherit; text-align: left; cursor: pointer; color: inherit; }
