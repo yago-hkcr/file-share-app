@@ -1,24 +1,24 @@
 /* ===================== CSS VARIABLES ===================== */
 :root {
-  --primary: #4f46e5;
-  --primary-dark: #4338ca;
-  --primary-light: #818cf8;
-  --primary-bg: #eef2ff;
-  --danger: #ef4444;
-  --danger-dark: #dc2626;
+  --primary: #f97316;
+  --primary-dark: #ea580c;
+  --primary-light: #fdba74;
+  --primary-bg: #fff7ed;
+  --danger: #dc2626;
+  --danger-dark: #b91c1c;
   --success: #22c55e;
   --warning: #f59e0b;
   --info: #3b82f6;
-  --gray-50: #f9fafb;
-  --gray-100: #f3f4f6;
-  --gray-200: #e5e7eb;
-  --gray-300: #d1d5db;
-  --gray-400: #9ca3af;
-  --gray-500: #6b7280;
-  --gray-600: #4b5563;
-  --gray-700: #374151;
-  --gray-800: #1f2937;
-  --gray-900: #111827;
+  --gray-50: #ffffff;
+  --gray-100: #f5f5f5;
+  --gray-200: #e5e5e5;
+  --gray-300: #d4d4d4;
+  --gray-400: #a3a3a3;
+  --gray-500: #737373;
+  --gray-600: #525252;
+  --gray-700: #404040;
+  --gray-800: #262626;
+  --gray-900: #171717;
   --radius: 12px;
   --radius-sm: 8px;
   --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
@@ -927,9 +927,9 @@ a:hover {
   --muted: #718096;
   --surface: rgba(255, 255, 255, 0.88);
   --line: rgba(23, 32, 51, 0.1);
-  --accent: #7251d3;
-  --accent-dark: #5936b1;
-  --mint: #c8f3e5;
+  --accent: #f97316;
+  --accent-dark: #ea580c;
+  --mint: #ffedd5;
 }
 
 body {
@@ -965,6 +965,7 @@ body.auth-page::after { bottom: -110px; left: 8%; animation-delay: -4s; transfor
 
 .auth-container { width: min(100%, 430px); position: relative; z-index: 1; }
 .auth-card {
+  position: relative;
   padding: 42px;
   border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 24px;
@@ -1262,10 +1263,10 @@ body.auth-page .pending-icon { font-size: 44px; }
 
 /* =====================================================================
    INTERIOR CIBERNÉTICO — vale para painel, admin e salas
-   (claro e escuro usam a identidade violeta do FileShare)
+   (claro usa a identidade laranja do FileShare; escuro mantém o violeta)
    ===================================================================== */
 :root {
-  --cy: #7251d3; --cy2: #535ed6; --cy-rgb: 114,81,211;
+  --cy: #f97316; --cy2: #dc2626; --cy-rgb: 249,115,22;
   --bg1: #f8f6fc; --bg2: #efebf7; --bubble: #ffffff; --field: #ffffff;
   --mono: 'Share Tech Mono', ui-monospace, monospace; --disp: 'Orbitron', 'Inter', sans-serif; --ui: 'Rajdhani', 'Inter', sans-serif;
   --hex: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
@@ -1418,7 +1419,7 @@ html[data-theme="dark"] .msg-meta.is-admin b { color: #fbbf24; }
 .chat-link { color: #2563eb; text-decoration: underline; word-break: break-all; }
 html[data-theme="dark"] .chat-link { color: #7dd3fc; }
 .file-meta-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; margin-top: 3px; }
-.kind-badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600; background: rgba(139,92,246,.12); color: #6d28d9; border: 1px solid rgba(139,92,246,.3); }
+.kind-badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600; background: rgba(249,115,22,.12); color: #c2410c; border: 1px solid rgba(249,115,22,.35); }
 html[data-theme="dark"] .kind-badge { color: #ddd0ff; }
 .time-ago { color: var(--muted, #6b7280); white-space: nowrap; }
 .intro-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -1429,7 +1430,7 @@ html[data-theme="dark"] .kind-badge { color: #ddd0ff; }
 .confirm-list { display: flex; flex-direction: column; gap: 10px; max-height: 52vh; overflow: auto; margin: 10px 0 14px; }
 .confirm-item { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 12px; border: 1px solid var(--border, rgba(128,128,128,.3)); }
 .confirm-thumb { width: 84px; height: 84px; flex: none; object-fit: cover; border-radius: 10px; background: rgba(128,128,128,.15); }
-.confirm-icon { display: grid; place-items: center; align-content: center; gap: 4px; font-size: 26px; color: #8b5cf6; }
+.confirm-icon { display: grid; place-items: center; align-content: center; gap: 4px; font-size: 26px; color: #f97316; }
 .confirm-icon span { font-size: 11px; font-weight: 700; }
 .confirm-info { flex: 1; min-width: 0; }
 .confirm-info small { display: block; margin-top: 4px; opacity: .7; }

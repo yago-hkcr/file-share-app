@@ -623,14 +623,14 @@ html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions
 }
 
 /* Contraste e cores consistentes no tema claro. */
-html:not([data-theme="dark"]) .dashboard-tabs { border-color:rgba(93,65,150,.18); background:rgba(255,255,255,.92); }
-html:not([data-theme="dark"]) .dashboard-tab { color:#625873; }
-html:not([data-theme="dark"]) .dashboard-tab:hover { color:#35234f; background:rgba(114,81,211,.09); }
-html:not([data-theme="dark"]) .dashboard-tabs-liquid { background:linear-gradient(120deg,rgba(114,81,211,.16),rgba(83,94,214,.11)); box-shadow:inset 0 0 0 1px rgba(114,81,211,.22); }
-html:not([data-theme="dark"]) .dashboard-tab.is-active { color:#4d2e9f; background:transparent; box-shadow:none; }
-html:not([data-theme="dark"]) .room-submission-folder { border-color:#ded4ed; border-left-color:#7251d3; background:#f7f3fc; }
-html:not([data-theme="dark"]) .room-submission-folder-toggle { color:#352544; }
-html:not([data-theme="dark"]) .room-submission-folder-toggle > i:first-child { color:#7045bd; }
-html:not([data-theme="dark"]) .room-submission-folder-toggle small { color:#6e627b; }
-html:not([data-theme="dark"]) .room-submission-folder-content .file-row { color:#30283c; border-color:#e8e0ef; border-left-color:#7251d3; background:#fff; }
-html:not([data-theme="dark"]) .room-submission-folder-content .file-row:hover { background:#faf7ff; }
+html:not([data-theme="dark"]) .dashboard-tabs { border-color:rgba(194,65,12,.24); background:rgba(255,255,255,.95); }
+html:not([data-theme="dark"]) .dashboard-tab { color:#7c6a5a; }
+html:not([data-theme="dark"]) .dashboard-tab:hover { color:#7c2d12; background:rgba(249,115,22,.10); }
+html:not([data-theme="dark"]) .dashboard-tabs-liquid { background:linear-gradient(120deg,rgba(249,115,22,.22),rgba(220,38,38,.12)); box-shadow:inset 0 0 0 1px rgba(249,115,22,.30); }
+html:not([data-theme="dark"]) .dashboard-tab.is-active { color:#9a3412; background:transparent; box-shadow:none; }
+html:not([data-theme="dark"]) .room-submission-folder { border-color:#f5d9c2; border-left-color:#f97316; background:#fff7ed; }
+html:not([data-theme="dark"]) .room-submission-folder-toggle { color:#431407; }
+html:not([data-theme="dark"]) .room-submission-folder-toggle > i:first-child { color:#ea580c; }
+html:not([data-theme="dark"]) .room-submission-folder-toggle small { color:#a08a76; }
+html:not([data-theme="dark"]) .room-submission-folder-content .file-row { color:#431407; border-color:#f5d9c2; border-left-color:#f97316; background:#fff; }
+html:not([data-theme="dark"]) .room-submission-folder-content .file-row:hover { background:#fff7ed; }
