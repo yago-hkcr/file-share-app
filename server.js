@@ -1277,6 +1277,8 @@ app.get('/', wrap(async (req, res) => {
   res.sendFile(page('index.html'));
 }));
 app.get('/register', (req, res) => res.sendFile(page('register.html')));
+// Compatibilidade: o login fica na raiz ("/"); /login apenas redireciona para lá.
+app.get('/login', (req, res) => res.redirect('/'));
 app.get('/admin', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
   const user = await one('SELECT role, status, password_change_required, force_logout_at FROM users WHERE id = $1', [req.session.userId]);

@@ -17,12 +17,12 @@
   const post = (url, body) => api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   const ACTIONS = {
     login: ['Login', 'sign-in-alt', '#16a34a'], logout: ['Saiu', 'sign-out-alt', '#6b7280'], login_falhou: ['Login falhou', 'shield-halved', '#dc2626'], login_bloqueado: ['Login bloqueado', 'ban', '#dc2626'], cadastro: ['Cadastro', 'user-plus', '#2563eb'],
-    upload: ['Upload', 'cloud-arrow-up', '#8b5cf6'], arquivo_excluido: ['Arquivo excluído', 'trash', '#dc2626'], arquivo_renomeado: ['Arquivo renomeado', 'pen', '#d97706'], arquivos_excluidos_em_massa: ['Exclusão em massa', 'dumpster-fire', '#dc2626'],
+    upload: ['Upload', 'cloud-arrow-up', '#35f28b'], arquivo_excluido: ['Arquivo excluído', 'trash', '#dc2626'], arquivo_renomeado: ['Arquivo renomeado', 'pen', '#d97706'], arquivos_excluidos_em_massa: ['Exclusão em massa', 'dumpster-fire', '#dc2626'],
     sala_criada: ['Sala criada', 'door-open', '#16a34a'], sala_excluida: ['Sala excluída', 'door-closed', '#dc2626'], entrou_sala: ['Entrou na sala', 'right-to-bracket', '#2563eb'], saiu_sala: ['Saiu da sala', 'right-from-bracket', '#6b7280'],
     sala_tempo_alterado: ['Tempo da sala', 'hourglass-half', '#d97706'], sala_permanente: ['Sala permanente', 'infinity', '#16a34a'], sala_visibilidade: ['Visibilidade', 'eye', '#2563eb'], chat_limpo: ['Chat limpo', 'broom', '#d97706'], mensagem_removida: ['Mensagem removida', 'comment-slash', '#dc2626'],
     usuario_aprovado: ['Aprovado', 'check', '#16a34a'], usuario_rejeitado: ['Rejeitado', 'xmark', '#dc2626'], usuario_excluido: ['Usuário excluído', 'user-xmark', '#dc2626'], usuario_suspenso: ['Suspenso', 'user-lock', '#dc2626'], usuario_reativado: ['Reativado', 'user-check', '#16a34a'],
     promovido_adm: ['Promovido a ADM', 'crown', '#f59e0b'], rebaixado_usuario: ['Rebaixado', 'arrow-down', '#d97706'], logout_forcado: ['Logout forçado', 'power-off', '#d97706'], senha_redefinida: ['Senha redefinida', 'key', '#d97706'], senha_alterada: ['Senha alterada', 'key', '#6b7280'],
-    comunicado_enviado: ['Comunicado', 'bullhorn', '#2563eb'], configuracoes_alteradas: ['Configurações', 'gear', '#8b5cf6'], backup_exportado: ['Backup', 'download', '#16a34a']
+    comunicado_enviado: ['Comunicado', 'bullhorn', '#2563eb'], configuracoes_alteradas: ['Configurações', 'gear', '#35f28b'], backup_exportado: ['Backup', 'download', '#16a34a']
   };
   const actBadge = a => { const x = ACTIONS[a] || [a, 'circle', '#6b7280']; return '<span class="ap-act" style="--c:' + x[2] + '"><i class="fas fa-' + x[1] + '"></i> ' + E(x[0]) + '</span>'; };
   const admTag = r => r === 'admin' ? ' <span class="adm-badge">ADM</span>' : '';
@@ -37,7 +37,7 @@
   .ap-row:last-child{border-bottom:0}.ap-row>.grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ap-bars{display:flex;align-items:flex-end;gap:8px;height:120px}
   .ap-bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;height:100%;font-size:11px}
-  .ap-bar i{display:block;width:100%;min-height:3px;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,#22c55e,#8b5cf6);transition:height .4s}
+  .ap-bar i{display:block;width:100%;min-height:3px;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,#22c55e,#35f28b);transition:height .4s}
   .ap-dot{width:9px;height:9px;border-radius:50%;background:#22c55e;box-shadow:0 0 8px #22c55e;flex:none;animation:apPulse 1.6s infinite}.ap-dot.off{background:#9ca3af;box-shadow:none;animation:none}
   @keyframes apPulse{50%{opacity:.4}}
   .ap-act{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:700;color:var(--c);border:1px solid var(--c);background:rgba(128,128,128,.08);white-space:nowrap}
@@ -48,7 +48,7 @@
   .ap-chip.on{background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;border-color:#15803d}
   .ap-btns{display:flex;flex-wrap:wrap;gap:6px}
   .ap-ib{width:36px;height:36px;display:inline-grid;place-items:center;border-radius:10px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;cursor:pointer}
-  .ap-ib:hover{background:rgba(139,92,246,.18)}.ap-ib.danger{color:#dc2626;border-color:rgba(220,38,38,.5)}.ap-ib.ok{color:#16a34a;border-color:rgba(22,163,74,.5)}
+  .ap-ib:hover{background:rgba(53,242,139,.18)}.ap-ib.danger{color:#dc2626;border-color:rgba(220,38,38,.5)}.ap-ib.ok{color:#16a34a;border-color:rgba(22,163,74,.5)}
   .ap-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;opacity:.78;margin-top:3px}
   .ap-form{display:flex;flex-direction:column;gap:10px}.ap-form label{font-size:12px;font-weight:700;opacity:.8}
   .ap-chat{max-height:55vh;overflow:auto;display:flex;flex-direction:column;gap:6px}
@@ -92,7 +92,7 @@
     const days = []; for (let i = 6; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10); const f = o.days.find(x => x.d === d); days.push({ d, n: f ? f.n : 0 }); }
     const kpi = (ic, col, v, l) => '<div class="stat-card"><div class="stat-icon" style="background:' + col + '"><i class="fas ' + ic + '"></i></div><div><div class="stat-value">' + v + '</div><div class="stat-label">' + l + '</div></div></div>';
     ov.innerHTML =
-      '<div class="stats-grid">' + kpi('fa-signal', '#22c55e', o.online, 'Online agora') + kpi('fa-cloud-arrow-up', '#8b5cf6', o.uploads24, 'Uploads (24h)') + kpi('fa-comments', '#2563eb', o.messages, 'Mensagens') + kpi('fa-hourglass-half', '#f59e0b', o.tempRooms, 'Salas temporárias') + kpi('fa-user-plus', '#06b6d4', o.newUsers, 'Novos (7 dias)') + kpi('fa-user-lock', '#dc2626', o.banned, 'Suspensos') + kpi('fa-shield-halved', o.fails24 > 5 ? '#dc2626' : '#6b7280', o.fails24, 'Logins falhos (24h)') + '</div>' +
+      '<div class="stats-grid">' + kpi('fa-signal', '#22c55e', o.online, 'Online agora') + kpi('fa-cloud-arrow-up', '#35f28b', o.uploads24, 'Uploads (24h)') + kpi('fa-comments', '#2563eb', o.messages, 'Mensagens') + kpi('fa-hourglass-half', '#f59e0b', o.tempRooms, 'Salas temporárias') + kpi('fa-user-plus', '#06b6d4', o.newUsers, 'Novos (7 dias)') + kpi('fa-user-lock', '#dc2626', o.banned, 'Suspensos') + kpi('fa-shield-halved', o.fails24 > 5 ? '#dc2626' : '#6b7280', o.fails24, 'Logins falhos (24h)') + '</div>' +
       '<div class="ap-grid">' +
       '<div class="ap-card"><h4><i class="fas fa-chart-column"></i> Uploads · 7 dias</h4><div class="ap-bars">' + days.map(x => '<div class="ap-bar"><span>' + x.n + '</span><i style="height:' + Math.round(x.n / max * 90 + 3) + '%"></i><span>' + x.d.slice(8) + '/' + x.d.slice(5, 7) + '</span></div>').join('') + '</div></div>' +
       '<div class="ap-card"><h4><i class="fas fa-circle" style="color:#22c55e"></i> Online agora</h4>' + (o.onlineUsers.length ? o.onlineUsers.map(u => '<div class="ap-row"><span class="ap-dot"></span><span class="grow">' + E(u.username) + admTag(u.role) + '</span><span class="text-muted">' + ago(u.last_seen) + '</span></div>').join('') : '<p class="text-muted">Ninguém online.</p>') + '</div>' +

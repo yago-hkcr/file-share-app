@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -12,21 +12,27 @@
   <title>FileShare - Entrar</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@600;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="/css/style.css?v=20261011a"><link rel="stylesheet" href="/css/login-intro.css?v=20261007a">
-  <script src="/js/common.js?v=20261007a"></script>
-  <link rel="stylesheet" href="/css/mobile.css">
-  <script src="/js/mobile.js" defer></script>
-  <link rel="stylesheet" href="/css/fx.css?v=20261011b">
-  <link rel="stylesheet" href="/css/adaptive.css">
-  <script src="/js/fx.js" defer></script>
-<link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261010e">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261012a">
+  <link rel="stylesheet" href="/css/style.css?v=20261012a"><link rel="stylesheet" href="/css/login-intro.css?v=20261012a">
+  <script src="/js/common.js?v=20261012a"></script>
+  <link rel="stylesheet" href="/css/mobile.css?v=20261012a">
+  <script src="/js/mobile.js?v=20261012a" defer></script>
+  <link rel="stylesheet" href="/css/fx.css?v=20261012a">
+  <link rel="stylesheet" href="/css/adaptive.css?v=20261012a">
+  <script src="/js/fx.js?v=20261012a" defer></script>
+<link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261012a">
+<link rel="stylesheet" href="/css/auth-flow.css?v=20261012a">
 </head>
 <body class="auth-page">
   <canvas id="cyberRain" aria-hidden="true"></canvas>
   <div class="cy-grid" aria-hidden="true"></div>
   <div class="cy-scan" aria-hidden="true"></div>
   <div class="auth-container">
+    <aside class="auth-showcase" aria-label="Sobre o FileShare">
+      <div class="auth-brand"><span class="auth-brand-mark"><i class="fas fa-share-nodes" aria-hidden="true"></i></span><span><b class="auth-brand-name">FILESHARE</b><small class="auth-brand-caption">rede privada de arquivos</small></span></div>
+      <div class="auth-showcase-copy"><span class="auth-eyebrow">Seu espaço. Suas conexões.</span><h2>Compartilhe<br><span>sem fronteiras.</span></h2><p>Salas para colaborar, coletas para receber arquivos e um acervo para manter tudo organizado.</p></div>
+      <div class="auth-terminal" aria-hidden="true"><div class="auth-terminal-head"><i></i><i></i><i></i><span>STATUS DO SISTEMA</span><span>ONLINE</span></div><div class="auth-terminal-body"><p><b>&gt;</b> conexão criptografada</p><p class="terminal-ok"><i class="fas fa-check"></i> arquivos prontos para compartilhar</p><p><b>&gt;</b> seu próximo projeto começa aqui<span class="cy-caret"></span></p></div></div>
+    </aside>
     <div class="auth-card">
       <button type="button" class="btn btn-sm auth-settings-btn" id="authSettingsBtn" aria-label="Configurações de desempenho" title="Configurações de desempenho"><i class="fas fa-cog" aria-hidden="true"></i></button>
       <div class="auth-header">
@@ -48,10 +54,11 @@
         <button type="submit" class="btn btn-primary btn-full"><i class="fas fa-sign-in-alt"></i> ENTRAR</button>
       </form>
       <div class="auth-footer">
-        <p>Não tem conta? <a href="/register">Criar conta</a></p>
+        <p>Não tem conta? <a class="auth-switch" href="/register">Criar conta <i class="fas fa-arrow-right" aria-hidden="true"></i></a></p>
       </div>
     </div>
   </div>
+  <div class="auth-transition-wash" aria-hidden="true"></div>
   <div id="gfxModal" class="modal" style="display:none;" aria-hidden="true">
     <div class="modal-overlay" data-gfx-close></div>
     <div class="modal-content gfx-modal-card" role="dialog" aria-modal="true" aria-labelledby="gfxModalTitle">
@@ -67,8 +74,8 @@
       <div class="modal-footer"><button class="btn btn-primary" type="button" data-gfx-close><i class="fas fa-check"></i> Pronto</button></div>
     </div>
   </div>
-  <script src="/js/gfx.js?v=20261009a"></script>
-  <script src="/js/cyber.js"></script><script src="/js/login-intro.js?v=20261007a"></script>
+  <script src="/js/gfx.js?v=20261012a"></script>
+  <script src="/js/cyber.js?v=20261012a"></script><script src="/js/auth-flow.js?v=20261012a"></script><script src="/js/login-intro.js?v=20261012a"></script>
   <script>
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -96,7 +103,7 @@
       }
     });
   </script>
-  <script src="/js/cursor.js"></script>
-  <script src="/js/announce.js"></script>
+  <script src="/js/cursor.js?v=20261012a"></script>
+  <script src="/js/announce.js?v=20261012a"></script>
 </body>
 </html>

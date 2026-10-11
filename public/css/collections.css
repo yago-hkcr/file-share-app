@@ -261,16 +261,16 @@
 #collectionsPanel .dashboard-intro p { color:#b4a8c9; }
 .dashboard-tabs { border-color:rgba(175,131,235,.2); }
 .dashboard-tab { color:#a99bbf; transition:color .2s ease,background .2s ease,transform .2s ease; }
-.dashboard-tab:hover { color:#efe5ff; background:rgba(168,85,247,.1); }
+.dashboard-tab:hover { color:#c7f7da; background:rgba(53,242,139,.1); }
 .dashboard-tabs-liquid { background:linear-gradient(120deg,rgba(150,70,255,.24),rgba(94,78,255,.18)); box-shadow:inset 0 0 0 1px rgba(190,144,255,.2); }
-.dashboard-tab.is-active { color:#f5eaff; background:transparent; box-shadow:none; }
+.dashboard-tab.is-active { color:#e2fff0; background:transparent; box-shadow:none; }
 .collection-item-input { grid-template-columns:minmax(0,1fr) 64px auto 36px; }
 .collection-quantity-label { display:grid !important; gap:3px !important; justify-items:center; font-size:10px !important; }
 #collectionsPanel .collection-item-input .collection-quantity-label input { width:58px; height:36px; padding:5px !important; text-align:center; }
 .collection-required-label { gap:5px !important; }
 .collection-single-toggle { display:flex; align-items:flex-start; gap:10px; margin:12px 0; padding:12px; border:1px solid rgba(177,125,244,.2); border-radius:12px; color:#e8ddfb; background:rgba(138,75,215,.08); cursor:pointer; }
 .collection-exclusive-toggle { border-color:rgba(129,140,248,.26); background:rgba(79,70,229,.08); }
-.collection-single-toggle input { flex:none; margin-top:3px; accent-color:#a855f7; }
+.collection-single-toggle input { flex:none; margin-top:3px; accent-color:#35f28b; }
 .collection-single-toggle strong,.collection-single-toggle small { display:block; }
 .collection-single-toggle small { margin-top:3px; color:#a99bbf; font-size:12px; line-height:1.45; }
 .collection-participant-entry { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
@@ -349,7 +349,7 @@ body.collection-page::before {
 .collection-required { color:#ff9db4; }
 .collection-optional { color:#a99bbd; }
 .collection-drop-zone { position:relative; display:flex; align-items:center; justify-content:center; gap:12px; min-height:88px; padding:14px; border:1px dashed rgba(181,126,244,.38); border-radius:11px; color:#c7b4df; background:linear-gradient(135deg,rgba(135,71,202,.11),rgba(75,65,174,.08)); cursor:pointer; overflow:hidden; transition:border-color .2s,background .2s,transform .2s; }
-.collection-drop-zone:hover,.collection-drop-zone.is-dragging { border-color:#c084fc; background:rgba(147,75,222,.19); }
+.collection-drop-zone:hover,.collection-drop-zone.is-dragging { border-color:#7ef2ae; background:rgba(147,75,222,.19); }
 .collection-drop-zone.is-dragging { transform:scale(1.012); box-shadow:0 0 0 4px rgba(183,107,255,.1); }
 .collection-drop-zone > i { color:#c17bff; font-size:23px; filter:drop-shadow(0 0 10px rgba(173,92,255,.35)); }
 .collection-drop-zone > span { display:grid; gap:4px; text-align:left; }
@@ -403,7 +403,7 @@ body.collection-page::before {
 }
 
 /* As pastas de quem enviou ficam abertas e fáceis de tocar na sala. */
-.room-submission-folder { margin:10px 0 14px; overflow:hidden; border:1px solid rgba(177,117,241,.24); border-left:3px solid #a855f7; border-radius:12px; background:rgba(116,58,177,.065); }
+.room-submission-folder { margin:10px 0 14px; overflow:hidden; border:1px solid rgba(53,242,139,.24); border-left:3px solid #35f28b; border-radius:12px; background:rgba(116,58,177,.065); }
 .room-submission-folder-toggle { display:flex; align-items:center; gap:9px; width:100%; min-height:48px; padding:10px 13px; border:0; color:#e8dcf8; background:transparent; text-align:left; cursor:pointer; }
 .room-submission-folder-toggle > i:first-child { color:#bf82ff; }
 .room-submission-folder-toggle strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -464,8 +464,8 @@ body.collection-page::before {
 .collection-list-heading > div strong { color:#f2eaff; font-size:14px; }
 .collection-list-heading > div small { color:#a99bbf; font-size:11px; }
 .collection-list-heading button { display:inline-flex; align-items:center; gap:8px; min-height:40px; }
-.collection-list-heading button > span { display:grid; min-width:20px; height:20px; place-items:center; border-radius:999px; color:#f5eaff; background:rgba(168,85,247,.27); font-size:11px; }
-.collection-recent-list,.collection-history-panel { margin-top:22px; padding-top:16px; border-top:1px solid rgba(177,117,241,.2); animation:collectionCardIn .3s ease both; }
+.collection-list-heading button > span { display:grid; min-width:20px; height:20px; place-items:center; border-radius:999px; color:#e2fff0; background:rgba(53,242,139,.27); font-size:11px; }
+.collection-recent-list,.collection-history-panel { margin-top:22px; padding-top:16px; border-top:1px solid rgba(53,242,139,.2); animation:collectionCardIn .3s ease both; }
 .collection-recent-list > h3,.collection-history-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 12px; color:#d9c9ef; font-size:14px; }
 .collection-recent-list > h3 { justify-content:flex-start; flex-wrap:wrap; }
 .collection-recent-list > h3 i,.collection-history-heading > h3 i { color:#b682f4; }
@@ -617,7 +617,7 @@ html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions
 @media (max-width:640px) {
   html[data-theme="dark"] .dashboard-tabs { border-color:rgba(175,131,235,.24); background:rgba(18,13,34,.96); box-shadow:0 8px 24px rgba(0,0,0,.22); }
   html[data-theme="dark"] .dashboard-tab { color:#cbbddd; background:transparent; }
-  html[data-theme="dark"] .dashboard-tab:hover { color:#fff; background:rgba(168,85,247,.13); }
+  html[data-theme="dark"] .dashboard-tab:hover { color:#fff; background:rgba(53,242,139,.13); }
   html[data-theme="dark"] .dashboard-tabs-liquid { background:linear-gradient(120deg,rgba(150,70,255,.36),rgba(94,78,255,.3)); box-shadow:inset 0 0 0 1px rgba(190,144,255,.32); }
   html[data-theme="dark"] .dashboard-tab.is-active { color:#fff; background:transparent; box-shadow:none; }
 }
@@ -625,12 +625,12 @@ html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions
 /* Contraste e cores consistentes no tema claro. */
 html:not([data-theme="dark"]) .dashboard-tabs { border-color:rgba(194,65,12,.24); background:rgba(255,255,255,.95); }
 html:not([data-theme="dark"]) .dashboard-tab { color:#7c6a5a; }
-html:not([data-theme="dark"]) .dashboard-tab:hover { color:#7c2d12; background:rgba(249,115,22,.10); }
-html:not([data-theme="dark"]) .dashboard-tabs-liquid { background:linear-gradient(120deg,rgba(249,115,22,.22),rgba(220,38,38,.12)); box-shadow:inset 0 0 0 1px rgba(249,115,22,.30); }
+html:not([data-theme="dark"]) .dashboard-tab:hover { color:#7a1420; background:rgba(226,44,59,.10); }
+html:not([data-theme="dark"]) .dashboard-tabs-liquid { background:linear-gradient(120deg,rgba(226,44,59,.22),rgba(220,38,38,.12)); box-shadow:inset 0 0 0 1px rgba(226,44,59,.30); }
 html:not([data-theme="dark"]) .dashboard-tab.is-active { color:#9a3412; background:transparent; box-shadow:none; }
-html:not([data-theme="dark"]) .room-submission-folder { border-color:#f5d9c2; border-left-color:#f97316; background:#fff7ed; }
+html:not([data-theme="dark"]) .room-submission-folder { border-color:#f5d9c2; border-left-color:#e22c3b; background:#fdf0f1; }
 html:not([data-theme="dark"]) .room-submission-folder-toggle { color:#431407; }
-html:not([data-theme="dark"]) .room-submission-folder-toggle > i:first-child { color:#ea580c; }
+html:not([data-theme="dark"]) .room-submission-folder-toggle > i:first-child { color:#a90e2c; }
 html:not([data-theme="dark"]) .room-submission-folder-toggle small { color:#a08a76; }
-html:not([data-theme="dark"]) .room-submission-folder-content .file-row { color:#431407; border-color:#f5d9c2; border-left-color:#f97316; background:#fff; }
-html:not([data-theme="dark"]) .room-submission-folder-content .file-row:hover { background:#fff7ed; }
+html:not([data-theme="dark"]) .room-submission-folder-content .file-row { color:#431407; border-color:#f5d9c2; border-left-color:#e22c3b; background:#fff; }
+html:not([data-theme="dark"]) .room-submission-folder-content .file-row:hover { background:#fdf0f1; }
