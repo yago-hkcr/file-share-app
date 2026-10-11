@@ -1931,6 +1931,7 @@ const MAX_DIRECT_BYTES = 100 * 1024 * 1024;
 const MAX_BLOB_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024;
 const BLOB_PATH_RE = /^rooms\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
 const COLLECTION_BLOB_PATH_RE = /^collections\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
+const LIBRARY_BLOB_PATH_RE = /^library\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
 
 app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
   if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
@@ -2044,6 +2045,106 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
   await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
     [m[2], room.id, req.user.id, name, pathname, size, mime, ts()]);
   res.json({ id: m[2], original_name: name, size });
+}));
+
+// Upload direto ao Acervo (sem passar por sala): mesmo fluxo das salas, mas gravando em
+// personal_library_items. Assim o Acervo também aceita arquivos de até 50 GB.
+app.post('/api/library/upload-url', asMember, wrap(async (req, res) => {
+  if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
+  const location = await resolvePersonalLibraryLocation(req.user.id, req.body || {});
+  if (!location) return res.status(400).json({ error: 'Escolha uma prateleira de um espaço seu.' });
+
+  const name = String((req.body && req.body.name) || '').trim();
+  const size = Number(req.body && req.body.size) || 0;
+  if (!name) return res.status(400).json({ error: 'Nome do arquivo obrigatório' });
+  if (size <= 0) return res.status(400).json({ error: 'Arquivo vazio' });
+  if (size > MAX_DIRECT_BYTES) return res.status(413).json({ error: `Arquivo grande demais (máximo ${Math.round(MAX_DIRECT_BYTES / 1024 / 1024)} MB)` });
+
+  const itemId = uuidv4();
+  const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
+  const pathname = `library/${itemId}-${safe}`;
+  const { issueSignedToken, presignUrl } = await blobSdk();
+  const validUntil = Date.now() + 60 * 60 * 1000;
+  const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_DIRECT_BYTES, validUntil });
+  const signed = await presignUrl(token, { operation: 'put', pathname, access: 'private', maximumSizeInBytes: MAX_DIRECT_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil });
+  res.json({ pathname, presignedUrl: signed.presignedUrl, validUntil, maxBytes: MAX_DIRECT_BYTES });
+}));
+
+// Upload multipart direto ao Blob para arquivos acima de 100 MB no Acervo.
+app.post('/api/library/upload-token', wrap(async (req, res) => {
+  if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
+  const action = req.body && req.body.type;
+  if (action === 'blob.generate-presigned-url') {
+    if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
+    const user = await one('SELECT id, username, role, status, last_seen, force_logout_at, password_change_required FROM users WHERE id = $1', [req.session.userId]);
+    if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
+      req.session = null;
+      return res.status(401).json({ error: 'Não autorizado' });
+    }
+    if (Number(user.password_change_required)) return res.status(428).json({ state: 'password_change_required', error: 'Atualize sua senha para continuar.' });
+    if (!isApproved(user)) return res.status(403).json({ error: 'Conta aguardando aprovação' });
+  } else if (action !== 'blob.upload-completed') {
+    return res.status(400).json({ error: 'Ação de upload inválida' });
+  }
+
+  try {
+    const { handleUploadPresigned } = await blobClientSdk();
+    const { issueSignedToken } = await blobSdk();
+    const result = await handleUploadPresigned({
+      request: req,
+      body: req.body,
+      getSignedToken: async pathname => {
+        if (!LIBRARY_BLOB_PATH_RE.test(pathname)) throw new Error('Caminho de arquivo inválido');
+        const validUntil = Date.now() + 24 * 60 * 60 * 1000;
+        const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, validUntil });
+        return { token, urlOptions: { maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil } };
+      },
+      onUploadCompleted: async () => {}
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Blob multipart (Acervo):', error && error.message);
+    res.status(400).json({ error: 'Não foi possível preparar ou concluir o upload multipart' });
+  }
+}));
+
+// Registra no Acervo um arquivo já enviado direto ao Blob (valida o tamanho via head).
+app.post('/api/library/files/register', asMember, wrap(async (req, res) => {
+  const pathname = String((req.body && req.body.pathname) || '');
+  const m = LIBRARY_BLOB_PATH_RE.exec(pathname);
+  if (!m) return res.status(400).json({ error: 'Caminho de arquivo inválido' });
+  if (await one('SELECT id FROM personal_library_items WHERE id = $1', [m[1]])) return res.status(400).json({ error: 'Arquivo já registrado' });
+  const location = await resolvePersonalLibraryLocation(req.user.id, req.body || {});
+  if (!location) return res.status(400).json({ error: 'Escolha uma prateleira de um espaço seu.' });
+  const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
+  const favorite = (req.body && (req.body.is_favorite === true || req.body.is_favorite === 1 || req.body.is_favorite === '1')) ? 1 : 0;
+
+  let size = Number(req.body.size) || 0;
+  try {
+    const { head } = await blobSdk();
+    const info = await head(pathname);
+    if (info && Number(info.size)) size = Number(info.size);
+    else return res.status(400).json({ error: 'Não foi possível validar o tamanho do arquivo' });
+  } catch (e) {
+    if (e && e.name === 'BlobNotFoundError') return res.status(400).json({ error: 'O envio do arquivo não foi concluído' });
+    console.error('head do Blob (Acervo) falhou:', e && e.message);
+    return res.status(502).json({ error: 'Não foi possível validar o arquivo no armazenamento' });
+  }
+  if (size > MAX_BLOB_UPLOAD_BYTES) {
+    await deleteBlobs([pathname]);
+    return res.status(413).json({ error: 'Arquivo grande demais' });
+  }
+
+  const name = String(req.body.name || '').trim().slice(0, 255) || 'arquivo';
+  const mime = String(req.body.mime || '').slice(0, 100) || 'application/octet-stream';
+  const now = ts();
+  const saved = await one(`INSERT INTO personal_library_items (id, user_id, file_id, shelf, space_id, bookcase_id, note, is_favorite,
+      original_name, size, mime_type, stored_name, room_name, uploader_name, snapshot_ready, created_at, updated_at)
+    VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,'Envio direto','',1,$12,$12)
+    RETURNING id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at`,
+    [m[1], req.user.id, location.bookcase.name, location.space.id, location.bookcase.id, note, favorite,
+      name, size, mime, pathname, now]);
+  res.status(201).json({ ...saved, is_favorite: Boolean(saved.is_favorite) });
 }));
 
 // =================== COLETAS DE ARQUIVOS ===================
