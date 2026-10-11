@@ -327,15 +327,61 @@
   }
 
   async function uploadDirectFiles(picked, space, bookcaseId) {
-    const form = new FormData();
-    picked.slice(0, 5).forEach(file => form.append('files', file));
-    form.append('space_id', space.id);
-    form.append('bookcase_id', bookcaseId);
-    try {
-      window.toast?.('Enviando ' + Math.min(picked.length, 5) + ' arquivo(s) ao Acervo...');
+    const all = picked.slice(0, 5);
+    if (!all.length) return;
+    const putWithProgress = (url, file) => new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', url);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.upload.onprogress = () => {};
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error('Falha no envio (' + xhr.status + ')'));
+      xhr.onerror = () => reject(new Error('Falha de rede durante o envio'));
+      xhr.send(file);
+    });
+    const postJson = async (url, body) => {
+      const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json().catch(() => ({}));
+      return { status: response.status, ok: response.ok, data };
+    };
+    const legacyUpload = async (files) => {
+      const form = new FormData();
+      files.forEach(file => form.append('files', file));
+      form.append('space_id', space.id);
+      form.append('bookcase_id', bookcaseId);
       const response = await fetch('/api/library/upload', { method: 'POST', credentials: 'same-origin', body: form });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Não foi possível enviar.');
+    };
+    try {
+      window.toast?.('Enviando ' + all.length + ' arquivo(s) ao Acervo...');
+      for (let i = 0; i < all.length; i++) {
+        const file = all[i];
+        let pathname;
+        if (file.size > 100 * 1024 * 1024) {
+          try {
+            const { uploadPresigned } = await import('https://esm.sh/@vercel/blob@2.8.0/client?bundle');
+            const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
+            const objectPath = 'library/' + crypto.randomUUID() + '-' + safe;
+            const blob = await uploadPresigned(objectPath, file, {
+              access: 'private',
+              handleUploadUrl: '/api/library/upload-token',
+              multipart: true
+            });
+            pathname = blob.pathname;
+          } catch (error) {
+            throw new Error(error && error.message ? error.message : 'Falha no envio multipart. Confira sua conexão e tente novamente.');
+          }
+        } else {
+          const prep = await postJson('/api/library/upload-url', { name: file.name, size: file.size, type: file.type, space_id: space.id, bookcase_id: bookcaseId });
+          if (prep.status === 501) { await legacyUpload(all.slice(i)); signature = ''; await loadLibrary(true); window.toast?.('Arquivo(s) guardado(s) no seu Acervo.'); return; }
+          if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
+          if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponível).');
+          await putWithProgress(prep.data.presignedUrl, file);
+          pathname = prep.data.pathname;
+        }
+        const done = await postJson('/api/library/files/register', { pathname, name: file.name, size: file.size, mime: file.type, space_id: space.id, bookcase_id: bookcaseId });
+        if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
+      }
       signature = '';
       await loadLibrary(true);
       window.toast?.('Arquivo(s) guardado(s) no seu Acervo.');
