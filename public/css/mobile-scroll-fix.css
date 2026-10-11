@@ -278,24 +278,30 @@ body.auth-page {
   vertical-align: middle;
 }
 /* Ícone "+" em SVG (círculo preto + "+" branco) dentro do botão
-   "Criar sala temporária" — mesmo tratamento do reset acima. */
+   "Criar sala temporária".
+   O botão é flex com align-items:center (regra .empty-state .btn acima),
+   então o centro vertical é resolvido pelo container. NÃO usar
+   transform/translateY aqui — isso empurra o ícone para baixo e o deixa
+   torto em relação ao texto. vertical-align é ignorado em contexto flex. */
 .empty-state .btn .btn-plus-icon {
   width: 16px !important;
   height: 16px !important;
   min-width: 16px !important;
-  display: inline-block !important;
+  display: block !important;
   flex: 0 0 auto;
-  vertical-align: middle;
+  align-self: center;
   margin: 0 !important;
   padding: 0 !important;
   line-height: 1 !important;
-  transform: translateY(1px); /* compensa o descenso óptico do texto */
+  transform: none !important;
 }
 .btn .btn-plus-icon {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
-  vertical-align: middle;
+  display: block;
+  align-self: center;
+  transform: none;
 }
 /* Celular: botão confortável ao toque, sem estourar a largura. */
 @media (max-width: 640px) {
