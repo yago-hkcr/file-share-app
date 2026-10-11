@@ -238,6 +238,11 @@ body.auth-page {
   align-items: center;   /* centraliza ícone, texto e botão */
   justify-content: center;
   text-align: center;
+  /* BUG: .rooms-grid virou GRID (dashboard-redesign.css). Sem isso o
+     empty-state vira 1 item de ~290px alinhado à esquerda (= "torto"). */
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  margin: 0 auto !important;
 }
 .empty-state .btn {
   margin: 18px auto 0 !important;   /* centraliza horizontalmente */
