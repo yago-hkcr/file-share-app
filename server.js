@@ -1960,7 +1960,8 @@ app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
 
 
 // Upload multipart direto do navegador ao Blob para arquivos acima de 100 MB.
-// O helper do Blob valida os callbacks e emite tokens limitados ao caminho do arquivo.
+// O helper emite URLs assinadas limitadas ao caminho e tamanho reservados; a
+// sessão autenticada confirma o arquivo depois, pelo endpoint /files/register.
 app.post('/api/rooms/:id/upload-token', wrap(async (req, res) => {
   if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
   const action = req.body && req.body.type;
@@ -2005,8 +2006,7 @@ app.post('/api/rooms/:id/upload-token', wrap(async (req, res) => {
             validUntil
           }
         };
-      },
-      onUploadCompleted: async () => {}
+      }
     });
     res.json(result);
   } catch (error) {
@@ -2098,8 +2098,7 @@ app.post('/api/library/upload-token', wrap(async (req, res) => {
         const validUntil = Date.now() + 24 * 60 * 60 * 1000;
         const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, validUntil });
         return { token, urlOptions: { maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil } };
-      },
-      onUploadCompleted: async () => {}
+      }
     });
     res.json(result);
   } catch (error) {
@@ -2532,8 +2531,7 @@ app.post('/api/coletas/enviar/:token/upload-token', publicCollectionAccess, wrap
         const maximumSizeInBytes = num(staged.size);
         const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes, validUntil });
         return { token, urlOptions: { maximumSizeInBytes, addRandomSuffix: false, allowOverwrite: false, validUntil } };
-      },
-      onUploadCompleted: async () => {}
+      }
     });
     res.json(result);
   } catch (error) {
