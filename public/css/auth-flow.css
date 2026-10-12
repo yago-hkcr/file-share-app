@@ -70,7 +70,7 @@ body.auth-page::after { content: none !important; }
 .cy-grid { opacity: .42; }
 /* Desktop: chuva e varredura mais visíveis; mobile mantém os valores base. */
 @media (min-width: 769px) {
-  #cyberRain { opacity: .4; }
+  #cyberRain { opacity: .55; }
   .cy-scan { opacity: .55; }
   .cy-grid { opacity: .5; }
 }

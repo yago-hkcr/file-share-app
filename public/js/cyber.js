@@ -19,25 +19,36 @@
   }
 
   // ---- Chuva de código ----
-  // Páginas internas (painel/sala/admin/coleta) ganham a mesma chuva, porém mais sutil e atrás do conteúdo.
+  // Páginas internas (painel/sala/admin/coleta) ganham o MESMO fundo do login/cadastro:
+  // chuva de matriz + piso em grade 3D + varredura, tudo atrás do conteúdo.
   const interior = !reduce && (body.classList.contains('app-page') || body.classList.contains('sala-page') || body.classList.contains('collection-page'));
   let canvas = document.getElementById('cyberRain');
   const created = !canvas && interior;
   if (created) {
     canvas = document.createElement('canvas');
     canvas.id = 'cyberRain';
-    canvas.className = 'cyber-subtle';
+    canvas.setAttribute('aria-hidden', 'true');
+    const grid = document.createElement('div');
+    grid.className = 'cy-grid';
+    grid.setAttribute('aria-hidden', 'true');
     const scan = document.createElement('div');
-    scan.className = 'cy-scan cyber-subtle';
-    // Inseridos como filhos do <html> com z-index:-1: ficam acima do fundo do documento,
-    // mas sempre atrás de todo o conteúdo e do fundo do body (grade inclusa).
+    scan.className = 'cy-scan';
+    scan.setAttribute('aria-hidden', 'true');
+    // Inseridos como filhos do <html> com z-index:-1 (ver html.cy-interior no style.css):
+    // ficam acima do fundo do documento, mas sempre atrás de todo o conteúdo.
+    // Ordem no DOM = ordem de pintura (trás -> frente): chuva -> piso -> varredura,
+    // igual ao login/cadastro (o piso passa por cima da chuva).
+    root.insertBefore(canvas, body);
+    root.insertBefore(grid, body);
     root.insertBefore(scan, body);
-    root.insertBefore(canvas, scan);
+    // A cor-base do tema passa para o <html> (veja html.cy-interior no style.css),
+    // senão o fundo opaco do body cobre o canvas e a chuva fica invisível.
+    root.classList.add('cy-interior');
   }
   if (!canvas || reduce) return;
   const ctx = canvas.getContext('2d');
   const chars = '01ABCDEF<>/{}[]#$%=+*'.split('');
-  const size = created ? 20 : 16;
+  const size = 16; // mesma densidade do login/cadastro
   let cols = 0, drops = [], rgb = '34,197,94', w = 0, h = 0, last = 0;
 
   function isDarkTheme() {
@@ -51,12 +62,10 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     cols = Math.ceil(w / size);
     drops = Array.from({ length: cols }, () => Math.random() * -50);
-    if (created) {
-      ctx.clearRect(0, 0, w, h); // interno: canvas transparente para não cobrir a grade de fundo
-    } else {
-      ctx.fillStyle = isDarkTheme() ? 'rgb(0,0,0)' : 'rgb(255,255,255)';
-      ctx.fillRect(0, 0, w, h);
-    }
+    // Fundo opaco, igual ao login. Nas páginas internas a grade do body fica
+    // POR CIMA deste canvas (z-index -1), então ela continua aparecendo.
+    ctx.fillStyle = isDarkTheme() ? 'rgb(0,0,0)' : 'rgb(255,255,255)';
+    ctx.fillRect(0, 0, w, h);
   }
   const readColor = () => {
     const v = getComputedStyle(body).getPropertyValue('--cy-rgb').trim();
@@ -68,23 +77,15 @@
 
   function frame(t) {
     requestAnimationFrame(frame);
-    const step = created ? (desktop ? 80 : 110) : 55;
-    if (document.hidden || body.classList.contains('auth-exit') || t - last < step) return; // interno: leve; pausa durante a saída do login
+    const step = 55; // mesma velocidade do login/cadastro
+    if (document.hidden || body.classList.contains('auth-exit') || t - last < step) return; // pausa fora da tela e durante a saída do login
     last = t;
-    if (created) {
-      // Apaga gradualmente em vez de pintar por cima: o canvas permanece transparente.
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.fillStyle = 'rgba(0,0,0,' + (desktop ? 0.1 : 0.12) + ')';
-      ctx.fillRect(0, 0, w, h);
-      ctx.globalCompositeOperation = 'source-over';
-    } else {
-      ctx.fillStyle = isDarkTheme() ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.22)'; // esmaece o rastro sem escurecer o tema claro
-      ctx.fillRect(0, 0, w, h);
-    }
+    ctx.fillStyle = isDarkTheme() ? 'rgba(0,0,0,' + (desktop ? 0.12 : 0.16) + ')' : 'rgba(255,255,255,0.22)'; // esmaece o rastro sem escurecer o tema claro
+    ctx.fillRect(0, 0, w, h);
     ctx.font = size + 'px "Share Tech Mono", monospace';
-    const alpha = created ? (isDarkTheme() ? (desktop ? 0.72 : 0.5) : (desktop ? 0.45 : 0.35)) : (isDarkTheme() ? 0.85 : 0.55);
+    const alpha = isDarkTheme() ? (desktop ? 0.95 : 0.85) : (desktop ? 0.65 : 0.55);
     for (let i = 0; i < cols; i++) {
-      if (Math.random() > (created ? (desktop ? 0.62 : 0.72) : 0.55)) { drops[i] += 1; if (drops[i] * size > h && Math.random() > 0.96) drops[i] = 0; continue; }
+      if (Math.random() > 0.55) { drops[i] += 1; if (drops[i] * size > h && Math.random() > 0.96) drops[i] = 0; continue; }
       const x = i * size, y = drops[i] * size;
       ctx.fillStyle = 'rgba(' + rgb + ',' + alpha + ')';
       ctx.fillText(chars[(Math.random() * chars.length) | 0], x, y);

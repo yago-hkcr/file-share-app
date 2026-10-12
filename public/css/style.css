@@ -1288,6 +1288,32 @@ html[data-theme="dark"] { --cy: #22c55e; --cy2: #16a34a; --cy-rgb: 34,197,94; --
 }
 body.app-page::after, body.sala-page::after { content: none; }
 
+/* A chuva interna (cyber.js) vive num canvas z-index:-1, ATRÁS do fundo do body —
+   que é opaco e a escondia por completo. Com o canvas ativo (html.cy-interior),
+   a cor-base passa para o <html> e o body fica translúcido: a chuva aparece
+   atrás dos cartões e do texto, em ambos os temas. */
+html.cy-interior { background-color: var(--bg1); }
+html.cy-interior > body { background-color: transparent !important; }
+html.cy-interior > body.app-page, html.cy-interior > body.sala-page {
+  background-image: linear-gradient(rgba(var(--cy-rgb),.06) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--cy-rgb),.06) 1px, transparent 1px), linear-gradient(135deg, rgba(var(--cy-rgb),.05), transparent 45%, rgba(var(--cy-rgb),.045));
+  background-size: 46px 46px, 46px 46px, auto; background-attachment: fixed;
+}
+/* Nas páginas internas o cyber.js cria chuva (#cyberRain), piso (.cy-grid) e varredura
+   (.cy-scan) como filhos do <html>. Com z-index:-1 ficam atrás de TODO o conteúdo do
+   body (cartões, tabelas, header), como no login — e não cobrem nada. Opacidades
+   próximas às do auth-flow.css para o efeito ficar igual ao do cadastro/login. */
+html.cy-interior > #cyberRain,
+html.cy-interior > .cy-grid,
+html.cy-interior > .cy-scan { z-index: -1; }
+html.cy-interior > #cyberRain { opacity: .5; }
+html.cy-interior > .cy-grid { opacity: .42; }
+html.cy-interior > .cy-scan { opacity: .45; }
+@media (min-width: 769px) {
+  html.cy-interior > #cyberRain { opacity: .55; }
+  html.cy-interior > .cy-grid { opacity: .5; }
+  html.cy-interior > .cy-scan { opacity: .5; }
+}
+
 /* cabeçalho: linha de neon correndo na base */
 .header { position: sticky; }
 .header::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--cy), var(--cy2), transparent); background-size: 200% 100%; animation: cyLine 6s linear infinite; box-shadow: 0 0 12px rgba(var(--cy-rgb),.6); }
