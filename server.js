@@ -655,13 +655,13 @@ const CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
   "frame-ancestors 'self'",
   "form-action 'self'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://esm.sh",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
   "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com",
-  "img-src 'self' data: blob:",
-  "media-src 'self' blob:",
-  "connect-src 'self' https://cdn.jsdelivr.net https://esm.sh https://vercel.com https://*.blob.vercel-storage.com",
-  "frame-src 'self' blob:",
+  "img-src 'self' data: blob: https://*.blob.vercel-storage.com",
+  "media-src 'self' blob: https://*.blob.vercel-storage.com",
+  "connect-src 'self' https://cdn.jsdelivr.net https://vercel.com https://*.blob.vercel-storage.com",
+  "frame-src 'self' blob: https://*.blob.vercel-storage.com",
   "worker-src 'self' blob: https://cdn.jsdelivr.net"
 ].join('; ') + (IS_VERCEL ? '; upgrade-insecure-requests' : '');
 app.use((req, res, next) => {
@@ -2511,7 +2511,9 @@ app.post('/api/coletas/enviar/:token/upload-token', publicCollectionAccess, wrap
   const recipient = req.collectionRecipient;
   try {
     const action = req.body && req.body.type;
-    const pathname = String(req.body && req.body.pathname || '');
+    // O SDK @vercel/blob 2.8.0 envia { type, payload: { pathname, ... } }; aceita também o formato plano.
+    const sdkPayload = (req.body && req.body.payload) || {};
+    const pathname = String(sdkPayload.pathname || (req.body && req.body.pathname) || '');
     const roomMatch = BLOB_PATH_RE.exec(pathname);
     const collectionMatch = COLLECTION_BLOB_PATH_RE.exec(pathname);
     const match = recipient.destination_type === 'library' ? collectionMatch : roomMatch;

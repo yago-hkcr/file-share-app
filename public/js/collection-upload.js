@@ -210,7 +210,7 @@
     }, 5000);
     try {
       if (reserved.multipart) {
-        const { uploadPresigned } = await import('https://esm.sh/@vercel/blob@2.8.0/client?bundle');
+        const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
         await uploadPresigned(reserved.pathname, entry.file, {
           access: 'private', handleUploadUrl: base + '/upload-token', clientPayload: JSON.stringify({ uploadId: reserved.id }), multipart: true,
           abortSignal: abortController.signal,

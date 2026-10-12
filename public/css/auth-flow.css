@@ -68,6 +68,12 @@ body.auth-page::after { content: none !important; }
 .cy-scan { opacity: .48; }
 .cy-scan::after { opacity: .8; }
 .cy-grid { opacity: .42; }
+/* Desktop: chuva e varredura mais visíveis; mobile mantém os valores base. */
+@media (min-width: 769px) {
+  #cyberRain { opacity: .4; }
+  .cy-scan { opacity: .55; }
+  .cy-grid { opacity: .5; }
+}
 
 body.auth-page .auth-container {
   display: grid;
