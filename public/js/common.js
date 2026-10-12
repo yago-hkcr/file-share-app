@@ -14,7 +14,7 @@
     root.setAttribute('data-theme', resolved);
     root.style.colorScheme = resolved;
     const themeColor = document.querySelector('meta[name="theme-color"]');
-    if (themeColor) themeColor.content = resolved === 'dark' ? '#0a0612' : '#f8f7fc';
+    if (themeColor) themeColor.content = resolved === 'dark' ? '#000000' : '#ffffff';
     document.querySelectorAll('.theme-toggle').forEach(paintButton);
   }
   applyTheme(preference);
