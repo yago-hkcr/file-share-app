@@ -1190,6 +1190,11 @@ body.auth-page::before, body.auth-page::after { content: none; }
 /* Versão sutil criada pelo cyber.js para páginas internas: fica ATRÁS do conteúdo e bem discreta. */
 #cyberRain.cyber-subtle { z-index: -1; opacity: .45; }
 .cy-scan.cyber-subtle { z-index: -1; opacity: .4; }
+/* Desktop: o fundo cyber fica mais presente sem pesar (mobile mantém o equilíbrio). */
+@media (min-width: 769px) {
+  #cyberRain.cyber-subtle { opacity: .62; }
+  .cy-scan.cyber-subtle { opacity: .5; }
+}
 .cy-grid { position: fixed; left: -60%; right: -60%; bottom: 0; height: 70vh; z-index: 0; pointer-events: none;
   background-image: linear-gradient(rgba(var(--cy-rgb),.4) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--cy-rgb),.4) 1px, transparent 1px);
   background-size: 60px 60px; transform: perspective(380px) rotateX(64deg); transform-origin: 50% 100%;

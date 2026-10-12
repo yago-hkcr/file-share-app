@@ -359,7 +359,7 @@
         let pathname;
         if (file.size > 100 * 1024 * 1024) {
           try {
-            const { uploadPresigned } = await import('https://esm.sh/@vercel/blob@2.8.0/client?bundle');
+            const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
             const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
             const objectPath = 'library/' + crypto.randomUUID() + '-' + safe;
             const blob = await uploadPresigned(objectPath, file, {

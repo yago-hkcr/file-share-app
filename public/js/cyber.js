@@ -3,6 +3,8 @@
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const body = document.body;
   const root = document.documentElement;
+  // Desktop (tela maior com ponteiro fino): o fundo pode ser mais presente sem pesar.
+  const desktop = !!(window.matchMedia && window.matchMedia('(min-width: 769px) and (pointer: fine)').matches);
 
   // ---- Linha de status digitando ----
   const out = document.getElementById('cyType');
@@ -66,13 +68,13 @@
 
   function frame(t) {
     requestAnimationFrame(frame);
-    const step = created ? 110 : 55;
-    if (document.hidden || t - last < step) return; // interno: ainda mais leve
+    const step = created ? (desktop ? 80 : 110) : 55;
+    if (document.hidden || body.classList.contains('auth-exit') || t - last < step) return; // interno: leve; pausa durante a saída do login
     last = t;
     if (created) {
       // Apaga gradualmente em vez de pintar por cima: o canvas permanece transparente.
       ctx.globalCompositeOperation = 'destination-out';
-      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.fillStyle = 'rgba(0,0,0,' + (desktop ? 0.1 : 0.12) + ')';
       ctx.fillRect(0, 0, w, h);
       ctx.globalCompositeOperation = 'source-over';
     } else {
@@ -80,9 +82,9 @@
       ctx.fillRect(0, 0, w, h);
     }
     ctx.font = size + 'px "Share Tech Mono", monospace';
-    const alpha = created ? (isDarkTheme() ? 0.5 : 0.35) : (isDarkTheme() ? 0.85 : 0.55);
+    const alpha = created ? (isDarkTheme() ? (desktop ? 0.72 : 0.5) : (desktop ? 0.45 : 0.35)) : (isDarkTheme() ? 0.85 : 0.55);
     for (let i = 0; i < cols; i++) {
-      if (Math.random() > (created ? 0.72 : 0.55)) { drops[i] += 1; if (drops[i] * size > h && Math.random() > 0.96) drops[i] = 0; continue; }
+      if (Math.random() > (created ? (desktop ? 0.62 : 0.72) : 0.55)) { drops[i] += 1; if (drops[i] * size > h && Math.random() > 0.96) drops[i] = 0; continue; }
       const x = i * size, y = drops[i] * size;
       ctx.fillStyle = 'rgba(' + rgb + ',' + alpha + ')';
       ctx.fillText(chars[(Math.random() * chars.length) | 0], x, y);
