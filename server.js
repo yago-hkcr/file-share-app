@@ -271,6 +271,17 @@ const isLibraryBlobPath = name => typeof name === 'string' && name.startsWith(LI
 // arquivos de até 50 GB sem estourar o maxDuration da função.
 const BLOB_REDIRECT_MIN_BYTES = 100 * 1024 * 1024;
 
+// Gera uma URL de download (GET) temporária para um blob privado.
+// Na SDK @vercel/blob 2.x, get() NÃO retorna url/downloadUrl em blobs privados (só stream),
+// então para redirecionar arquivos grandes ao CDN emitimos uma URL presigned de GET.
+async function presignBlobDownloadUrl(pathname) {
+  const { issueSignedToken, presignUrl } = await blobSdk();
+  const validUntil = Date.now() + 60 * 60 * 1000;
+  const token = await issueSignedToken({ pathname, operations: ['get'], validUntil });
+  const signed = await presignUrl(token, { operation: 'get', pathname, access: 'private', validUntil });
+  return signed.presignedUrl;
+}
+
 // Le os bytes de um arquivo de sala (Blob privado ou Postgres) para copiar ao Acervo.
 async function readRoomFileBytes(file) {
   if (!file) return null;
@@ -1792,9 +1803,8 @@ app.get('/download/library/:itemId', requireAuth, wrap(async (req, res) => {
   if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
   // Arquivos grandes: redireciona direto ao Blob (a CDN entrega) para não estourar a função.
   if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
-    const { get } = await blobSdk();
-    const result = await get(item.stored_name, { access: 'private' });
-    if (result && result.url) return res.redirect(302, result.downloadUrl || result.url);
+    try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name)); }
+    catch (err) { console.error('presign download Acervo:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
   }
   const bytes = await readLibraryBlob(item);
   if (!bytes) return res.status(404).send('A cópia deste arquivo não está mais disponível');
@@ -1812,9 +1822,8 @@ app.get('/preview/library/:itemId', requireAuth, wrap(async (req, res) => {
   if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
   // Grandes arquivos (ex.: vídeo): redireciona ao Blob para o CDN entregar com suporte a Range.
   if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
-    const { get } = await blobSdk();
-    const result = await get(item.stored_name, { access: 'private' });
-    if (result && result.url) return res.redirect(302, result.url);
+    try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name)); }
+    catch (err) { console.error('presign preview Acervo:', err && err.message); return res.status(502).send('Não foi possível preparar a visualização'); }
   }
   const bytes = await readLibraryBlob(item);
   if (!bytes) return res.status(404).send('A cópia deste arquivo não está mais disponível');
@@ -2913,13 +2922,18 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
   };
 
   if (isBlobPath(file.stored_name)) {
-    const { get } = await blobSdk();
-    const result = await get(file.stored_name, { access: 'private' });
-    if (!result || !result.url) return res.status(404).send('Arquivo não encontrado');
     // Arquivos grandes: redireciona direto ao Blob (a CDN entrega, sem passar pela função).
     // É isto que permite baixar arquivos de até 50 GB sem estourar o tempo da função.
-    if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) return res.redirect(302, result.downloadUrl || result.url);
-    if (!result.stream) return res.status(404).send('Arquivo não encontrado');
+    // get() em blob privado não devolve url, por isso emitimos uma URL presigned de GET.
+    if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) {
+      try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name)); }
+      catch (err) { console.error('presign download:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
+    }
+    const { get } = await blobSdk();
+    const result = await get(file.stored_name, { access: 'private' });
+    // Em blobs privados get() devolve somente o stream (sem url); a existência do stream
+    // é o que indica que o arquivo está acessível.
+    if (!result || !result.stream) return res.status(404).send('Arquivo não encontrado');
     headers();
     const stream = Readable.fromWeb(result.stream);
     stream.on('error', err => { console.error('Erro no download:', err && err.message); res.destroy(err); });
@@ -2948,13 +2962,15 @@ app.get('/preview/:fileId', asMember, wrap(async (req, res) => {
   res.set('Cache-Control', 'private, no-store');
   res.set('Content-Type', mime);
   if (isBlobPath(file.stored_name)) {
-    const { get } = await blobSdk();
-    const result = await get(file.stored_name, { access: 'private' });
-    if (!result || !result.url) return res.status(404).send('Arquivo não encontrado');
     // Grandes arquivos (ex.: vídeo): redireciona ao Blob para o CDN entregar com suporte a
     // Range (busca no player), sem travar a função serverless em transfers longos.
-    if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) return res.redirect(302, result.url);
-    if (!result.stream) return res.status(404).send('Arquivo não encontrado');
+    if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) {
+      try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name)); }
+      catch (err) { console.error('presign preview:', err && err.message); return res.status(502).send('Não foi possível preparar a visualização'); }
+    }
+    const { get } = await blobSdk();
+    const result = await get(file.stored_name, { access: 'private' });
+    if (!result || !result.stream) return res.status(404).send('Arquivo não encontrado');
     const stream = Readable.fromWeb(result.stream);
     stream.on('error', err => { console.error('Erro na visualização:', err && err.message); if (!res.headersSent) res.status(500).end(); else res.destroy(err); });
     return stream.pipe(res);
