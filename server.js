@@ -658,6 +658,16 @@ async function createTables() {
     blocked_until TEXT
   )`);
   await q('CREATE INDEX IF NOT EXISTS idx_auth_rate_limits_window ON auth_rate_limits (window_started_at)');
+  // Tokens de "esqueci minha senha": só o hash fica no banco; link único, válido por 1 hora, de uso único.
+  await q(`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT UNIQUE NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at TEXT,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  )`);
+  await q('CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens (user_id)');
 }
 
 async function initDatabase() {
@@ -730,7 +740,7 @@ app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public'
 app.use(cookieSession({
   name: SESSION_COOKIE,
   keys: [sessionSecret()],
-  maxAge: 7 * 24 * 60 * 60 * 1000,
+  maxAge: 365 * 24 * 60 * 60 * 1000, // login permanente: 1 ano (limite prático dos navegadores é 400 dias)
   path: '/',
   httpOnly: true,
   secure: IS_VERCEL,
@@ -739,8 +749,9 @@ app.use(cookieSession({
 app.use(wrap(async (req, res, next) => { await ensureDatabase(); next(); }));
 
 // ===== Login persistente ("lembrar de mim") =====
-// Além do cookie de sessão, guardamos um token de 30 dias no navegador; só o hash dele fica no banco.
-const REMEMBER_DAYS = 30;
+// Além do cookie de sessão, guardamos um token de longa duração no navegador; só o hash dele fica no banco.
+// 365 dias: depois de entrar uma vez, o usuário só volta ao login se sair (logout) — navegadores limitam cookies a 400 dias.
+const REMEMBER_DAYS = 365;
 const hashToken = t => crypto.createHash('sha256').update(String(t)).digest('hex');
 function readCookie(req, name) {
   const raw = req.headers.cookie || '';
@@ -1307,7 +1318,8 @@ const page = name => path.join(__dirname, 'public', name);
 // Endpoint simples para monitoramento: só responde depois que o banco foi inicializado.
 app.get('/health', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json({ status: 'ok' });
+  // email_configured: ajuda a diagnosticar a recuperação de senha por e-mail (não expõe segredos).
+  res.json({ status: 'ok', email_configured: mailConfigured() });
 });
 
 app.get('/', wrap(async (req, res) => {
@@ -1319,6 +1331,8 @@ app.get('/', wrap(async (req, res) => {
   res.sendFile(page('index.html'));
 }));
 app.get('/register', (req, res) => res.sendFile(page('register.html')));
+app.get('/forgot-password', (req, res) => res.sendFile(page('forgot-password.html')));
+app.get('/reset-password', (req, res) => res.sendFile(page('reset-password.html')));
 // Compatibilidade: o login fica na raiz ("/"); /login apenas redireciona para lá.
 app.get('/login', (req, res) => res.redirect('/'));
 app.get('/admin', wrap(async (req, res) => {
@@ -1432,6 +1446,98 @@ app.post('/api/logout', wrap(async (req, res) => {
   res.clearCookie(REMEMBER_COOKIE, { path: '/' });
   req.session = null;
   res.json({ success: true });
+}));
+
+// ===== Recuperação de senha por e-mail ("esqueci minha senha") =====
+// Envio via API HTTP da Resend, sem dependências novas. Para ativar em produção, defina na Vercel:
+//   RESEND_API_KEY → chave da API (https://resend.com)
+//   MAIL_FROM      → remetente aprovado, ex.: "FileShare <no-reply@arquive.online>"
+//   APP_BASE_URL   → opcional; base dos links (padrão: derivado da requisição, ex.: https://www.arquive.online)
+// Sem RESEND_API_KEY o link aparece nos logs do servidor (útil em modo local) e /health mostra email_configured=false.
+const RESEND_API_KEY = String(process.env.RESEND_API_KEY || '').trim();
+const MAIL_FROM = String(process.env.MAIL_FROM || '').trim() || 'FileShare <onboarding@resend.dev>';
+const mailConfigured = () => Boolean(RESEND_API_KEY);
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // link válido por 1 hora
+async function sendMail({ to, subject, html, text }) {
+  if (!mailConfigured()) {
+    console.error('[mail] RESEND_API_KEY ausente — e-mail NÃO enviado. Destinatário:', to);
+    return { ok: false, reason: 'not_configured' };
+  }
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: MAIL_FROM, to: [to], subject, html, text })
+    });
+    if (!response.ok) {
+      console.error('[mail] Resend respondeu', response.status, (await response.text().catch(() => '')).slice(0, 300));
+      return { ok: false, reason: 'send_failed' };
+    }
+    return { ok: true };
+  } catch (error) {
+    console.error('[mail] falha ao enviar e-mail:', error && error.message);
+    return { ok: false, reason: 'network' };
+  }
+}
+function baseUrlFor(req) {
+  const configured = String(process.env.APP_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (configured) return configured;
+  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+  const host = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+  return proto + '://' + host;
+}
+function passwordResetEmail(link, ttlMinutes) {
+  const text = 'Você solicitou a redefinição de senha do FileShare.\n\n' +
+    'Abra o link abaixo para escolher uma nova senha (válido por ' + ttlMinutes + ' minutos):\n' + link + '\n\n' +
+    'Se você não fez esta solicitação, ignore este e-mail — sua senha atual continua funcionando.';
+  const html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1c1c1e;">' +
+    '<h2 style="margin:0 0 12px;">FileShare — redefinição de senha</h2>' +
+    '<p style="margin:0 0 16px;">Você solicitou a redefinição de senha. Clique no botão abaixo para escolher uma nova senha (o link é válido por <b>' + ttlMinutes + ' minutos</b>):</p>' +
+    '<p style="margin:0 0 24px;"><a href="' + link + '" style="display:inline-block;background:#e22c3b;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;">Redefinir minha senha</a></p>' +
+    '<p style="margin:0 0 8px;font-size:13px;color:#555555;">Se o botão não funcionar, copie e cole este endereço no navegador:<br><a href="' + link + '">' + link + '</a></p>' +
+    '<p style="margin:16px 0 0;font-size:13px;color:#555555;">Se você não fez esta solicitação, ignore este e-mail — sua senha atual continua funcionando.</p>' +
+    '</div>';
+  return { subject: 'FileShare — link para redefinir sua senha', html, text };
+}
+app.post('/api/forgot-password', wrap(async (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase().slice(0, 254);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Informe um e-mail válido.' });
+  if (await consumeRateLimit('forgot-ip:' + clientIp(req), 10, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
+  if (await consumeRateLimit('forgot-email:' + email, 3, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos e tente de novo.' });
+  const user = await one('SELECT id, username, email, status FROM users WHERE email = $1', [email]);
+  if (user && user.status !== 'banned' && user.status !== 'rejected') {
+    await q('DELETE FROM password_reset_tokens WHERE expires_at <= $1', [ts()]); // limpeza de tokens vencidos
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString().slice(0, 19).replace('T', ' ');
+    await q('INSERT INTO password_reset_tokens (id, token_hash, user_id, created_at, expires_at) VALUES ($1,$2,$3,$4,$5)', [uuidv4(), hashToken(token), user.id, ts(), expiresAt]);
+    const link = baseUrlFor(req) + '/reset-password?token=' + token;
+    const mail = passwordResetEmail(link, Math.round(RESET_TOKEN_TTL_MS / 60000));
+    const sent = await sendMail({ to: user.email, subject: mail.subject, html: mail.html, text: mail.text });
+    if (!sent.ok) console.log('[reset] link de redefinição (visível apenas nos logs do servidor) para ' + user.email + ': ' + link);
+    await logAct(req, 'senha_reset_solicitada', user.username, { id: user.id, username: user.username, role: user.role });
+  }
+  // Resposta genérica de propósito: nunca revela se o e-mail existe na base.
+  return res.json({ success: true, message: 'Se este e-mail estiver cadastrado, você receberá em instantes um link para redefinir a senha. Verifique também a caixa de spam.' });
+}));
+app.post('/api/reset-password', wrap(async (req, res) => {
+  const body = req.body || {};
+  const token = String(body.token || '').trim();
+  const newPassword = String(body.password || '');
+  if (await consumeRateLimit('reset-ip:' + clientIp(req), 20, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
+  if (!/^[a-f0-9]{64}$/i.test(token)) return res.status(400).json({ error: 'Link de redefinição inválido ou expirado. Solicite um novo.' });
+  if (!passwordMeetsPolicy(newPassword)) return res.status(400).json({ error: `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres (até ${MAX_PASSWORD_LENGTH}).` });
+  const row = await one('SELECT r.id, r.user_id, r.expires_at, r.used_at, u.username FROM password_reset_tokens r JOIN users u ON u.id = r.user_id WHERE r.token_hash = $1', [hashToken(token)]);
+  if (!row || row.used_at || row.expires_at <= ts()) return res.status(400).json({ error: 'Link de redefinição inválido ou expirado. Solicite um novo.' });
+  // Consome o token de forma atômica (um link = um uso).
+  const consumed = await q('UPDATE password_reset_tokens SET used_at = $1 WHERE id = $2 AND used_at IS NULL AND expires_at > $3 RETURNING id', [ts(), row.id, ts()]);
+  if (!consumed.length) return res.status(400).json({ error: 'Link de redefinição inválido ou expirado. Solicite um novo.' });
+  await q('UPDATE users SET password_hash = $1 WHERE id = $2', [await hashPassword(newPassword), row.user_id]);
+  // Encerra todas as sessões e tokens "lembrar de mim" existentes dessa conta (mesmo comportamento da troca de senha).
+  await q('UPDATE users SET force_logout_at = $1 WHERE id = $2', [String(Date.now()), row.user_id]);
+  await q('DELETE FROM auth_tokens WHERE user_id = $1', [row.user_id]);
+  await q('DELETE FROM password_reset_tokens WHERE user_id = $1', [row.user_id]);
+  await logAct(req, 'senha_redefinida', row.username, { id: row.user_id, username: row.username });
+  return res.json({ success: true, message: 'Senha redefinida com sucesso! Já pode entrar com a nova senha.' });
 }));
 
 app.get('/api/me', requireAuth, wrap(async (req, res) => {
