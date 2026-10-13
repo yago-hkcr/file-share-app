@@ -1473,6 +1473,8 @@ async function sendMail({ to, subject, html, text }) {
       console.error('[mail] Resend respondeu', response.status, (await response.text().catch(() => '')).slice(0, 300));
       return { ok: false, reason: 'send_failed' };
     }
+    const sentId = await response.json().catch(() => ({}));
+    console.log('[mail] e-mail de redefinição enviado para', to, 'id:', sentId.id || '?');
     return { ok: true };
   } catch (error) {
     console.error('[mail] falha ao enviar e-mail:', error && error.message);
@@ -1487,17 +1489,42 @@ function baseUrlFor(req) {
   return proto + '://' + host;
 }
 function passwordResetEmail(link, ttlMinutes) {
-  const text = 'Você solicitou a redefinição de senha do FileShare.\n\n' +
-    'Abra o link abaixo para escolher uma nova senha (válido por ' + ttlMinutes + ' minutos):\n' + link + '\n\n' +
-    'Se você não fez esta solicitação, ignore este e-mail — sua senha atual continua funcionando.';
-  const html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1c1c1e;">' +
-    '<h2 style="margin:0 0 12px;">FileShare — redefinição de senha</h2>' +
-    '<p style="margin:0 0 16px;">Você solicitou a redefinição de senha. Clique no botão abaixo para escolher uma nova senha (o link é válido por <b>' + ttlMinutes + ' minutos</b>):</p>' +
-    '<p style="margin:0 0 24px;"><a href="' + link + '" style="display:inline-block;background:#e22c3b;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;">Redefinir minha senha</a></p>' +
-    '<p style="margin:0 0 8px;font-size:13px;color:#555555;">Se o botão não funcionar, copie e cole este endereço no navegador:<br><a href="' + link + '">' + link + '</a></p>' +
-    '<p style="margin:16px 0 0;font-size:13px;color:#555555;">Se você não fez esta solicitação, ignore este e-mail — sua senha atual continua funcionando.</p>' +
-    '</div>';
-  return { subject: 'FileShare — link para redefinir sua senha', html, text };
+  let expiresPhrase = '';
+  try {
+    const expiresBr = new Date(Date.now() + ttlMinutes * 60000).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    if (expiresBr) expiresPhrase = ' (até ' + expiresBr + ', horário de Brasília)';
+  } catch (e) {}
+  const text = 'FileShare — redefinição de senha\n\n' +
+    'Você solicitou um link para criar uma nova senha. Ele é válido por ' + ttlMinutes + ' minutos' + expiresPhrase + ' e funciona apenas uma vez.\n\n' +
+    'Abra o endereço abaixo para escolher sua nova senha:\n' + link + '\n\n' +
+    'Não foi você? Ignore este e-mail — sua senha atual continua funcionando e nenhuma alteração foi feita.';
+  const html = '<!DOCTYPE html><html lang="pt-br"><body style="margin:0;padding:0;background-color:#05070d;">' +
+    '<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Link válido por ' + ttlMinutes + ' minutos · uso único · FileShare</div>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#05070d;padding:28px 12px;"><tr><td align="center">' +
+    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#0b1020;border:1px solid #1c2537;border-radius:16px;overflow:hidden;">' +
+    '<tr><td height="3" style="height:3px;line-height:3px;font-size:0;background-color:#00d9ff;background-image:linear-gradient(90deg,#00d9ff,#4f7cff);">&nbsp;</td></tr>' +
+    '<tr><td style="padding:30px 40px 0 40px;font-family:\'Segoe UI\',Arial,Helvetica,sans-serif;">' +
+    '<span style="font-size:20px;font-weight:800;letter-spacing:5px;color:#e8f1ff;">FILESHARE</span><br>' +
+    '<span style="font-family:Consolas,\'Courier New\',monospace;font-size:11px;letter-spacing:1px;color:#5c6b8a;">rede privada de arquivos</span>' +
+    '</td></tr>' +
+    '<tr><td style="padding:30px 40px 8px 40px;font-family:\'Segoe UI\',Arial,Helvetica,sans-serif;">' +
+    '<h1 style="margin:0 0 6px;font-size:26px;line-height:32px;color:#f2f6ff;">Perdeu o acesso?</h1>' +
+    '<p style="margin:0 0 18px;font-family:Consolas,monospace;font-size:13px;font-weight:600;color:#00d9ff;">> recuperação segura em menos de 1 minuto</p>' +
+    '<p style="margin:0 0 24px;font-size:15px;line-height:24px;color:#b9c4da;">Recebemos um pedido para redefinir a senha da sua conta. Use o botão abaixo para escolher uma nova senha — o link é <b style="color:#e8f1ff;">válido por ' + ttlMinutes + ' minutos</b>' + expiresPhrase + ' e <b style="color:#e8f1ff;">funciona apenas uma vez</b>.</p>' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;"><tr><td bgcolor="#00d9ff" style="background-color:#00d9ff;border-radius:10px;">' +
+    '<a href="' + link + '" style="display:inline-block;padding:15px 34px;font-family:\'Segoe UI\',Arial,sans-serif;font-size:14px;font-weight:800;letter-spacing:1px;color:#04121a;text-decoration:none;border-radius:10px;background-color:#00d9ff;">REDEFINIR MINHA SENHA</a>' +
+    '</td></tr></table>' +
+    '<p style="margin:0 0 26px;font-family:Consolas,\'Courier New\',monospace;font-size:12px;line-height:19px;color:#5c6b8a;">Botão não abriu? Copie e cole no navegador:<br><a href="' + link + '" style="color:#5fd4ff;word-break:break-all;">' + link + '</a></p>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#101728;border:1px solid #1c2537;border-radius:12px;"><tr><td style="padding:16px 18px;font-family:\'Segoe UI\',Arial,sans-serif;font-size:13px;line-height:21px;color:#8b98b4;">' +
+    '🔐&nbsp; Se <b style="color:#e8f1ff;">você</b> não fez este pedido, ignore este e-mail — sua senha atual continua funcionando e nenhuma alteração foi feita.<br>' +
+    '⏱&nbsp; Expira em ' + ttlMinutes + ' minutos. Quando a senha é trocada, todos os acessos ativos da conta são encerrados por segurança.' +
+    '</td></tr></table>' +
+    '</td></tr>' +
+    '<tr><td style="padding:20px 40px 28px 40px;font-family:\'Segoe UI\',Arial,sans-serif;font-size:11px;line-height:18px;color:#4b5875;">' +
+    'Este é um e-mail automático — não responda.<br>FILESHARE · arquive.online' +
+    '</td></tr>' +
+    '</table></td></tr></table></body></html>';
+  return { subject: '⚡ FileShare — redefina sua senha', html, text };
 }
 app.post('/api/forgot-password', wrap(async (req, res) => {
   const email = String((req.body || {}).email || '').trim().toLowerCase().slice(0, 254);
