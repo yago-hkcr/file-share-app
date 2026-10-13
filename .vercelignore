@@ -6,3 +6,12 @@ node_modules/
 .git/
 .vercel/
 diag-*.mjs
+test/
+scripts/
+local-runtime/
+.githooks/
+*.log
+*.ps1
+tmp-*
+color-report.txt
+diag-touch-prod.txt

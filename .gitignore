@@ -17,3 +17,12 @@ skills-lock.json
 # FileShare offline/LAN data
 /data/local/
 /local-runtime/node_modules/
+
+# Scratch/diagnostico local (mantidos em disco, fora do versionamento)
+/color-report.txt
+/diag-*
+/html-bump.ps1
+/local*.log
+/tmp-*
+/transforms*.ps1
+/scripts/_preview-test.mjs

@@ -1834,7 +1834,7 @@ app.get('/download/library/:itemId', requireAuth, wrap(async (req, res) => {
   if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
   // Arquivos grandes: redireciona direto ao Blob (a CDN entrega) para não estourar a função.
   if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
-        try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name, true)); }
+    try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name, true)); }
     catch (err) { console.error('presign download Acervo:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
   }
   const bytes = await readLibraryBlob(item);
@@ -2957,7 +2957,7 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
     // É isto que permite baixar arquivos de até 50 GB sem estourar o tempo da função.
     // get() em blob privado não devolve url, por isso emitimos uma URL presigned de GET.
     if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) {
-            try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name, true)); }
+      try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name, true)); }
       catch (err) { console.error('presign download:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
     }
     // Em blobs privados get() devolve somente o stream (sem url); o helper transmite.
