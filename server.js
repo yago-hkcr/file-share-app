@@ -271,15 +271,46 @@ const isLibraryBlobPath = name => typeof name === 'string' && name.startsWith(LI
 // arquivos de até 50 GB sem estourar o maxDuration da função.
 const BLOB_REDIRECT_MIN_BYTES = 100 * 1024 * 1024;
 
-// Gera uma URL de download (GET) temporária para um blob privado.
-// Na SDK @vercel/blob 2.x, get() NÃO retorna url/downloadUrl em blobs privados (só stream),
-// então para redirecionar arquivos grandes ao CDN emitimos uma URL presigned de GET.
-async function presignBlobDownloadUrl(pathname) {
+// Gera uma URL (GET) temporária para um blob privado via CDN.
+// Na SDK @vercel/blob 2.x, get(pathname,{access:'private'}) NÃO devolve url/downloadUrl
+// (só stream), então para redirecionar arquivos grandes ao CDN emitimos uma URL presigned
+// de GET (inline). Quando `asDownload` é true, anexa ?download=1 para forçar
+// Content-Disposition: attachment — usado nos caminhos /download, já que a CDN abre
+// arquivos grandes inline (imagem/PDF) em vez de baixar.
+async function presignBlobDownloadUrl(pathname, asDownload = false) {
   const { issueSignedToken, presignUrl } = await blobSdk();
   const validUntil = Date.now() + 60 * 60 * 1000;
   const token = await issueSignedToken({ pathname, operations: ['get'], validUntil });
   const signed = await presignUrl(token, { operation: 'get', pathname, access: 'private', validUntil });
-  return signed.presignedUrl;
+  const url = new URL(signed.presignedUrl);
+  if (asDownload) url.searchParams.set('download', '1');
+  return url.toString();
+}
+
+// Transmite um blob privado para a resposta (download/preview). Devolve false se o arquivo
+// não existe (o chamador responde 404) e lança em falha transitória do Blob (o chamador vira 503).
+// Define Content-Length quando o tamanho é conhecido: o navegador mostra progresso, faz seek
+// no player e renderiza imagens/PDF sem ficar "carregando" eternamente.
+async function pipeBlobToResponse(res, pathname, knownSize) {
+  const { get } = await blobSdk();
+  let result;
+  try {
+    result = await get(pathname, { access: 'private' });
+  } catch (err) {
+    const e = new Error('Falha ao ler o arquivo do armazenamento.');
+    e.statusCode = 503; e.cause = err;
+    throw e;
+  }
+  if (!result || !result.stream) return false;
+  const size = num(knownSize) || num(result.blob && result.blob.size);
+  if (size > 0) res.setHeader('Content-Length', String(size));
+  const stream = Readable.fromWeb(result.stream);
+  stream.on('error', err => {
+    console.error('Erro ao transmitir blob:', err && err.message);
+    if (!res.headersSent) res.status(500).end(); else res.destroy(err);
+  });
+  stream.pipe(res);
+  return true;
 }
 
 // Le os bytes de um arquivo de sala (Blob privado ou Postgres) para copiar ao Acervo.
@@ -1803,7 +1834,7 @@ app.get('/download/library/:itemId', requireAuth, wrap(async (req, res) => {
   if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
   // Arquivos grandes: redireciona direto ao Blob (a CDN entrega) para não estourar a função.
   if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
-    try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name)); }
+        try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name, true)); }
     catch (err) { console.error('presign download Acervo:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
   }
   const bytes = await readLibraryBlob(item);
@@ -2926,18 +2957,16 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
     // É isto que permite baixar arquivos de até 50 GB sem estourar o tempo da função.
     // get() em blob privado não devolve url, por isso emitimos uma URL presigned de GET.
     if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) {
-      try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name)); }
+            try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name, true)); }
       catch (err) { console.error('presign download:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
     }
-    const { get } = await blobSdk();
-    const result = await get(file.stored_name, { access: 'private' });
-    // Em blobs privados get() devolve somente o stream (sem url); a existência do stream
-    // é o que indica que o arquivo está acessível.
-    if (!result || !result.stream) return res.status(404).send('Arquivo não encontrado');
+    // Em blobs privados get() devolve somente o stream (sem url); o helper transmite.
     headers();
-    const stream = Readable.fromWeb(result.stream);
-    stream.on('error', err => { console.error('Erro no download:', err && err.message); res.destroy(err); });
-    return stream.pipe(res);
+    let ok;
+    try { ok = await pipeBlobToResponse(res, file.stored_name, file.size); }
+    catch (err) { console.error('Erro no download:', err && err.message); return res.status(503).send('Não foi possível ler o arquivo agora. Tente novamente.'); }
+    if (!ok) return res.status(404).send('Arquivo não encontrado');
+    return;
   }
 
   // Arquivos antigos, guardados no Postgres
@@ -2968,12 +2997,11 @@ app.get('/preview/:fileId', asMember, wrap(async (req, res) => {
       try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name)); }
       catch (err) { console.error('presign preview:', err && err.message); return res.status(502).send('Não foi possível preparar a visualização'); }
     }
-    const { get } = await blobSdk();
-    const result = await get(file.stored_name, { access: 'private' });
-    if (!result || !result.stream) return res.status(404).send('Arquivo não encontrado');
-    const stream = Readable.fromWeb(result.stream);
-    stream.on('error', err => { console.error('Erro na visualização:', err && err.message); if (!res.headersSent) res.status(500).end(); else res.destroy(err); });
-    return stream.pipe(res);
+    let ok;
+    try { ok = await pipeBlobToResponse(res, file.stored_name, file.size); }
+    catch (err) { console.error('Erro na visualização:', err && err.message); return res.status(503).send('Não foi possível ler o arquivo agora. Tente novamente.'); }
+    if (!ok) return res.status(404).send('Arquivo não encontrado');
+    return;
   }
   const blob = await one(`SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1`, [file.id]);
   if (!blob) return res.status(404).send('Arquivo não encontrado');
