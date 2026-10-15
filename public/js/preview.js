@@ -51,7 +51,7 @@
     const overlay = document.createElement('div');
     overlay.id = 'filePreviewOverlay';
     overlay.className = 'fp-overlay';
-    overlay.innerHTML = '<div class="fp-shell" role="dialog" aria-modal="true" aria-label="Visualização do arquivo"><div class="fp-top"><div class="fp-icon"><i class="fas ' + icon + '"></i></div><div class="fp-heading"><h2 class="fp-title">' + esc(meta.name) + '</h2><div class="fp-sub">' + label + ' · ' + sizeLabel(meta.size) + '</div></div><button class="fp-close" type="button" aria-label="Fechar"><i class="fas fa-xmark"></i></button></div><div class="fp-stage">' + body + '</div><div class="fp-bottom"><div class="fp-meta">' + esc(meta.name) + '</div><a class="btn btn-green fp-open" data-fp-dl="1" href="' + esc(meta.downloadUrl) + '"><i class="fas fa-download"></i> Baixar</a></div></div>';
+    overlay.innerHTML = '<div class="fp-shell" role="dialog" aria-modal="true" aria-label="Visualização do arquivo"><div class="fp-top"><div class="fp-icon"><i class="fas ' + icon + '"></i></div><div class="fp-heading"><h2 class="fp-title">' + esc(meta.name) + '</h2><div class="fp-sub">' + label + ' · ' + sizeLabel(meta.size) + '</div></div><button class="fp-close" type="button" aria-label="Fechar"><i class="fas fa-xmark"></i></button></div><div class="fp-stage">' + body + '</div><div class="fp-bottom"><div class="fp-meta">' + esc(meta.name) + '</div><a class="btn btn-green btn-download fp-open" data-fp-dl="1" href="' + esc(meta.downloadUrl) + '"><i class="fas fa-download"></i> Baixar</a></div></div>';
     document.body.appendChild(overlay);
     overlay.querySelector('.fp-close').onclick = close;
     overlay.addEventListener('click', event => { if (event.target === overlay) close(); });

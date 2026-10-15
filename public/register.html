@@ -12,16 +12,17 @@
   <title>FileShare - Criar Conta</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@600;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261012f">
-  <link rel="stylesheet" href="/css/style.css?v=20261012f">
-  <script src="/js/common.js?v=20261012f"></script>
-  <link rel="stylesheet" href="/css/mobile.css?v=20261012f">
-  <script src="/js/mobile.js?v=20261012f" defer></script>
-  <link rel="stylesheet" href="/css/fx.css?v=20261012f">
-  <link rel="stylesheet" href="/css/adaptive.css?v=20261012f">
-  <script src="/js/fx.js?v=20261012f" defer></script>
-<link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261012f">
-<link rel="stylesheet" href="/css/auth-flow.css?v=20261012f">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014a">
+  <link rel="stylesheet" href="/css/style.css?v=20261014a">
+  <script src="/js/common.js?v=20261014a"></script>
+  <link rel="stylesheet" href="/css/mobile.css?v=20261014a">
+  <script src="/js/mobile.js?v=20261014a" defer></script>
+  <link rel="stylesheet" href="/css/fx.css?v=20261014a">
+  <link rel="stylesheet" href="/css/adaptive.css?v=20261014a">
+  <script src="/js/fx.js?v=20261014a" defer></script>
+<link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
+<link rel="stylesheet" href="/css/auth-flow.css?v=20261014a">
+<link rel="stylesheet" href="/css/hacker-ui.css?v=20261014a">
 </head>
 <body class="auth-page">
   <canvas id="cyberRain" aria-hidden="true"></canvas>
@@ -59,7 +60,7 @@
         </div>
         <div id="errorMsg" class="alert alert-error" style="display:none;"></div>
         <div id="successMsg" class="alert alert-success" style="display:none;"></div>
-        <button type="submit" class="btn btn-success btn-full"><i class="fas fa-user-plus"></i> CRIAR CONTA</button>
+        <button type="submit" class="btn btn-success btn-full btn-auth"><i class="fas fa-user-plus"></i> CRIAR CONTA</button>
         <p id="registerHint" style="color:#f0566a;font-size:13px;text-align:center;margin:12px 0 0;" hidden></p>
       </form>
       <div class="auth-footer">
@@ -83,9 +84,9 @@
       <div class="modal-footer"><button class="btn btn-primary" type="button" data-gfx-close><i class="fas fa-check"></i> Pronto</button></div>
     </div>
   </div>
-  <script src="/js/gfx.js?v=20261012f"></script>
-  <script src="/js/cyber.js?v=20261012f"></script>
-  <script src="/js/auth-flow.js?v=20261012f"></script>
+  <script src="/js/gfx.js?v=20261014a"></script>
+  <script src="/js/cyber.js?v=20261014a"></script>
+  <script src="/js/auth-flow.js?v=20261014a"></script>
   <script>
     // Mostra o aviso certo sobre o fluxo de cadastro (aprovação, automático ou fechado).
     fetch('/api/public/registration').then(r => r.json()).then(data => {
@@ -135,8 +136,8 @@
       }
     });
   </script>
-  <script src="/js/cursor.js?v=20261012f"></script>
-  <script src="/js/announce.js?v=20261012f"></script>
+  <script src="/js/cursor.js?v=20261014a"></script>
+  <script src="/js/announce.js?v=20261014a"></script>
 </body>
 </html>
 
