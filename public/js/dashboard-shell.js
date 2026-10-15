@@ -15,7 +15,7 @@
     collections: document.getElementById('collectionsPanel'),
     library: document.getElementById('libraryPanel')
   };
-  const titles = { rooms: 'Salas', collections: 'Coletas', library: 'Meu Acervo' };
+  const titles = { rooms: 'Salas', collections: 'Coletas', library: 'Minha Biblioteca' };
   const tabKey = tab => tab && tab.id === 'collectionsTab' ? 'collections' : tab && tab.id === 'libraryTab' ? 'library' : 'rooms';
   function setMenu(open) {
     shell.classList.toggle('menu-open', open);

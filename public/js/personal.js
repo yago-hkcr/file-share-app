@@ -17,12 +17,10 @@
   };
   const open = el => { el.style.display = 'flex'; const focusable = el.querySelector('button:not([data-close]), input:not([type=file]), select, textarea'); if (focusable) setTimeout(() => focusable.focus(), 50); };
 
-  // Atalhos no painel principal.
-  const actions = document.querySelector('.intro-actions');
-  if (actions) actions.insertAdjacentHTML('afterbegin',
-    '<button class="btn btn-outline" id="directMessagesBtn" type="button"><i class="fas fa-message"></i> Conversas</button>' +
-    '<button class="btn btn-outline personal-notice-button" id="notificationsBtn" type="button"><i class="fas fa-bell"></i> Avisos<span class="personal-count" id="notificationCount" hidden></span></button>' +
-    '<button class="btn btn-outline" id="personalSettingsBtn" type="button"><i class="fas fa-sliders"></i> Configurações</button>');
+  // Atalhos pessoais ficam na barra lateral ("Pessoal") do dashboard, em
+  // dashboard.html — não competem mais com as ações de cada painel.
+  // (Conversas / Avisos / Configurações são #directMessagesBtn, #notificationsBtn
+  //  e #personalSettingsBtn, já presentes no HTML.)
 
   // Conversas diretas entre amigos.
   const dm = modal('directMessagesSheet', '<i class="fas fa-message"></i> Conversas', 'direct-sheet');
@@ -157,7 +155,7 @@
 
   // Preferências de aparência, conforto, atualização e segurança da conta.
   const settings = modal('personalSettingsSheet', '<i class="fas fa-sliders"></i> Configurações', 'settings-sheet');
-  settings.querySelector('.modal-body').innerHTML = '<form id="personalSettingsForm" class="settings-sections"><section class="settings-card"><div><h4><i class="fas fa-palette"></i> Aparência</h4><p>Use o tema do dispositivo ou escolha um visual fixo.</p></div><label class="settings-field">Tema<select id="prefTheme"><option value="system">Automático (dispositivo)</option><option value="dark">Escuro</option><option value="light">Claro</option></select></label><label class="settings-switch"><input id="prefCompact" type="checkbox"><span><b>Visual compacto</b><small>Mostra mais salas e conversas na tela.</small></span></label></section><section class="settings-card"><div><h4><i class="fas fa-gauge-high"></i> Desempenho</h4><p>Defina a frequência de atualização automática.</p></div><label class="settings-field">Atualizar a cada<select id="prefRefresh"><option value="2">2 segundos</option><option value="5">5 segundos</option><option value="10">10 segundos</option></select></label><label class="settings-switch"><input id="prefMotion" type="checkbox"><span><b>Reduzir animações</b><small>Ajuda a evitar movimento visual excessivo.</small></span></label></section><section class="settings-card"><div><h4><i class="fas fa-shield-halved"></i> Segurança e avisos</h4><p>Controle de senha e notificações deste navegador.</p></div><button id="settingsPassword" class="btn btn-outline" type="button"><i class="fas fa-key"></i> Alterar senha</button><label class="settings-switch"><input id="prefBrowserNotifications" type="checkbox"><span><b>Notificações do navegador</b><small>Receba avisos enquanto o FileShare estiver aberto.</small></span></label><button id="requestNotificationPermission" class="btn btn-outline" type="button"><i class="fas fa-bell"></i> Permitir neste navegador</button><p id="notificationPermissionStatus" class="settings-hint" aria-live="polite"></p></section><section class="settings-card"><div><h4><i class="fas fa-user-circle"></i> Foto de perfil</h4><p>JPG, PNG ou WebP. A imagem será reduzida para caber no seu perfil.</p></div><div class="avatar-editor"><span id="settingsAvatarPreview" class="personal-avatar personal-avatar-large"></span><button id="chooseAvatar" class="btn btn-outline avatar-upload-button" type="button"><i class="fas fa-camera"></i> Escolher foto</button><input id="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" hidden><button id="removeAvatar" class="btn btn-outline btn-danger" type="button">Remover foto</button></div><p id="avatarStatus" class="settings-hint" aria-live="polite"></p></section><div class="settings-actions"><button class="btn btn-primary" type="submit"><i class="fas fa-floppy-disk"></i> Salvar configurações</button></div></form>';
+  settings.querySelector('.modal-body').innerHTML = '<form id="personalSettingsForm" class="settings-sections"><section class="settings-card"><div><h4><i class="fas fa-palette"></i> Aparência</h4><p>Use o tema do dispositivo ou escolha um visual fixo.</p></div><label class="settings-field">Tema<select id="prefTheme"><option value="system">Automático (dispositivo)</option><option value="dark">Escuro</option><option value="light">Claro</option></select></label><label class="settings-switch"><input id="prefCompact" type="checkbox"><span><b>Visual compacto</b><small>Mostra mais salas e conversas na tela.</small></span></label></section><section class="settings-card"><div><h4><i class="fas fa-gauge-high"></i> Desempenho</h4><p>Defina a frequência de atualização automática.</p></div><label class="settings-field">Atualizar a cada<select id="prefRefresh"><option value="2">2 segundos</option><option value="5">5 segundos</option><option value="10">10 segundos</option></select></label><label class="settings-switch"><input id="prefMotion" type="checkbox"><span><b>Reduzir animações</b><small>Ajuda a evitar movimento visual excessivo.</small></span></label><button class="btn btn-outline" type="button" id="settingsGfxBtn"><i class="fas fa-wand-magic-sparkles"></i> Gráficos e desempenho</button><p class="settings-hint">Escolha o nível de efeitos do site inteiro.</p></section><section class="settings-card"><div><h4><i class="fas fa-keyboard"></i> Atalhos</h4><p>Maneiras rápidas de circular pelo painel.</p></div><ul class="settings-shortcuts"><li><kbd>Esc</kbd><span>Fecha janelas e menus abertos</span></li><li><kbd>Enter</kbd><span>Ativa o botão ou aba em foco</span></li><li><kbd>Tab</kbd><span>Vai para o próximo campo ou botão</span></li></ul><div class="settings-actions"><button class="btn btn-outline" type="button" id="settingsTutorialBtn"><i class="fas fa-compass"></i> Rever o tutorial</button></div></section><section class="settings-card"><div><h4><i class="fas fa-shield-halved"></i> Segurança e avisos</h4><p>Controle de senha e notificações deste navegador.</p></div><button id="settingsPassword" class="btn btn-outline" type="button"><i class="fas fa-key"></i> Alterar senha</button><label class="settings-switch"><input id="prefBrowserNotifications" type="checkbox"><span><b>Notificações do navegador</b><small>Receba avisos enquanto o FileShare estiver aberto.</small></span></label><button id="requestNotificationPermission" class="btn btn-outline" type="button"><i class="fas fa-bell"></i> Permitir neste navegador</button><p id="notificationPermissionStatus" class="settings-hint" aria-live="polite"></p></section><section class="settings-card"><div><h4><i class="fas fa-user-circle"></i> Foto de perfil</h4><p>JPG, PNG ou WebP. A imagem será reduzida para caber no seu perfil.</p></div><div class="avatar-editor"><span id="settingsAvatarPreview" class="personal-avatar personal-avatar-large"></span><button id="chooseAvatar" class="btn btn-outline avatar-upload-button" type="button"><i class="fas fa-camera"></i> Escolher foto</button><input id="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" hidden><button id="removeAvatar" class="btn btn-outline btn-danger" type="button">Remover foto</button></div><p id="avatarStatus" class="settings-hint" aria-live="polite"></p></section><div class="settings-actions"><button class="btn btn-primary" type="submit"><i class="fas fa-floppy-disk"></i> Salvar configurações</button></div></form>';
 
   // Editor de enquadramento da foto de perfil.
   const avatarCrop = modal('avatarCropSheet', '<i class="fas fa-crop-simple"></i> Enquadrar foto', 'avatar-crop-sheet');
@@ -254,6 +252,19 @@
   }
   $('personalSettingsBtn')?.addEventListener('click', async () => { open(settings); await loadPreferences(); paintAvatarPreview(); });
   $('settingsPassword').addEventListener('click', () => { settings.style.display = 'none'; if (typeof showPasswordModal === 'function') showPasswordModal(); });
+  // "Gráficos e desempenho": no painel não existe o modal de gráficos (ele é do
+  // login), então alternamos direto entre completo e leve.
+  $('settingsGfxBtn')?.addEventListener('click', () => {
+    if (typeof window.fileShareGfx !== 'function') return;
+    const atual = document.documentElement.getAttribute('data-gfx');
+    window.fileShareGfx(atual === 'low' ? 'high' : 'low');
+    if (typeof toast === 'function') toast(atual === 'low' ? 'Gráficos completos ligados.' : 'Gráficos leves ligados.');
+  });
+  // "Rever o tutorial" dispara o passeio guiado do painel.
+  $('settingsTutorialBtn')?.addEventListener('click', () => {
+    settings.style.display = 'none';
+    if (typeof window.fileshareStartTour === 'function') window.fileshareStartTour();
+  });
   $('prefTheme').addEventListener('change', event => setTheme(event.target.value));
   $('personalSettingsForm').addEventListener('submit', async event => {
     event.preventDefault();

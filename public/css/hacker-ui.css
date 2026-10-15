@@ -118,6 +118,7 @@ html.has-bubble[data-theme="dark"] .cy-ripple { border-color: rgba(53,242,139,.9
 @media (prefers-reduced-motion: reduce) {
   .cy-b-scan, .cy-trail, .cy-ripple { display: none !important; }
   .cy-b-ring, .cy-b-tag { transition: none !important; }
+}
 
 /* =====================================================================
    2. BOTÕES COM IDENTIDADE POR FUNÇÃO
@@ -140,7 +141,7 @@ html.has-bubble[data-theme="dark"] .cy-ripple { border-color: rgba(53,242,139,.9
 }
 
 /* ---- esqueleto comum ---- */
-.btn-upload, .btn-download, .btn-share, .btn-delete,
+.btn-upload, .btn-download, .btn-share, .btn-delete, .btn-new,
 .btn-auth, .btn.btn-danger, .btn.btn-green {
   position: relative; overflow: hidden;
   border: 1px solid rgba(var(--fn), .5);
@@ -149,15 +150,117 @@ html.has-bubble[data-theme="dark"] .cy-ripple { border-color: rgba(53,242,139,.9
   background: linear-gradient(135deg, rgba(var(--fn), .18), rgba(var(--fn), .06));
   clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
   transition: transform .16s ease, box-shadow .22s ease, background .22s ease, color .22s ease;
+/* ---- esqueleto comum ---- */
+/* Seletor `.btn.btn-x` (2 classes) para vencer `.btn-primary`/`.btn-green`
+   legados que também pintam fundo em style.css. */
+.btn.btn-upload, .btn.btn-download, .btn.btn-share, .btn.btn-delete,
+.btn.btn-new, .btn.btn-auth, .btn.btn-danger, .btn.btn-green {
+  position: relative; overflow: hidden;
+  border: 1px solid rgba(var(--fn), .5);
+  border-radius: 2px;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  transition: transform .16s ease, box-shadow .22s ease, background .22s ease, color .22s ease;
+}
+/* fallback para marcação sem a classe `.btn` (2 classes + 2 tipos) */
+html .btn-upload, html .btn-download, html .btn-share, html .btn-delete,
+html .btn-new, html .btn-auth, html .btn-danger, html .btn-green {
+  position: relative; overflow: hidden;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+/* pincelada: fundo tinto da cor da função + texto na mesma cor.
+   `html[data-theme]` (0,3,1) vence os overrides de tema de style.css
+   (`html[data-theme="dark"] .btn-primary`, `html[data-theme="dark"] .btn-success`),
+   que antes cobriam a cor da função com o gradiente verde. */
+html[data-theme] .btn.btn-upload, html[data-theme] .btn.btn-download,
+html[data-theme] .btn.btn-share, html[data-theme] .btn.btn-delete,
+html[data-theme] .btn.btn-new, html[data-theme] .btn.btn-auth,
+html[data-theme] .btn.btn-danger, html[data-theme] .btn.btn-green {
+  border-color: rgba(var(--fn), .5);
+  color: rgb(var(--fn)) !important;
+  background: linear-gradient(135deg, rgba(var(--fn), .2), rgba(var(--fn), .07));
+}
+/* mesma coisa para quem não depende de data-theme */
+html .btn.btn-upload, html .btn.btn-download, html .btn.btn-share,
+html .btn.btn-delete, html .btn.btn-new, html .btn.btn-auth,
+html .btn.btn-danger, html .btn.btn-green {
+  border-color: rgba(var(--fn), .5);
+  color: rgb(var(--fn)) !important;
+  background: linear-gradient(135deg, rgba(var(--fn), .2), rgba(var(--fn), .07));
+}
+/* contorno entra no idioma sem mudar de cor */
+html[data-theme] .btn.btn-outline, html .btn.btn-outline {
+  border-color: rgba(var(--cy-rgb), .5);
+  color: var(--ink);
+  background: transparent;
 }
 /* barra lateral que marca a função */
-.btn-upload::before, .btn-download::before, .btn-share::before, .btn-delete::before,
+.btn.btn-upload::before, .btn.btn-download::before, .btn.btn-share::before,
+.btn.btn-delete::before, .btn.btn-new::before, .btn.btn-auth::before,
+.btn.btn-danger::before, .btn.btn-green::before,
+html .btn-upload::before, html .btn-download::before, html .btn-share::before,
+html .btn-delete::before, html .btn-new::before, html .btn-auth::before,
+html .btn-danger::before, html .btn-green::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: rgb(var(--fn)); box-shadow: 0 0 10px rgba(var(--fn), .9);
+}
+/* faixa de varredura no hover */
+.btn.btn-upload::after, .btn.btn-download::after, .btn.btn-share::after,
+.btn.btn-delete::after, .btn.btn-new::after, .btn.btn-auth::after,
+.btn.btn-danger::after, .btn.btn-green::after,
+html .btn-upload::after, html .btn-download::after, html .btn-share::after,
+html .btn-delete::after, html .btn-new::after, html .btn-auth::after,
+html .btn-danger::after, html .btn-green::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%;
+  pointer-events: none; transform: skewX(-20deg);
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.28), transparent);
+  transition: left .5s ease;
+}
+.btn.btn-upload:hover::after, .btn.btn-download:hover::after, .btn.btn-share:hover::after,
+.btn.btn-delete:hover::after, .btn.btn-new:hover::after, .btn.btn-auth:hover::after,
+.btn.btn-danger:hover::after, .btn.btn-green:hover::after,
+html .btn-upload:hover::after, html .btn-download:hover::after, html .btn-share:hover::after,
+html .btn-delete:hover::after, html .btn-new:hover::after, html .btn-auth:hover::after,
+html .btn-danger:hover::after, html .btn-green:hover::after { left: 130%; }
+
+.btn.btn-upload:hover, .btn.btn-download:hover, .btn.btn-share:hover,
+.btn.btn-delete:hover, .btn.btn-new:hover, .btn.btn-auth:hover,
+.btn.btn-danger:hover, .btn.btn-green:hover,
+html .btn-upload:hover, html .btn-download:hover, html .btn-share:hover,
+html .btn-delete:hover, html .btn-new:hover, html .btn-auth:hover,
+html .btn-danger:hover, html .btn-green:hover {
+  color: #04120b !important;
+  background: linear-gradient(135deg, rgba(var(--fn), .95), rgba(var(--fn), .7));
+  box-shadow: 0 6px 20px rgba(var(--fn), .35), inset 0 0 0 1px rgba(255,255,255,.12);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+.btn.btn-upload:active, .btn.btn-download:active, .btn.btn-share:active,
+.btn.btn-delete:active, .btn.btn-new:active, .btn.btn-auth:active,
+.btn.btn-danger:active, .btn.btn-green:active,
+html .btn-upload:active, html .btn-download:active, html .btn-share:active,
+html .btn-delete:active, html .btn-new:active, html .btn-auth:active,
+html .btn-danger:active, html .btn-green:active { transform: translateY(0); }
+
+/* hover com texto escuro (mantém contraste sobre o fundo saturado) */
+.btn.btn-upload:hover, .btn.btn-download:hover, .btn.btn-share:hover,
+.btn.btn-delete:hover, .btn.btn-new:hover, .btn.btn-danger:hover,
+.btn.btn-green:hover,
+html .btn-upload:hover, html .btn-download:hover, html .btn-share:hover,
+html .btn-delete:hover, html .btn-new:hover, html .btn-danger:hover,
+html .btn-green:hover { color: #04120b !important; }
+/* "criar" e auth usam tinta escura própria no hover */
+.btn.btn-new:hover, html .btn-new:hover { color: #1c1200 !important; }
+
+
+}
+/* barra lateral que marca a função */
+.btn-upload::before, .btn-download::before, .btn-share::before, .btn-delete::before, .btn-new::before,
 .btn-auth::before, .btn.btn-danger::before, .btn.btn-green::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
   background: rgb(var(--fn)); box-shadow: 0 0 10px rgba(var(--fn), .9);
 }
 /* faixa de varredura no hover */
-.btn-upload::after, .btn-download::after, .btn-share::after, .btn-delete::after,
+.btn-upload::after, .btn-download::after, .btn-share::after, .btn-delete::after, .btn-new::after,
 .btn-auth::after, .btn.btn-danger::after, .btn.btn-green::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%;
   pointer-events: none; transform: skewX(-20deg);
@@ -165,11 +268,11 @@ html.has-bubble[data-theme="dark"] .cy-ripple { border-color: rgba(53,242,139,.9
   transition: left .5s ease;
 }
 .btn-upload:hover::after, .btn-download:hover::after, .btn-share:hover::after,
-.btn-delete:hover::after, .btn-auth:hover::after,
+.btn-delete:hover::after, .btn-new:hover::after, .btn-auth:hover::after,
 .btn.btn-danger:hover::after, .btn.btn-green:hover::after { left: 130%; }
 
 .btn-upload:hover, .btn-download:hover, .btn-share:hover, .btn-delete:hover,
-.btn-auth:hover, .btn.btn-danger:hover, .btn.btn-green:hover {
+.btn-new:hover, .btn-auth:hover, .btn.btn-danger:hover, .btn.btn-green:hover {
   color: #04120b !important;
   background: linear-gradient(135deg, rgba(var(--fn), .95), rgba(var(--fn), .7));
   box-shadow: 0 6px 20px rgba(var(--fn), .35), inset 0 0 0 1px rgba(255,255,255,.12);
@@ -177,7 +280,7 @@ html.has-bubble[data-theme="dark"] .cy-ripple { border-color: rgba(53,242,139,.9
   text-decoration: none;
 }
 .btn-upload:active, .btn-download:active, .btn-share:active, .btn-delete:active,
-.btn-auth:active, .btn.btn-danger:active, .btn.btn-green:active { transform: translateY(0); }
+.btn-new:active, .btn-auth:active, .btn.btn-danger:active, .btn.btn-green:active { transform: translateY(0); }
 
 /* ---- cores por função ---- */
 .btn-upload  { --fn: var(--fn-up); }
@@ -185,6 +288,11 @@ html.has-bubble[data-theme="dark"] .cy-ripple { border-color: rgba(53,242,139,.9
 .btn-share   { --fn: var(--fn-share); }
 .btn-delete, .btn.btn-danger { --fn: var(--fn-del); }
 .btn-auth    { --fn: var(--fn-auth); }
+
+/* ---- "criar" (espaços, prateleiras): âmbar, distinto de upload/baixar ---- */
+:root { --fn-new: 251,191,36; }
+.btn-new { --fn: var(--fn-new); }
+.btn-new:hover { color: #1c1200 !important; }
 
 /* verde legado (criar sala, salvar, exportar...) entra no idioma terminal */
 .btn.btn-green { --fn: var(--fn-down); }
@@ -224,6 +332,36 @@ body.auth-page .auth-card .btn-primary::after, body.auth-page .auth-card .btn-su
   border-radius: 2px;
   clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
 }
+
+/* modo escuro: "criar" (btn-new) sai neutro, sem neon, e legível sobre o
+ * painel escuro — semelhante ao comportamento do btn-outline. */
+html[data-theme="dark"] .btn.btn-new {
+  color: var(--ink) !important;
+  background: linear-gradient(135deg, rgba(251, 191, 36, .16), rgba(251, 191, 36, .08));
+  border-color: rgba(251, 191, 36, .4);
+}
+html[data-theme="dark"] .btn.btn-new::before,
+html[data-theme="dark"] .btn.btn-new::after {
+  background: rgb(251, 191, 36);
+}
+html[data-theme="dark"] .btn.btn-new:hover {
+  background: linear-gradient(135deg, rgba(251, 191, 36, .26), rgba(251, 191, 36, .14));
+  color: #04120b !important;
+}
+html[data-theme="dark"] .btn.btn-new:hover::before {
+  background: rgb(251, 191, 36);
+}
+html[data-theme="dark"] .btn.btn-new:active {
+  background: linear-gradient(135deg, rgba(251, 191, 36, .14), rgba(251, 191, 36, .06));
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, .22), inset 0 0 0 1px rgba(251, 191, 36, .14);
+}
+html[data-theme="dark"] .btn-sm.btn-new {
+  border-color: rgba(251, 191, 36, .35);
+  color: var(--ink) !important;
+}
+html[data-theme="dark"] .btn-sm.btn-new:hover {
+  color: #04120b !important;
+}
 /* perigo em contorno (excluir discreto) */
 .btn-outline.btn-danger, .btn.btn-outline.btn-danger, .btn-outline.is-danger {
   color: rgb(var(--fn-del)) !important;
@@ -238,28 +376,142 @@ body.auth-page .auth-card .btn-primary::after, body.auth-page .auth-card .btn-su
 
 /* ---- menos movimento / gráficos baixos: sem transições nem faixa ---- */
 @media (prefers-reduced-motion: reduce) {
-  .btn-upload, .btn-download, .btn-share, .btn-delete, .btn-auth,
+  .btn-upload, .btn-download, .btn-share, .btn-delete, .btn-new, .btn-auth,
   .btn.btn-danger, .btn.btn-green, .btn-outline, .btn-primary { transition: none; }
   .btn-upload::after, .btn-download::after, .btn-share::after, .btn-delete::after,
-  .btn-auth::after, .btn.btn-danger::after, .btn.btn-green::after { display: none; }
+  .btn-new::after, .btn-auth::after, .btn.btn-danger::after, .btn.btn-green::after { display: none; }
 }
 html[data-gfx="low"] .btn-upload, html[data-gfx="low"] .btn-download,
 html[data-gfx="low"] .btn-share, html[data-gfx="low"] .btn-delete,
-html[data-gfx="low"] .btn-auth, html[data-gfx="low"] .btn.btn-danger,
-html[data-gfx="low"] .btn.btn-green { transition: none; }
+
+/* =====================================================================
+   3. BARRA "PESSOAL" DA SIDEBAR (Conversas / Amigos / Avisos / Configurações)
+   Reaproveita o idioma das abas (.dashboard-tab), só que mais baixa e
+   com contador. Assim os atalhos pessoais têm lugar fixo e não brigam
+   com as ações de cada painel.
+   ===================================================================== */
+.dashboard-sidebar .dashboard-sidebar-label-second { margin-top: 16px; }
+
+.dashboard-sidebar .dashboard-tools {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.dashboard-sidebar .dashboard-tool {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 7px 11px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--gray-500);
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: color .2s ease, background .2s ease, border-color .2s ease;
+}
+
+.dashboard-sidebar .dashboard-tool > i {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  color: var(--gray-500);
+  background: var(--gray-100);
+  font-size: 12px;
+  transition: color .2s ease, background .2s ease;
+}
+
+.dashboard-sidebar .dashboard-tool > span { flex: 1; min-width: 0; }
+/* lista de atalhos dentro das Configurações */
+.settings-shortcuts {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-shortcuts li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--muted, #6d6d6d);
+}
+.settings-shortcuts kbd {
+  flex: none;
+  min-width: 46px;
+  padding: 3px 8px;
+  border: 1px solid rgba(var(--cy-rgb), .35);
+  border-radius: 5px;
+  color: rgb(var(--cy, #e22c3b));
+  background: rgba(var(--cy-rgb), .07);
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+.settings-shortcuts span { min-width: 0; }
+
+
+.dashboard-sidebar .dashboard-tool:hover,
+.dashboard-sidebar .dashboard-tool:focus-visible {
+  outline: 0;
+  color: var(--gray-800);
+  background: var(--gray-100);
+}
+.dashboard-sidebar .dashboard-tool:hover > i,
+.dashboard-sidebar .dashboard-tool:focus-visible > i {
+  color: var(--primary);
+  background: rgba(var(--cy-rgb), .13);
+}
+
+/* contadores (pedidos de amizade / avisos) */
+.dashboard-sidebar .dashboard-tool .personal-count,
+.dashboard-sidebar .dashboard-tool .dashboard-tool-count {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--danger, #dc2626);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+}
+.dashboard-sidebar .dashboard-tool .personal-count[hidden],
+.dashboard-sidebar .dashboard-tool .dashboard-tool-count[hidden] { display: none; }
+
+/* modo recolhido: só os ícones */
+.dashboard-shell.is-compact .dashboard-tool > span,
+.dashboard-shell.is-compact .dashboard-tool .personal-count,
+.dashboard-shell.is-compact .dashboard-tool .dashboard-tool-count { display: none; }
+.dashboard-shell.is-compact .dashboard-tool { justify-content: center; padding: 7px; }
+
+html[data-gfx="low"] .btn-new, html[data-gfx="low"] .btn-auth,
+html[data-gfx="low"] .btn.btn-danger, html[data-gfx="low"] .btn.btn-green { transition: none; }
 html[data-gfx="low"] .btn-upload::after, html[data-gfx="low"] .btn-download::after,
 html[data-gfx="low"] .btn-share::after, html[data-gfx="low"] .btn-delete::after,
-html[data-gfx="low"] .btn-auth::after, html[data-gfx="low"] .btn.btn-danger::after,
-html[data-gfx="low"] .btn.btn-green::after { display: none; }
+html[data-gfx="low"] .btn-new::after, html[data-gfx="low"] .btn-auth::after,
+html[data-gfx="low"] .btn.btn-danger::after, html[data-gfx="low"] .btn.btn-green::after { display: none; }
 
 .btn.btn-green:hover { color: #04120b !important; }
 
 /* botão pequeno: recorte menor */
 .btn-sm.btn-upload, .btn-sm.btn-download, .btn-sm.btn-share,
-.btn-sm.btn-delete, .btn-sm.btn-auth, .btn-sm.btn-danger, .btn-sm.btn-green {
+.btn-sm.btn-delete, .btn-sm.btn-new, .btn-sm.btn-auth, .btn-sm.btn-danger, .btn-sm.btn-green {
   clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
-}
-
 }
 /* gráficos no baixo: só a retícula e o bloco, sem enfeites */
 html[data-gfx="low"] .cy-b-cross,
