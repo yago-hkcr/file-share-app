@@ -139,14 +139,14 @@
       const previous = select.value;
       select.innerHTML = librarySpacesCache.length
         ? librarySpacesCache.map(space => '<option value="' + esc(space.id) + '">' + esc(space.name) + '</option>').join('')
-        : '<option value="">Nenhum espaço criado — crie um no Meu Acervo</option>';
+        : '<option value="">Nenhum espaço criado — crie um no Minha Biblioteca</option>';
       if (librarySpacesCache.some(space => space.id === previous)) select.value = previous;
       else if (librarySpacesCache.length) select.value = librarySpacesCache[0].id;
       renderCollectionLibraryBookcases();
     } catch (error) {
       librarySpacesCache = [];
-      $('collectionLibrarySpace').innerHTML = '<option value="">Crie um espaço no Meu Acervo</option>';
-      $('collectionLibraryBookcase').innerHTML = '<option value="">Crie uma prateleira no Meu Acervo</option>';
+      $('collectionLibrarySpace').innerHTML = '<option value="">Crie um espaço no Minha Biblioteca</option>';
+      $('collectionLibraryBookcase').innerHTML = '<option value="">Crie uma prateleira no Minha Biblioteca</option>';
     }
   }
   function participantMarkup(recipient, collectionId, singleLink) {
@@ -186,7 +186,7 @@
       const mode = multiUse ? '<span class="collection-mode-badge"><i class="fas fa-users"></i> Link multiuso</span>' : collection.single_link ? '<span class="collection-mode-badge"><i class="fas fa-link"></i> Link único</span>' : '<span class="collection-mode-badge"><i class="fas fa-users"></i> Links individuais</span>';
       const accessMode = Number(collection.exclusive_access) ? '<span class="collection-mode-badge"><i class="fas fa-lock"></i> Uma pessoa por vez</span>' : '';
       const destination = collection.destination_type === 'library'
-        ? '<i class="fas fa-bookmark"></i> Meu Acervo' + (collection.library_space_name ? ' · ' + esc(collection.library_space_name) + (collection.library_bookcase_name ? ' · ' + esc(collection.library_bookcase_name === 'Geral' ? 'Principal' : collection.library_bookcase_name) : '') : '')
+        ? '<i class="fas fa-bookmark"></i> Minha Biblioteca' + (collection.library_space_name ? ' · ' + esc(collection.library_space_name) + (collection.library_bookcase_name ? ' · ' + esc(collection.library_bookcase_name === 'Geral' ? 'Principal' : collection.library_bookcase_name) : '') : '')
         : '<i class="fas fa-folder"></i> ' + esc(collection.room_name || 'Sala');
       const senderNames = [...new Set((multiUse ? submissions.map(submission => submission.sender_name) : completedRecipients.map(recipient => recipient.participant_name)).filter(Boolean))];
       const senderLabel = senderNames.slice(0, 3).join(', ') + (senderNames.length > 3 ? ' +' + (senderNames.length - 3) : '');
@@ -229,7 +229,7 @@
   function setTab(active) {
     const panels = { rooms: 'roomsPanel', collections: 'collectionsPanel', library: 'libraryPanel' };
     const tabs    = { rooms: 'roomsTab',  collections: 'collectionsTab',  library: 'libraryTab'  };
-    const titles  = { rooms: 'Salas',      collections: 'Coletas',           library: 'Meu Acervo'   };
+    const titles  = { rooms: 'Salas',      collections: 'Coletas',           library: 'Minha Biblioteca'   };
     Object.entries(panels).forEach(([key, panelId]) => {
       const selected = key === active;
       $(panelId).hidden = !selected;

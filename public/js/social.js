@@ -32,10 +32,13 @@
       '<div class="soc-title">Meus amigos <span class="soc-count">' + F.friends.length + '</span></div>' +
       list(F.friends, u => '<div class="soc-row"><span class="online-dot ' + (u.online ? 'on' : '') + '" title="' + (u.online ? 'Online' : 'Offline') + '"></span>' + avatar(u) + '<span class="grow">' + esc(u.username) + admTag(u.role) + '</span><button class="btn btn-primary" data-dm-user="' + esc(u.user_id) + '" data-dm-name="' + esc(u.username) + '"><i class="fas fa-comment-dots"></i> Conversar</button><button class="btn btn-outline btn-danger" onclick="friendRemove(\'' + u.id + '\',\'Remover ' + esc(u.username).replace(/'/g, '') + ' dos amigos? Ele também sai das suas salas privadas.\')">Remover</button></div>');
   }
+  // O contador de pedidos aparece dentro do item "Amigos" da barra lateral.
   function badge() {
     const b = $('friendsBtn'); if (!b) return;
-    b.querySelector('.soc-count') && b.querySelector('.soc-count').remove();
-    if (F.incoming.length) b.insertAdjacentHTML('beforeend', ' <span class="soc-count">' + F.incoming.length + '</span>');
+    const count = b.querySelector('.dashboard-tool-count');
+    if (!count) return;
+    count.textContent = String(F.incoming.length);
+    count.hidden = !F.incoming.length;
   }
   async function pollFriends(withAvatars = false) {
     if (document.hidden) return;
@@ -63,10 +66,10 @@
   $('friendLists').addEventListener('click', e => { const button = e.target.closest('[data-dm-user]'); if (button) window.openDirectChat(button.dataset.dmUser, button.dataset.dmName); });
   window.showFriends = () => { friendsSheet.style.display = 'flex'; paintFriends(); pollFriends(true); };
 
-  // Botões no topo.
+  // "Amigos" fica na barra lateral do dashboard (#friendsBtn, em dashboard.html),
+  // junto de Conversas/Avisos/Configurações. Só o atalho de ADM entra no topo.
   const actions = document.querySelector('.intro-actions');
   if (actions) {
-    actions.insertAdjacentHTML('afterbegin', '<button id="friendsBtn" class="btn btn-outline" onclick="showFriends()"><i class="fas fa-user-group"></i> Amigos</button>');
     const nb = $('newRoomBtn'); if (nb) nb.innerHTML = '<svg class="btn-plus-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="10" y="2" width="4" height="20" rx="2" fill="#fff"/><rect x="2" y="10" width="20" height="4" rx="2" fill="#fff"/></svg> Nova sala';
   }
 

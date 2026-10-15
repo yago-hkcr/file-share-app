@@ -243,8 +243,8 @@
     if (!filtered.length) {
       const hasFilters = Boolean($('librarySearch').value || $('libraryShelfFilter').value || favoritesOnly);
       $('libraryGrid').innerHTML = hasFilters
-        ? '<div class="library-empty"><i class="fas fa-magnifying-glass"></i><h3>Nenhum arquivo encontrado</h3><p>Tente outro termo ou limpe os filtros para ver seu Acervo.</p><button class="btn btn-outline" type="button" data-library-clear-filters><i class="fas fa-filter-circle-xmark"></i> Limpar filtros</button></div>'
-        : '<div class="library-empty"><span class="library-empty-icon"><i class="fas fa-box-open"></i></span><h3>Seu Acervo está pronto</h3><p>Crie espaços e prateleiras para organizar seus arquivos. Depois, guarde arquivos das salas no espaço certo.</p><button class="btn btn-outline" type="button" data-library-create-space><i class="fas fa-folder-plus"></i> Criar espaço</button><button class="btn btn-outline" type="button" data-library-go-rooms><i class="fas fa-door-open"></i> Explorar salas</button></div>';
+        ? '<div class="library-empty"><i class="fas fa-magnifying-glass"></i><h3>Nenhum arquivo encontrado</h3><p>Tente outro termo ou limpe os filtros para ver sua Biblioteca.</p><button class="btn btn-outline" type="button" data-library-clear-filters><i class="fas fa-filter-circle-xmark"></i> Limpar filtros</button></div>'
+        : '<div class="library-empty"><span class="library-empty-icon"><i class="fas fa-box-open"></i></span><h3>Sua Biblioteca está pronto</h3><p>Crie espaços e prateleiras para organizar seus arquivos. Depois, guarde arquivos das salas no espaço certo.</p><button class="btn btn-outline" type="button" data-library-create-space><i class="fas fa-folder-plus"></i> Criar espaço</button><button class="btn btn-outline" type="button" data-library-go-rooms><i class="fas fa-door-open"></i> Explorar salas</button></div>';
       return;
     }
     $('libraryGrid').innerHTML = filtered.map((item, index) => `
@@ -253,14 +253,14 @@
         <div class="library-file-heading"><span class="library-file-icon"><i class="fas ${fileIcon(item)}" aria-hidden="true"></i></span><div class="library-file-copy"><h3 title="${esc(item.original_name)}">${esc(item.original_name)}</h3><p>${formatSize(item.size)} <span aria-hidden="true">·</span> guardado ${formatDate(item.saved_at)}</p></div></div>
         <div class="library-source"><i class="fas fa-folder-open" aria-hidden="true"></i><span>${esc(item.room_name || 'Envio direto')}</span><span class="library-source-separator">·</span><span>Cópia sua${item.uploader_name ? ' · original de ' + esc(item.uploader_name) : ''}</span></div>
         ${item.note ? `<p class="library-note"><i class="fas fa-quote-left" aria-hidden="true"></i>${esc(item.note)}</p>` : '<p class="library-note library-note-empty">Adicione uma anotação pessoal para guardar o contexto.</p>'}
-        <div class="library-card-actions"><button class="btn btn-sm btn-outline" type="button" data-library-preview="${esc(item.id)}" data-library-item="1" data-name="${esc(item.original_name)}" data-mime="${esc(item.mime_type)}" data-size="${Number(item.size) || 0}" title="Visualizar ${esc(item.original_name)}" aria-label="Visualizar ${esc(item.original_name)}"><i class="fas fa-eye" aria-hidden="true"></i></button><a class="btn btn-sm btn-green btn-download" href="/download/library/${encodeURIComponent(item.id)}" title="Baixar ${esc(item.original_name)}" aria-label="Baixar ${esc(item.original_name)}"><i class="fas fa-download" aria-hidden="true"></i></a><button class="btn btn-sm btn-outline library-edit-action" type="button" data-library-edit="${esc(item.id)}" data-library-item="1" title="Mover, renomear ou anotar" aria-label="Mover, renomear ou anotar"><i class="fas fa-sliders" aria-hidden="true"></i></button><button class="btn btn-sm btn-outline is-danger" type="button" data-library-delete-item="${esc(item.id)}" title="Apagar esta cópia do Acervo" aria-label="Apagar esta cópia do Acervo"><i class="fas fa-trash" aria-hidden="true"></i></button></div>
+        <div class="library-card-actions"><button class="btn btn-sm btn-outline" type="button" data-library-preview="${esc(item.id)}" data-library-item="1" data-name="${esc(item.original_name)}" data-mime="${esc(item.mime_type)}" data-size="${Number(item.size) || 0}" title="Visualizar ${esc(item.original_name)}" aria-label="Visualizar ${esc(item.original_name)}"><i class="fas fa-eye" aria-hidden="true"></i></button><a class="btn btn-sm btn-green btn-download" href="/download/library/${encodeURIComponent(item.id)}" title="Baixar ${esc(item.original_name)}" aria-label="Baixar ${esc(item.original_name)}"><i class="fas fa-download" aria-hidden="true"></i></a><button class="btn btn-sm btn-outline library-edit-action" type="button" data-library-edit="${esc(item.id)}" data-library-item="1" title="Mover, renomear ou anotar" aria-label="Mover, renomear ou anotar"><i class="fas fa-sliders" aria-hidden="true"></i></button><button class="btn btn-sm btn-outline is-danger" type="button" data-library-delete-item="${esc(item.id)}" title="Apagar esta cópia da Biblioteca" aria-label="Apagar esta cópia da Biblioteca"><i class="fas fa-trash" aria-hidden="true"></i></button></div>
       </article>`).join('');
   }
 
   async function loadLibrary(silent = false) {
     if (loading) { reloadQueued = true; return; }
     loading = true;
-    if (!silent && !items.length) $('libraryGrid').innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Preparando seu Acervo...</div>';
+    if (!silent && !items.length) $('libraryGrid').innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Preparando sua Biblioteca...</div>';
     try {
       const result = await api('/api/library');
       const nextItems = Array.isArray(result.items) ? result.items : [];
@@ -273,7 +273,7 @@
         render();
       }
     } catch (error) {
-      if (!silent) $('libraryGrid').innerHTML = `<div class="library-empty library-error"><i class="fas fa-triangle-exclamation"></i><h3>Não foi possível carregar seu Acervo</h3><p>${esc(error.message)}</p><button class="btn btn-outline" type="button" data-library-retry><i class="fas fa-rotate-right"></i> Tentar novamente</button></div>`;
+      if (!silent) $('libraryGrid').innerHTML = `<div class="library-empty library-error"><i class="fas fa-triangle-exclamation"></i><h3>Não foi possível carregar sua Biblioteca</h3><p>${esc(error.message)}</p><button class="btn btn-outline" type="button" data-library-retry><i class="fas fa-rotate-right"></i> Tentar novamente</button></div>`;
     } finally {
       loading = false;
       if (reloadQueued) { reloadQueued = false; loadLibrary(true); }
@@ -353,7 +353,7 @@
       if (!response.ok) throw new Error(data.error || 'Não foi possível enviar.');
     };
     try {
-      window.toast?.('Enviando ' + all.length + ' arquivo(s) ao Acervo...');
+      window.toast?.('Enviando ' + all.length + ' arquivo(s) na Biblioteca...');
       for (let i = 0; i < all.length; i++) {
         const file = all[i];
         let pathname;
@@ -373,7 +373,7 @@
           }
         } else {
           const prep = await postJson('/api/library/upload-url', { name: file.name, size: file.size, type: file.type, space_id: space.id, bookcase_id: bookcaseId });
-          if (prep.status === 501) { await legacyUpload(all.slice(i)); signature = ''; await loadLibrary(true); window.toast?.('Arquivo(s) guardado(s) no seu Acervo.'); return; }
+          if (prep.status === 501) { await legacyUpload(all.slice(i)); signature = ''; await loadLibrary(true); window.toast?.('Arquivo(s) guardado(s) no sua Biblioteca.'); return; }
           if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
           if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponível).');
           await putWithProgress(prep.data.presignedUrl, file);
@@ -384,14 +384,14 @@
       }
       signature = '';
       await loadLibrary(true);
-      window.toast?.('Arquivo(s) guardado(s) no seu Acervo.');
+      window.toast?.('Arquivo(s) guardado(s) no sua Biblioteca.');
     } catch (error) { window.toast?.(error.message, 'error'); }
   }
 
   async function deleteSpace(spaceId) {
     const space = spaces.find(entry => entry.id === spaceId);
     if (!space) return;
-    const content = 'Excluir o espaço “' + space.name + '”? Os atalhos deste espaço sairão do Meu Acervo, mas os arquivos originais continuarão nas salas.';
+    const content = 'Excluir o espaço “' + space.name + '”? Os atalhos deste espaço sairão do Minha Biblioteca, mas os arquivos originais continuarão nas salas.';
     if (!window.confirm(content)) return;
     try {
       await api('/api/library/spaces/' + encodeURIComponent(spaceId), { method: 'DELETE' });
@@ -434,7 +434,7 @@
       return;
     }
     const item = items.find(entry => entry.id === String(itemId));
-    if (!item) { window.toast?.('Item não encontrado no seu Acervo.', 'error'); return; }
+    if (!item) { window.toast?.('Item não encontrado no sua Biblioteca.', 'error'); return; }
     renderShelves();
     $('libraryItemId').value = item.id;
     $('libraryEditorFileName').textContent = item.original_name || String(fileName || 'Arquivo');
@@ -446,7 +446,7 @@
     $('libraryEditorFavorite').checked = Boolean(item.is_favorite);
     $('removeLibraryItem').hidden = false;
     $('saveLibraryItem').innerHTML = '<i class="fas fa-check"></i> Salvar organização';
-    $('libraryEditorTitle').innerHTML = '<i class="fas fa-bookmark"></i> Organizar no Meu Acervo';
+    $('libraryEditorTitle').innerHTML = '<i class="fas fa-bookmark"></i> Organizar no Minha Biblioteca';
     const modal = $('libraryEditorModal');
     modal.style.display = 'flex';
     modal.setAttribute('aria-hidden', 'false');
@@ -456,7 +456,7 @@
   window.openLibraryEditor = openEditor;
   window.loadLibrary = loadLibrary;
 
-  // Guardar arquivo da sala no Acervo: cria a COPIA independente (snapshot).
+  // Guardar arquivo da sala na Biblioteca: cria a COPIA independente (snapshot).
   window.saveRoomFileToLibrary = async function (fileId) {
     if (!spaces.length) {
       try { await loadLibrary(true); } catch (e) {}
@@ -477,7 +477,7 @@
       return;
     }
     try {
-      window.toast?.('Guardando cópia no seu Acervo...');
+      window.toast?.('Guardando cópia no sua Biblioteca...');
       const saved = await api('/api/library', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -486,7 +486,7 @@
       signature = '';
       await loadLibrary(true);
       window.loadRooms?.();
-      window.toast?.('Cópia guardada no seu Acervo. Ela fica mesmo se a sala for excluída.');
+      window.toast?.('Cópia guardada no sua Biblioteca. Ela fica mesmo se a sala for excluída.');
       openEditor(saved.id, '');
     } catch (error) { window.toast?.(error.message, 'error'); }
   };
@@ -568,7 +568,7 @@
     const space = spaces.find(entry => entry.id === spaceId) || spaces[0];
     const bookcaseId = (space.shelves && space.shelves[0] && space.shelves[0].id) || '';
     if (!space) {
-      window.toast?.('Crie um espaço antes de enviar arquivos ao Acervo.', 'error');
+      window.toast?.('Crie um espaço antes de enviar arquivos na Biblioteca.', 'error');
       pendingLibraryEditor = { pendingDirectFiles: picked.slice(0, 5) };
       openSpaceModal('space');
       return;
@@ -624,13 +624,13 @@
     if (delItem) {
       const target = items.find(entry => entry.id === delItem.dataset.libraryDeleteItem);
       if (!target) return;
-      if (!window.confirm('Apagar "' + (target.original_name || 'esta cópia') + '" do seu Acervo? Ela sai só daqui; nada muda nas salas.')) return;
+      if (!window.confirm('Apagar "' + (target.original_name || 'esta cópia') + '" do sua Biblioteca? Ela sai só daqui; nada muda nas salas.')) return;
       delItem.disabled = true;
       try {
         await api('/api/library/' + encodeURIComponent(target.id), { method: 'DELETE' });
         signature = '';
         await loadLibrary(true);
-        window.toast?.('Cópia apagada do seu Acervo.');
+        window.toast?.('Cópia apagada do sua Biblioteca.');
       } catch (error) { window.toast?.(error.message, 'error'); delItem.disabled = false; }
       return;
     }
@@ -648,6 +648,9 @@
   });
 
   $('librarySpaces').addEventListener('click', event => {
+    // "Criar meu primeiro espaço" aparece dentro de #librarySpaces (não de
+    // #libraryGrid), então o clique precisa ser tratado aqui também.
+    if (event.target.closest('[data-library-create-space]')) { openSpaceModal('space'); return; }
     const edit = event.target.closest('[data-library-edit-space]');
     if (edit) { openSpaceModal('edit-space', edit.dataset.libraryEditSpace); return; }
     const remove = event.target.closest('[data-library-delete-space]');
@@ -789,14 +792,14 @@
       signature = '';
       await loadLibrary(true);
       window.loadRooms?.();
-      window.toast?.('Seu Acervo foi atualizado.');
+      window.toast?.('Sua Biblioteca foi atualizado.');
     } catch (error) { window.toast?.(error.message, 'error'); }
     finally { button.disabled = false; }
   });
 
   $('removeLibraryItem').addEventListener('click', async () => {
     const itemId = $('libraryItemId').value;
-    if (!itemId || !window.confirm('Apagar esta cópia do seu Acervo? Ela sai só daqui; nada muda nas salas.')) return;
+    if (!itemId || !window.confirm('Apagar esta cópia do sua Biblioteca? Ela sai só daqui; nada muda nas salas.')) return;
     const button = $('removeLibraryItem');
     button.disabled = true;
     try {
@@ -805,7 +808,7 @@
       signature = '';
       await loadLibrary(true);
       window.loadRooms?.();
-      window.toast?.('Arquivo removido do seu Acervo.');
+      window.toast?.('Arquivo removido do sua Biblioteca.');
     } catch (error) { window.toast?.(error.message, 'error'); }
     finally { button.disabled = false; }
   });
