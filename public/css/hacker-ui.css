@@ -1,0 +1,280 @@
+/* =====================================================================
+   hacker-ui.css — cursor "hacker" + botões com identidade visual por função
+   ---------------------------------------------------------------------
+   Carregado por ÚLTIMO em todas as páginas (depois de style.css, fx.css,
+   mobile.css, adaptive.css, auth-flow.css, dashboard-redesign.css...).
+   Por isso estas regras vencem a cascata sem precisar de !important.
+
+   Cursor: retícula com cantos em L, crosshair, barra de varredura e
+   leitura de coordenadas (HUD). Some com "reduzir movimento" e simplifica
+   no nível de gráficos "baixo" (data-gfx="low").
+
+   Botões: upload (ciano), download (verde), share (violeta),
+   delete (vermelho) e auth (âmbar) — todos no mesmo idioma visual
+   "terminal": canto cortado, borda fina, barra lateral e brilho no hover.
+   ===================================================================== */
+
+/* ===================== 1. CURSOR HACKER ===================== */
+html.has-bubble, html.has-bubble * { cursor: none !important; }
+
+/* cor base do cursor: acompanha o tema (vermelho no claro, verde no escuro) */
+html.has-bubble { --bc: 226,44,59; --bc2: 240,110,120; }
+html.has-bubble[data-theme="dark"] { --bc: 53,242,139; --bc2: 0,201,107; }
+
+.cy-bubble, .cy-dot {
+  position: fixed; left: 0; top: 0; z-index: 2147483647;
+  pointer-events: none; opacity: 0; transition: opacity .18s ease;
+  will-change: transform;
+}
+html.bubble-on .cy-bubble, html.bubble-on .cy-dot { opacity: 1; }
+
+/* --- moldura: 4 cantos em L, desenhados com 8 camadas de gradiente --- */
+.cy-b-ring {
+  --t: 9px;
+  position: absolute; left: -15px; top: -15px; width: 30px; height: 30px;
+  border: 0; border-radius: 0; animation: none;
+  background:
+    linear-gradient(rgb(var(--bc)), rgb(var(--bc))) left  top    / var(--t) 2px no-repeat,
+    linear-gradient(rgb(var(--bc)), rgb(var(--bc))) left  top    / 2px var(--t) no-repeat,
+    linear-gradient(rgb(var(--bc)), rgb(var(--bc))) right top    / var(--t) 2px no-repeat,
+    linear-gradient(rgb(var(--bc)), rgb(var(--bc))) right top    / 2px var(--t) no-repeat,
+    linear-gradient(rgb(var(--bc)), rgb(var(--bc))) left  bottom / var(--t) 2px no-repeat,
+    linear-gradient(rgb(var(--bc)), rgb(var(--bc))) left  bottom / 2px var(--t) no-repeat,
+    linear-gradient(rgb(var(--bc)), rgb(var(--bc))) right bottom / var(--t) 2px no-repeat,
+    linear-gradient(rgb(var(--bc)), rgb(var(--bc))) right bottom / 2px var(--t) no-repeat;
+  filter: drop-shadow(0 0 4px rgba(var(--bc), .8));
+  transition: width .18s ease, height .18s ease, left .18s ease, top .18s ease, filter .18s ease;
+}
+
+/* --- crosshair: duas linhas finas cruzando o centro --- */
+.cy-b-cross {
+  position: absolute; left: -27px; top: -27px; width: 54px; height: 54px; opacity: .45;
+  background:
+    linear-gradient(rgba(var(--bc), .8), rgba(var(--bc), .8)) 0 50% / 100% 1px no-repeat,
+    linear-gradient(rgba(var(--bc), .8), rgba(var(--bc), .8)) 50% 0 / 1px 100% no-repeat;
+}
+
+/* --- varredura: barra que sobe e desce dentro da retícula --- */
+.cy-b-scan {
+  position: absolute; left: -13px; top: -13px; width: 26px; height: 2px; opacity: .9;
+  background: linear-gradient(90deg, transparent, rgb(var(--bc2)), transparent);
+  box-shadow: 0 0 8px rgba(var(--bc), .9);
+  animation: cyScanY 1.7s linear infinite;
+}
+@keyframes cyScanY {
+  0%   { transform: translateY(0);    opacity: 0; }
+  12%  { opacity: 1; }
+  50%  { transform: translateY(26px); opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translateY(0);    opacity: 0; }
+}
+
+/* --- HUD: leitura de coordenadas / estado --- */
+
+/* --- estados da retícula --- */
+.cy-bubble.is-link .cy-b-ring { --t: 15px; width: 46px; height: 46px; left: -23px; top: -23px; filter: drop-shadow(0 0 10px rgba(var(--bc), 1)); }
+.cy-bubble.is-link .cy-b-cross { opacity: .7; }
+.cy-bubble.is-link .cy-b-tag { background: rgb(var(--bc)); color: #06120b; }
+
+/* modo texto: a moldura vira um cursor de bloco (I-beam) */
+.cy-bubble.is-text .cy-b-ring { --t: 7px; width: 3px; height: 30px; left: -1.5px; top: -15px; }
+.cy-bubble.is-text .cy-b-cross,
+.cy-bubble.is-text .cy-b-scan,
+.cy-bubble.is-text .cy-b-tag { display: none; }
+
+/* clique: retícula contrai e a varredura acelera */
+.cy-bubble.is-down .cy-b-ring { --t: 6px; width: 22px; height: 22px; left: -11px; top: -11px; }
+.cy-bubble.is-down .cy-b-scan { animation-duration: .45s; }
+.cy-bubble.is-down .cy-b-tag { opacity: 1; }
+
+/* --- bloco do ponteiro (o "cursor" de verdade) --- */
+.cy-dot {
+  width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 0;
+  background: rgb(var(--bc2)); box-shadow: 0 0 10px 2px rgba(var(--bc), .95);
+}
+html.has-bubble[data-theme="dark"] .cy-dot { box-shadow: 0 0 10px 2px rgba(53,242,139,.95); }
+
+/* --- rastro: quadradinhos de "dados" subindo --- */
+.cy-trail {
+  position: fixed; z-index: 2147483646; pointer-events: none; border-radius: 0;
+  transform: translate(-50%,-50%);
+  background: rgba(var(--bc2), .85); box-shadow: 0 0 8px rgba(var(--bc), .8);
+  animation: cyFall .7s ease-out forwards;
+}
+html.has-bubble[data-theme="dark"] .cy-trail { background: rgba(0,201,107,.85); box-shadow: 0 0 8px rgba(53,242,139,.8); }
+@keyframes cyFall { 0% { opacity: .9; } 100% { transform: translate(-50%, -30px) scale(.3); opacity: 0; } }
+
+/* --- clique no vácuo: losango de "trava de alvo" --- */
+.cy-ripple {
+  position: fixed; z-index: 2147483646; pointer-events: none;
+  width: 12px; height: 12px; border-radius: 0;
+  transform: translate(-50%,-50%) rotate(45deg);
+  border: 2px solid rgba(var(--bc), .95); animation: cyRipple .6s ease-out forwards;
+}
+html.has-bubble[data-theme="dark"] .cy-ripple { border-color: rgba(53,242,139,.95); }
+@keyframes cyRipple { to { width: 76px; height: 76px; opacity: 0; border-width: 1px; } }
+
+/* menos movimento: nada se move, só a retícula estática */
+@media (prefers-reduced-motion: reduce) {
+  .cy-b-scan, .cy-trail, .cy-ripple { display: none !important; }
+  .cy-b-ring, .cy-b-tag { transition: none !important; }
+
+/* =====================================================================
+   2. BOTÕES COM IDENTIDADE POR FUNÇÃO
+   ---------------------------------------------------------------------
+   upload   → ciano      (#22d3ee)  ·  subir arquivo
+   download → verde      (#22c55e)  ·  baixar / exportar
+   share    → violeta    (#a78bfa)  ·  copiar link / compartilhar
+   delete   → vermelho   (#f87171)  ·  excluir / revogar
+   auth     → âmbar      (#fbbf24)  ·  entrar / criar conta / salvar senha
+
+   Todas usam o mesmo "esqueleto terminal": canto cortado, borda fina,
+   barra lateral que marca a função e faixa de varredura no hover.
+   ===================================================================== */
+:root {
+  --fn-up: 34,211,238;
+  --fn-down: 34,197,94;
+  --fn-share: 167,139,250;
+  --fn-del: 248,113,113;
+  --fn-auth: 251,191,36;
+}
+
+/* ---- esqueleto comum ---- */
+.btn-upload, .btn-download, .btn-share, .btn-delete,
+.btn-auth, .btn.btn-danger, .btn.btn-green {
+  position: relative; overflow: hidden;
+  border: 1px solid rgba(var(--fn), .5);
+  border-radius: 2px;
+  color: rgb(var(--fn)) !important;
+  background: linear-gradient(135deg, rgba(var(--fn), .18), rgba(var(--fn), .06));
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  transition: transform .16s ease, box-shadow .22s ease, background .22s ease, color .22s ease;
+}
+/* barra lateral que marca a função */
+.btn-upload::before, .btn-download::before, .btn-share::before, .btn-delete::before,
+.btn-auth::before, .btn.btn-danger::before, .btn.btn-green::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: rgb(var(--fn)); box-shadow: 0 0 10px rgba(var(--fn), .9);
+}
+/* faixa de varredura no hover */
+.btn-upload::after, .btn-download::after, .btn-share::after, .btn-delete::after,
+.btn-auth::after, .btn.btn-danger::after, .btn.btn-green::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%;
+  pointer-events: none; transform: skewX(-20deg);
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.28), transparent);
+  transition: left .5s ease;
+}
+.btn-upload:hover::after, .btn-download:hover::after, .btn-share:hover::after,
+.btn-delete:hover::after, .btn-auth:hover::after,
+.btn.btn-danger:hover::after, .btn.btn-green:hover::after { left: 130%; }
+
+.btn-upload:hover, .btn-download:hover, .btn-share:hover, .btn-delete:hover,
+.btn-auth:hover, .btn.btn-danger:hover, .btn.btn-green:hover {
+  color: #04120b !important;
+  background: linear-gradient(135deg, rgba(var(--fn), .95), rgba(var(--fn), .7));
+  box-shadow: 0 6px 20px rgba(var(--fn), .35), inset 0 0 0 1px rgba(255,255,255,.12);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+.btn-upload:active, .btn-download:active, .btn-share:active, .btn-delete:active,
+.btn-auth:active, .btn.btn-danger:active, .btn.btn-green:active { transform: translateY(0); }
+
+/* ---- cores por função ---- */
+.btn-upload  { --fn: var(--fn-up); }
+.btn-download{ --fn: var(--fn-down); }
+.btn-share   { --fn: var(--fn-share); }
+.btn-delete, .btn.btn-danger { --fn: var(--fn-del); }
+.btn-auth    { --fn: var(--fn-auth); }
+
+/* verde legado (criar sala, salvar, exportar...) entra no idioma terminal */
+.btn.btn-green { --fn: var(--fn-down); }
+
+/* ---- auth: só nas páginas de acesso (login, cadastro, senha) ---- */
+body.auth-page .btn-primary,
+body.auth-page .btn-success {
+  --fn: var(--fn-auth);
+  border: 1px solid rgba(var(--fn), .5);
+  border-radius: 2px; clip-path: none;
+  color: #04120b !important;
+  background: linear-gradient(135deg, rgba(var(--fn), .95), rgba(var(--fn), .68));
+  box-shadow: 0 8px 24px rgba(var(--fn), .28);
+  font-family: var(--disp, Orbitron, sans-serif);
+  letter-spacing: .12em;
+}
+body.auth-page .btn-primary::before, body.auth-page .btn-success::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: rgba(0,0,0,.55);
+}
+body.auth-page .btn-primary:hover, body.auth-page .btn-success:hover {
+  box-shadow: 0 12px 30px rgba(var(--fn), .42); filter: brightness(1.06);
+}
+/* aposenta o brilho/recorte antigo do cartão de login */
+body.auth-page .auth-card .btn-primary, body.auth-page .auth-card .btn-success {
+  clip-path: none; border-radius: 2px;
+}
+body.auth-page .auth-card .btn-primary::after, body.auth-page .auth-card .btn-success::after { display: none; }
+
+/* ---- primário genérico fora do auth: só ganha o canto cortado do tema ---- */
+.btn-primary, html[data-theme="dark"] .btn-primary {
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 9px 100%, 0 calc(100% - 9px));
+}
+
+/* ---- contorno (secundário): mesmo idioma de canto cortado ---- */
+.btn-outline, html[data-theme="dark"] .btn-outline {
+  border-radius: 2px;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+}
+/* perigo em contorno (excluir discreto) */
+.btn-outline.btn-danger, .btn.btn-outline.btn-danger, .btn-outline.is-danger {
+  color: rgb(var(--fn-del)) !important;
+  border-color: rgba(var(--fn-del), .55);
+  background: rgba(var(--fn-del), .1);
+}
+.btn-outline.btn-danger:hover, .btn.btn-outline.btn-danger:hover, .btn-outline.is-danger:hover {
+  color: #1a0606 !important;
+  background: rgba(var(--fn-del), .9);
+  border-color: rgb(var(--fn-del));
+}
+
+/* ---- menos movimento / gráficos baixos: sem transições nem faixa ---- */
+@media (prefers-reduced-motion: reduce) {
+  .btn-upload, .btn-download, .btn-share, .btn-delete, .btn-auth,
+  .btn.btn-danger, .btn.btn-green, .btn-outline, .btn-primary { transition: none; }
+  .btn-upload::after, .btn-download::after, .btn-share::after, .btn-delete::after,
+  .btn-auth::after, .btn.btn-danger::after, .btn.btn-green::after { display: none; }
+}
+html[data-gfx="low"] .btn-upload, html[data-gfx="low"] .btn-download,
+html[data-gfx="low"] .btn-share, html[data-gfx="low"] .btn-delete,
+html[data-gfx="low"] .btn-auth, html[data-gfx="low"] .btn.btn-danger,
+html[data-gfx="low"] .btn.btn-green { transition: none; }
+html[data-gfx="low"] .btn-upload::after, html[data-gfx="low"] .btn-download::after,
+html[data-gfx="low"] .btn-share::after, html[data-gfx="low"] .btn-delete::after,
+html[data-gfx="low"] .btn-auth::after, html[data-gfx="low"] .btn.btn-danger::after,
+html[data-gfx="low"] .btn.btn-green::after { display: none; }
+
+.btn.btn-green:hover { color: #04120b !important; }
+
+/* botão pequeno: recorte menor */
+.btn-sm.btn-upload, .btn-sm.btn-download, .btn-sm.btn-share,
+.btn-sm.btn-delete, .btn-sm.btn-auth, .btn-sm.btn-danger, .btn-sm.btn-green {
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+}
+
+}
+/* gráficos no baixo: só a retícula e o bloco, sem enfeites */
+html[data-gfx="low"] .cy-b-cross,
+html[data-gfx="low"] .cy-b-scan,
+html[data-gfx="low"] .cy-b-tag,
+html[data-gfx="low"] .cy-trail { display: none !important; }
+html[data-gfx="low"] .cy-b-ring { filter: none; }
+
+.cy-b-tag {
+  position: absolute; left: 20px; top: 14px; padding: 1px 6px; white-space: nowrap;
+  font: 700 10px/1.5 var(--mono, 'Share Tech Mono', monospace); letter-spacing: .06em;
+  color: #06120b; background: rgb(var(--bc2)); border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+  opacity: 0; transform: translateY(-2px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+html.bubble-on .cy-b-tag { opacity: .95; transform: none; }
+

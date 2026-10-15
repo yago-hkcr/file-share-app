@@ -51,7 +51,7 @@
     const list = modal.querySelector('#localServerAddresses');
     list.innerHTML = active && state.addresses && state.addresses.length
       ? '<h4>Endereço para compartilhar</h4>' + state.addresses.map(item =>
-          '<div class="card-row" style="gap:8px;flex-wrap:wrap"><a class="grow" style="overflow-wrap:anywhere" href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">' + escapeHtml(item.url) + '</a><button class="btn btn-sm btn-outline" type="button" data-copy="' + escapeHtml(item.url) + '"><i class="fas fa-copy"></i> Copiar</button></div>'
+          '<div class="card-row" style="gap:8px;flex-wrap:wrap"><a class="grow" style="overflow-wrap:anywhere" href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">' + escapeHtml(item.url) + '</a><button class="btn btn-sm btn-outline btn-share" type="button" data-copy="' + escapeHtml(item.url) + '"><i class="fas fa-copy"></i> Copiar</button></div>'
         ).join('')
       : '<div class="empty-state"><i class="fas fa-wifi"></i><p>' + (active ? 'Não encontrei um endereço de rede. Conecte este computador ao Wi-Fi ou roteador da sala.' : 'Inicie o servidor para liberar um endereço para a sala.') + '</p></div>';
     list.querySelectorAll('[data-copy]').forEach(copyButton => copyButton.addEventListener('click', async () => {

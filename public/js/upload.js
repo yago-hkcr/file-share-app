@@ -94,7 +94,7 @@
               '<button type="button" class="btn btn-sm btn-outline confirm-del" data-del="' + i + '" title="Remover"><i class="fas fa-xmark"></i></button>' +
             '</div>').join('') + '</div>' +
           '<div class="rename-actions"><button type="button" class="btn btn-outline rename-cancel">Cancelar</button>' +
-          '<button type="submit" class="btn btn-green">Enviar ' + items.length + (items.length === 1 ? ' arquivo' : ' arquivos') + '</button></div></form>';
+          '<button type="submit" class="btn btn-green btn-upload">Enviar ' + items.length + (items.length === 1 ? ' arquivo' : ' arquivos') + '</button></div></form>';
         wrap.querySelector('.rename-overlay').onclick = () => finish(null);
         wrap.querySelector('.rename-cancel').onclick = () => finish(null);
         wrap.querySelectorAll('input[data-i]').forEach(inp => inp.oninput = () => { items[inp.dataset.i].base = inp.value; });

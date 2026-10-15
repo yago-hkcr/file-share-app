@@ -1,12 +1,22 @@
-// Cursor personalizado: bolha cyber animada (só em mouse; no celular não aparece).
+// Cursor personalizado estilo "hacker": retícula com cantos em L, crosshair,
+// barra de varredura e leitura de coordenadas. Só aparece com mouse de verdade
+// (não no celular), some com "reduzir movimento" e simplifica nos gráficos baixos.
 (function () {
   if (!window.matchMedia || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  document.documentElement.classList.add('has-bubble');
+  const root = document.documentElement;
+  const lowGfx = () => root.getAttribute('data-gfx') === 'low';
+  root.classList.add('has-bubble');
 
   const bubble = document.createElement('div');
   bubble.className = 'cy-bubble';
-  bubble.innerHTML = '<span class="cy-b-ring"></span><span class="cy-b-shine"></span>';
+  bubble.innerHTML =
+    '<span class="cy-b-ring"></span>' +
+    '<span class="cy-b-cross"></span>' +
+    '<span class="cy-b-scan"></span>' +
+    '<span class="cy-b-tag"></span>';
+  const tag = bubble.querySelector('.cy-b-tag');
   const dot = document.createElement('div');
   dot.className = 'cy-dot';
   const add = () => { document.body.appendChild(bubble); document.body.appendChild(dot); };
@@ -14,13 +24,19 @@
 
   let mx = -100, my = -100, bx = -100, by = -100, shown = false, lastTrail = 0;
   const html = document.documentElement;
+  const readout = () => 'X' + String(mx).padStart(4, '0') + ' Y' + String(my).padStart(4, '0');
 
   window.addEventListener('mousemove', e => {
     mx = e.clientX; my = e.clientY;
     dot.style.transform = 'translate(' + mx + 'px,' + my + 'px)';
     if (!shown) { shown = true; bx = mx; by = my; html.classList.add('bubble-on'); }
-    const now = performance.now();
-    if (!reduce && now - lastTrail > 55) { lastTrail = now; trail(mx, my); }
+    if (tag) tag.textContent = readout();
+
+    if (!reduce && !lowGfx()) {
+      const now = performance.now();
+      if (now - lastTrail > 55) { lastTrail = now; trail(mx, my); }
+    }
+
     const t = e.target && e.target.closest ? e.target : null;
     const link = t && t.closest('a, button, label, summary, [role="button"], .btn, select, input[type="checkbox"], input[type="radio"], input[type="file"]');
     const text = t && t.closest('input:not([type]), input[type="text"], input[type="password"], input[type="email"], input[type="search"], textarea');
@@ -31,7 +47,7 @@
   document.addEventListener('mouseenter', () => { html.classList.add('bubble-on'); shown = true; });
   window.addEventListener('mousedown', e => {
     bubble.classList.add('is-down');
-    if (reduce) return;
+    if (reduce || lowGfx()) return;
     const r = document.createElement('span');
     r.className = 'cy-ripple';
     r.style.left = e.clientX + 'px'; r.style.top = e.clientY + 'px';
@@ -43,10 +59,10 @@
   function trail(x, y) {
     const p = document.createElement('span');
     p.className = 'cy-trail';
-    const s = 4 + Math.random() * 7;
-    p.style.cssText = 'left:' + (x + (Math.random() * 10 - 5)) + 'px;top:' + (y + (Math.random() * 10 - 5)) + 'px;width:' + s + 'px;height:' + s + 'px';
+    const s = 3 + Math.random() * 5;
+    p.style.cssText = 'left:' + (x + (Math.random() * 12 - 6)) + 'px;top:' + (y + (Math.random() * 12 - 6)) + 'px;width:' + s + 'px;height:' + s + 'px';
     document.body.appendChild(p);
-    setTimeout(() => p.remove(), 800);
+    setTimeout(() => p.remove(), 720);
   }
 
   (function loop() {

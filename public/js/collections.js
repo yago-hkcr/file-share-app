@@ -47,7 +47,7 @@
       recipients.map(recipient => {
         const url = collectionUrl(recipient.token);
         const label = recipient.participant_name || 'Link único';
-        return '<div class="collection-link-row"><div><strong>' + esc(label) + '</strong><span class="collection-link-value" title="' + esc(url) + '">' + esc(url) + '</span></div><button class="btn btn-sm btn-outline" type="button" data-copy-link="' + esc(url) + '"><i class="fas fa-copy"></i> Copiar</button></div>';
+        return '<div class="collection-link-row"><div><strong>' + esc(label) + '</strong><span class="collection-link-value" title="' + esc(url) + '">' + esc(url) + '</span></div><button class="btn btn-sm btn-outline btn-share" type="button" data-copy-link="' + esc(url) + '"><i class="fas fa-copy"></i> Copiar</button></div>';
       }).join('');
     box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -190,7 +190,7 @@
         : '<i class="fas fa-folder"></i> ' + esc(collection.room_name || 'Sala');
       const senderNames = [...new Set((multiUse ? submissions.map(submission => submission.sender_name) : completedRecipients.map(recipient => recipient.participant_name)).filter(Boolean))];
       const senderLabel = senderNames.slice(0, 3).join(', ') + (senderNames.length > 3 ? ' +' + (senderNames.length - 3) : '');
-      const tray = completed ? '<div class="collection-download-tray"><div class="collection-download-senders"><strong>Enviado por</strong><span title="' + esc(senderNames.join(', ')) + '">' + esc(senderLabel) + '</span></div><button class="btn btn-sm btn-green" type="button" data-download="' + esc(collection.id) + '"><i class="fas fa-file-zipper"></i> Baixar tudo · ZIP</button></div>' : '';
+      const tray = completed ? '<div class="collection-download-tray"><div class="collection-download-senders"><strong>Enviado por</strong><span title="' + esc(senderNames.join(', ')) + '">' + esc(senderLabel) + '</span></div><button class="btn btn-sm btn-green btn-download" type="button" data-download="' + esc(collection.id) + '"><i class="fas fa-file-zipper"></i> Baixar tudo · ZIP</button></div>' : '';
       const lifecycleAvailable = collection.expires_at > new Date().toISOString().slice(0, 19).replace('T', ' ');
       const lifecycleActions = lifecycleAvailable && collection.status === 'active'
         ? '<button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="suspend" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-pause"></i> Suspender coleta</button><button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="close" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-stop"></i> Encerrar coleta</button>'
