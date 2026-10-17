@@ -9,7 +9,7 @@
   --danger-dark: #b91c1c;
   --success: #22c55e;
   --warning: #f59e0b;
-  --info: #dc2626;
+  --info: #2563eb;
   --gray-50: #ffffff;
   --gray-100: #f5f5f5;
   --gray-200: #e5e5e5;
@@ -935,7 +935,7 @@ a:hover {
 
 body {
   color: var(--ink);
-  background: #ffffff;
+  background: var(--gray-50);
   font-family: 'Inter', sans-serif;
 }
 
@@ -1143,6 +1143,7 @@ html[data-theme="dark"] {
   --gray-50: #000000; --gray-100: #000000; --gray-200: #000000; --gray-300: #111111; --gray-400: #555555;
   --gray-500: #777777; --gray-600: #a0a0a0; --gray-700: #c2c2c2; --gray-800: #e0e0e0; --gray-900: #f5f5f5;
   --shadow: 0 1px 3px rgba(0,0,0,.5); --shadow-md: 0 4px 10px rgba(0,0,0,.45); --shadow-lg: 0 10px 20px rgba(0,0,0,.45); --shadow-xl: 0 20px 30px rgba(0,0,0,.5);
+  --danger: #ef4444; --danger-dark: #dc2626; --success: #4ade80; --warning: #fbbf24; --info: #3b82f6;
 }
 html[data-theme="dark"] body { background: #000000; color: var(--ink); }
 html[data-theme="dark"] .app-page { background: linear-gradient(135deg, #000000 0%, #000000 100%); }
