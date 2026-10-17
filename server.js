@@ -1532,7 +1532,8 @@ app.post('/api/forgot-password', wrap(async (req, res) => {
   if (await consumeRateLimit('forgot-ip:' + clientIp(req), 10, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
   if (await consumeRateLimit('forgot-email:' + email, 3, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos e tente de novo.' });
   const user = await one('SELECT id, username, email, status FROM users WHERE email = $1', [email]);
-  if (user && user.status !== 'banned' && user.status !== 'rejected') {
+  // Qualquer usuário cadastrado recebe o link de redefinição, independentemente do status da conta (banned/rejected incluídos).
+  if (user) {
     await q('DELETE FROM password_reset_tokens WHERE expires_at <= $1', [ts()]); // limpeza de tokens vencidos
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString().slice(0, 19).replace('T', ' ');
