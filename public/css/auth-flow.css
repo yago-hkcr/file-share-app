@@ -294,3 +294,31 @@ html.auth-fx-done body.auth-page .form-group { animation: none !important; }
   .auth-showcase::after, .auth-eyebrow::before { animation: none !important; }
   .auth-transition-wash, body.auth-page .auth-card, .auth-showcase { transition: none !important; animation: none !important; }
 }
+
+/* Caixa de link de recuperação quando o e-mail não pôde ser enviado (ex.: remetente não verificado). */
+.recovery-link {
+  margin: 12px 0;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+.recovery-link a {
+  color: var(--primary);
+  word-break: break-all;
+}
+.recovery-link a:hover {
+  text-decoration: underline;
+}
+.recovery-link-box {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+body.auth-page .recovery-link {
+  background: rgba(var(--cy-rgb), .08);
+  border-color: rgba(var(--cy-rgb), .3);
+}
