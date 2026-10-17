@@ -1545,7 +1545,8 @@ app.post('/api/forgot-password', wrap(async (req, res) => {
       console.log('[reset] link de redefinição (envio falhou) para ' + user.email + ': ' + link);
       await logAct(req, 'senha_reset_solicitada', user.username, { id: user.id, username: user.username, role: user.role });
       // E-mail não pôde ser enviado: devolve o link para exibição local no navegador.
-      return res.json({ success: true, recoveryLink: link, message: 'Não foi possível enviar por e-mail. Copie o link abaixo para redefinir sua senha: ' + link });
+      // Mensagem intencionalmente igual à de e-mail inexistente (anti-enumeracao).
+      return res.json({ success: true, recoveryLink: link, message: 'Se este e-mail estiver cadastrado, você receberá em instantes um link para redefinir a senha. Verifique também a caixa de spam.' });
     }
     await logAct(req, 'senha_reset_solicitada', user.username, { id: user.id, username: user.username, role: user.role });
   }
