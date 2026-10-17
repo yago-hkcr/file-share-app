@@ -1541,7 +1541,12 @@ app.post('/api/forgot-password', wrap(async (req, res) => {
     const link = baseUrlFor(req) + '/reset-password?token=' + token;
     const mail = passwordResetEmail(link, Math.round(RESET_TOKEN_TTL_MS / 60000));
     const sent = await sendMail({ to: user.email, subject: mail.subject, html: mail.html, text: mail.text });
-    if (!sent.ok) console.log('[reset] link de redefinição (visível apenas nos logs do servidor) para ' + user.email + ': ' + link);
+    if (!sent.ok) {
+      console.log('[reset] link de redefinição (envio falhou) para ' + user.email + ': ' + link);
+      await logAct(req, 'senha_reset_solicitada', user.username, { id: user.id, username: user.username, role: user.role });
+      // E-mail não pôde ser enviado: devolve o link para exibição local no navegador.
+      return res.json({ success: true, recoveryLink: link, message: 'Não foi possível enviar por e-mail. Copie o link abaixo para redefinir sua senha: ' + link });
+    }
     await logAct(req, 'senha_reset_solicitada', user.username, { id: user.id, username: user.username, role: user.role });
   }
   // Resposta genérica de propósito: nunca revela se o e-mail existe na base.
