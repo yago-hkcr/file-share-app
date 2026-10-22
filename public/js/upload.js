@@ -117,7 +117,8 @@
   };
 
   // Devolve { sent, skipped, files }
-  const _uploadInner = async function (roomId, fileList, onStatus) {
+  const _uploadInner = async function (roomId, fileList, onStatus, options) {
+    options = options || {};
     let all = Array.from(fileList); // copia já: o <input> pode ser limpo logo depois
     all = await window.confirmUpload(all);
     if (!all) return { sent: 0, skipped: [], cancelled: true, files: [] };
@@ -169,7 +170,7 @@
         pathname = prep.data.pathname;
       }
       const done = await postJson('/api/rooms/' + roomId + '/files/register', {
-        pathname, name: file.name, size: file.size, mime: file.type
+        pathname, name: file.name, size: file.size, mime: file.type, chat_only: options.chatOnly ? 1 : 0
       });
       if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
       uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: file.type || 'application/octet-stream' });
@@ -178,9 +179,41 @@
     return { sent, skipped, files: uploaded };
   };
   window.__fsBusy = 0;
-  window.uploadToRoom = async function (roomId, fileList, onStatus) {
+  window.uploadToRoom = async function (roomId, fileList, onStatus, options) {
     window.__fsBusy++;
-    try { return await _uploadInner(roomId, fileList, onStatus); }
+    try { return await _uploadInner(roomId, fileList, onStatus, options); }
     finally { window.__fsBusy = Math.max(0, window.__fsBusy - 1); }
+  };
+  window.uploadToDm = async function (friendId, fileList, onStatus) {
+    window.__fsBusy++;
+    try {
+      let all = Array.from(fileList);
+      all = await window.confirmUpload(all);
+      if (!all) return { sent: 0, skipped: [], cancelled: true, files: [] };
+      const say = onStatus || function () {};
+      await limitReady;
+      const files = [], skipped = [];
+      all.forEach(f => {
+        if (!f.size) skipped.push({ name: f.name, reason: 'vazio' });
+        else if (limitBytes && f.size > limitBytes) skipped.push({ name: f.name, reason: 'grande demais' });
+        else files.push(f);
+      });
+      const uploaded = [];
+      let sent = 0;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const label = '(' + (i + 1) + '/' + files.length + ') ' + file.name;
+        say('Enviando ' + label + '...');
+        const prep = await postJson('/api/dm/' + friendId + '/upload-url', { name: file.name, size: file.size, type: file.type });
+        if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
+        if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponível).');
+        await putWithProgress(prep.data.presignedUrl, file, percent => say('Enviando ' + label + ' ' + percent + '%'));
+        const done = await postJson('/api/dm/' + friendId + '/files/register', { pathname: prep.data.pathname, name: file.name, size: file.size, mime: file.type });
+        if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
+        uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: file.type || 'application/octet-stream' });
+        sent++;
+      }
+      return { sent, skipped, files: uploaded };
+    } finally { window.__fsBusy = Math.max(0, window.__fsBusy - 1); }
   };
 })();

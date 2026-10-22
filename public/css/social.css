@@ -215,3 +215,32 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 .chat-attachment-file { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid rgba(var(--cy-rgb),.25); border-radius: 10px; background: rgba(var(--cy-rgb),.06); }
 .chat-attachment-link { color: var(--ink); text-decoration: none; }
 .chat-attachment-download { color: var(--muted); }
+/* Chat attachments (inline) */
+.chat-attachment { margin: 6px 0; max-width: 100%; }
+.chat-attachment-image { display: block; }
+.chat-attachment-image a { display: block; }
+.chat-attachment-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--cy-rgb), .25);
+  background: var(--bubble);
+}
+.chat-attachment-name { font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-word; }
+.chat-attachment-file { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--bubble); border: 1px solid rgba(var(--cy-rgb), .2); }
+.chat-attachment-link { color: var(--cy); text-decoration: none; word-break: break-word; }
+.chat-attachment-download { color: var(--cy); }
+@media (max-width: 640px) {
+  .chat-attachment-image img { max-height: 200px; }
+  .chat-attachment-file { flex-wrap: wrap; }
+}
+/* Expanded chat in room */
+#roomModal.chat-expanded .modal-body > form,
+#roomModal.chat-expanded .section-title:first-of-type,
+#roomModal.chat-expanded #roomFiles { display: none !important; }
+#roomModal.chat-expanded .chat-box { min-height: 70vh; }
+#roomModal.chat-expanded .chat-list { max-height: 68vh !important; height: 68vh !important; }
