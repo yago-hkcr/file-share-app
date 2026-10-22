@@ -247,8 +247,9 @@
           <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
           <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
           <form id="messageForm" class="chat-compose" autocomplete="off">
-            <input id="messageInput" type="text" inputmode="text" enterkeyhint="send" autocapitalize="sentences" autocomplete="off" spellcheck="true" placeholder="Escreva uma mensagem..." maxlength="1000" required>
+            <input id="messageInput" type="text" inputmode="text" enterkeyhint="send" autocapitalize="sentences" autocomplete="off" spellcheck="true" placeholder="Escreva uma mensagem... (Ctrl+V cola imagem)" maxlength="1000" required>
             <input id="ocrFileInput" type="file" accept="image/*" hidden>
+            <button id="attachFileBtn" class="btn btn-outline attach-button" type="button" title="Anexar arquivos" aria-label="Anexar arquivos"><i class="fas fa-paperclip"></i></button>
             <button id="ocrButton" class="btn btn-outline ocr-button" type="button" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button>
             <button id="chatSendBtn" class="btn btn-primary chat-send" type="submit" title="Enviar" aria-label="Enviar mensagem"><i class="fas fa-paper-plane" aria-hidden="true"></i></button>
           </form>
@@ -499,6 +500,8 @@
     }
     document.getElementById('uploadForm').addEventListener('submit', event => event.preventDefault());
     document.getElementById('fileInput').addEventListener('change', event => { const files = Array.from(event.target.files); event.target.value = ''; sendFiles(files); });
+    const attachFileBtn = document.getElementById('attachFileBtn');
+    if (attachFileBtn) attachFileBtn.addEventListener('click', () => document.getElementById('fileInput').click());
     enableDrop(document.getElementById('roomModal'), '.drop-target', (el, files) => sendFiles(files));
     const messageInput = document.getElementById('messageInput');
     const focusChatInput = () => {

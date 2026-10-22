@@ -152,7 +152,7 @@ body.auth-page {
 
 @media (max-width: 380px) {
   #roomModal #messageForm.chat-compose {
-    grid-template-columns: minmax(0, 1fr) 42px 46px !important;
+    grid-template-columns: minmax(0, 1fr) 42px 42px 46px !important;
     gap: 6px;
   }
 }
