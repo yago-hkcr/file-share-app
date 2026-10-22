@@ -208,3 +208,10 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   .image-text-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .image-text-actions .btn { width: 100%; justify-content: center; }
 }
+
+.chat-attachment { margin-top: 6px; }
+.chat-attachment-image img { max-width: 260px; max-height: 320px; border-radius: 10px; display: block; }
+.chat-attachment-name { font-size: 11px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+.chat-attachment-file { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid rgba(var(--cy-rgb),.25); border-radius: 10px; background: rgba(var(--cy-rgb),.06); }
+.chat-attachment-link { color: var(--ink); text-decoration: none; }
+.chat-attachment-download { color: var(--muted); }
