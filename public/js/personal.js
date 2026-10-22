@@ -72,7 +72,7 @@
       const previewUrl = '/preview/' + encodeURIComponent(id);
       const downloadUrl = '/download/' + encodeURIComponent(id);
       if (isImage) return '<div class="chat-attachment chat-attachment-image"><a href="' + previewUrl + '" target="_blank" rel="noopener"><img src="' + previewUrl + '" alt="' + escHtml(name) + '" loading="lazy"></a><div class="chat-attachment-name">' + escHtml(name) + '</div></div>';
-      return '<div class="chat-attachment chat-attachment-file"><a class="chat-attachment-link" href="' + previewUrl + '" target="_blank" rel="noopener"><i class="fas fa-file"></i> ' + escHtml(name) + '</a><a class="chat-attachment-download" href="' + downloadUrl + '"><i class="fas fa-download"></i></a></div>';
+      return '<div class="chat-attachment chat-attachment-file"><span class="chat-attachment-icon"><i class="fas fa-file"></i></span><a class="chat-attachment-link" href="' + previewUrl + '" target="_blank" rel="noopener">' + escHtml(name) + '</a><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
     };
     const host = $('directMessageList'), sig = JSON.stringify(messages);
     if (sig === lastDmSig) return;
