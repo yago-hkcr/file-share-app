@@ -460,6 +460,7 @@ async function createTables() {
       stored_name TEXT NOT NULL,
       size BIGINT NOT NULL,
       mime_type TEXT DEFAULT 'application/octet-stream',
+      chat_only INTEGER DEFAULT 0,
       uploaded_at TEXT
     )`),
     q(`CREATE TABLE IF NOT EXISTS file_blobs (
@@ -565,6 +566,7 @@ async function createTables() {
   await migratePersonalLibraryHierarchy();
   await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
   await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_change_required INTEGER DEFAULT 0');
+await q('ALTER TABLE files ADD COLUMN IF NOT EXISTS chat_only INTEGER DEFAULT 0');
   await q(`CREATE TABLE IF NOT EXISTS file_collections (
     id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, room_id TEXT, destination_type TEXT DEFAULT 'room',
     library_space_id TEXT, library_bookcase_id TEXT, title TEXT NOT NULL,
@@ -870,7 +872,14 @@ async function isRoomMember(roomId, userId) {
   return !!(await one('SELECT id FROM room_members WHERE room_id = $1 AND user_id = $2', [roomId, userId]));
 }
 async function canUseRoom(user, roomId) {
-  return isAdmin(user) || isRoomMember(roomId, user.id);
+  if (isAdmin(user)) return true;
+  const rid = String(roomId || '');
+  if (rid.startsWith('dm:')) {
+    const parts = rid.slice(3).split(':');
+    if (parts.length !== 2 || !parts.includes(String(user.id))) return false;
+    return await areFriends(parts[0], parts[1]);
+  }
+  return isRoomMember(roomId, user.id);
 }
 
 const COLLECTION_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
@@ -1711,7 +1720,7 @@ async function loadRooms(user) {
        LEFT JOIN file_collection_recipients cr ON cr.id = cu.recipient_id
        LEFT JOIN file_collection_submissions cs ON cs.id = cu.submission_id
        LEFT JOIN file_collections fc ON fc.id = cu.collection_id
-       WHERE f.room_id IN (SELECT id FROM rooms WHERE ${cond}) ORDER BY f.uploaded_at DESC`, fileParams),
+       WHERE f.room_id IN (SELECT id FROM rooms WHERE ${cond}) AND (f.chat_only IS NULL OR f.chat_only = 0) ORDER BY f.uploaded_at DESC`, fileParams),
     q(`SELECT rm.room_id, u.id, u.username, u.avatar_color, u.avatar_image, rm.role, rm.joined_at
        FROM room_members rm JOIN users u ON rm.user_id = u.id
        WHERE rm.room_id IN (SELECT id FROM rooms WHERE ${cond})`, params)
@@ -2080,6 +2089,7 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
   if (!req.files || !req.files.length) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
 
   const inserted = [];
+  const chatOnly = (req.body && req.body.chat_only) ? 1 : 0;
   for (const file of req.files) {
     const id = uuidv4();
     const name = Buffer.from(file.originalname, 'latin1').toString('utf8'); // corrige acentos vindos do multipart
@@ -2096,8 +2106,8 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
     } else {
       await q("INSERT INTO file_blobs (file_id, data) VALUES ($1, decode($2, 'hex'))", [id, file.buffer.toString('hex')]);
     }
-    await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [id, room.id, req.user.id, name, storedName, file.size, file.mimetype || 'application/octet-stream', ts()]);
+    await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+      [id, room.id, req.user.id, name, storedName, file.size, file.mimetype || 'application/octet-stream', ts(), chatOnly]);
     inserted.push({ id, original_name: name, size: file.size, mime_type: file.mimetype });
   }
   res.json(inserted);
@@ -2112,6 +2122,7 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
 const MAX_DIRECT_BYTES = 100 * 1024 * 1024;
 const MAX_BLOB_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024;
 const BLOB_PATH_RE = /^rooms\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
+const DM_BLOB_PATH_RE = /^dm\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
 const COLLECTION_BLOB_PATH_RE = /^collections\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
 const LIBRARY_BLOB_PATH_RE = /^library\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
 
@@ -2224,9 +2235,10 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
 
   const name = String(req.body.name || '').trim().slice(0, 255) || 'arquivo';
   const mime = String(req.body.mime || '').slice(0, 100) || 'application/octet-stream';
-  await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-    [m[2], room.id, req.user.id, name, pathname, size, mime, ts()]);
-  res.json({ id: m[2], original_name: name, size });
+  const chatOnly = (req.body && req.body.chat_only) ? 1 : 0;
+  await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+    [m[2], room.id, req.user.id, name, pathname, size, mime, ts(), chatOnly]);
+  res.json({ id: m[2], original_name: name, size, chat_only: chatOnly });
 }));
 
 // Upload direto ao Acervo (sem passar por sala): mesmo fluxo das salas, mas gravando em
@@ -3431,6 +3443,55 @@ app.post('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
     [id, me, friend.id, content, replyTo, createdAt]);
   await notify(friend.id, 'Nova mensagem de ' + req.user.username, content.slice(0, 140), 'info');
   res.json({ success: true, id, created_at: createdAt });
+}));
+
+app.post('/api/dm/:id/upload-url', asMember, wrap(async (req, res) => {
+  if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
+  const friend = await directFriend(req, res); if (!friend) return;
+  const name = String((req.body && req.body.name) || '').trim();
+  const size = Number(req.body && req.body.size) || 0;
+  if (!name) return res.status(400).json({ error: 'Nome do arquivo obrigatório' });
+  if (size <= 0) return res.status(400).json({ error: 'Arquivo vazio' });
+  if (size > MAX_DIRECT_BYTES) return res.status(413).json({ error: `Arquivo grande demais (máximo ${Math.round(MAX_DIRECT_BYTES / 1024 / 1024)} MB)` });
+
+  const fileId = uuidv4();
+  const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
+  const pathname = `dm/${req.user.id}/${fileId}-${safe}`;
+  const { issueSignedToken, presignUrl } = await blobSdk();
+  const validUntil = Date.now() + 60 * 60 * 1000;
+  const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_DIRECT_BYTES, validUntil });
+  const signed = await presignUrl(token, { operation: 'put', pathname, access: 'private', maximumSizeInBytes: MAX_DIRECT_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil });
+  res.json({ pathname, presignedUrl: signed.presignedUrl, validUntil, maxBytes: MAX_DIRECT_BYTES });
+}));
+
+app.post('/api/dm/:id/files/register', asMember, wrap(async (req, res) => {
+  const friend = await directFriend(req, res); if (!friend) return;
+  const pathname = String((req.body && req.body.pathname) || '');
+  const m = DM_BLOB_PATH_RE.exec(pathname);
+  if (!m || m[1] !== req.user.id) return res.status(400).json({ error: 'Caminho de arquivo inválido' });
+  if (await one('SELECT id FROM files WHERE stored_name = $1', [pathname])) return res.status(400).json({ error: 'Arquivo já registrado' });
+
+  let size = Number(req.body.size) || 0;
+  try {
+    const { head } = await blobSdk();
+    const info = await head(pathname);
+    if (info && Number(info.size)) size = Number(info.size);
+    else return res.status(400).json({ error: 'Não foi possível validar o tamanho do arquivo' });
+  } catch (e) {
+    if (e && e.name === 'BlobNotFoundError') return res.status(400).json({ error: 'O envio do arquivo não foi concluído' });
+    console.error('head do Blob falhou:', e && e.message);
+    return res.status(502).json({ error: 'Não foi possível validar o arquivo no armazenamento' });
+  }
+  if (size > MAX_BLOB_UPLOAD_BYTES) {
+    await deleteBlobs([pathname]);
+    return res.status(413).json({ error: 'Arquivo grande demais' });
+  }
+  const name = String(req.body.name || '').trim().slice(0, 255) || 'arquivo';
+  const mime = String(req.body.mime || '').slice(0, 100) || 'application/octet-stream';
+  const conversationKey = 'dm:' + [req.user.id, friend.id].sort().join(':');
+  await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+    [m[2], conversationKey, req.user.id, name, pathname, size, mime, ts(), 1]);
+  res.json({ id: m[2], original_name: name, size });
 }));
 
 app.post('/api/friends/request', asMember, wrap(async (req, res) => {

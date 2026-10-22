@@ -227,7 +227,7 @@
     <div class="modal-overlay" onclick="closeRoom()"></div>
     <div class="modal-content modal-lg drop-target">
       <div class="drop-veil"><i class="fas fa-cloud-arrow-up"></i><span>Solte para enviar à sala</span></div>
-      <div class="modal-header"><h3 id="roomModalTitle">Sala</h3><div class="room-head-btns"><button id="leaveRoomBtn" class="btn btn-sm btn-outline btn-danger" onclick="leaveCurrentRoom()" title="Sair da sala"><i class="fas fa-sign-out-alt"></i> Sair da sala</button><button class="btn btn-sm btn-outline" onclick="closeRoom()" title="Fechar (Esc)"><i class="fas fa-arrow-left"></i> Voltar</button><button class="modal-close" onclick="closeRoom()" title="Fechar">&times;</button></div></div>
+      <div class="modal-header"><h3 id="roomModalTitle">Sala</h3><div class="room-head-btns"><button id="expandChatBtn" class="btn btn-sm btn-outline" type="button" title="Ampliar chat" onclick="toggleChatExpand()"><i class="fas fa-expand"></i></button><button id="leaveRoomBtn" class="btn btn-sm btn-outline btn-danger" onclick="leaveCurrentRoom()" title="Sair da sala"><i class="fas fa-sign-out-alt"></i> Sair da sala</button><button class="btn btn-sm btn-outline" onclick="closeRoom()" title="Fechar (Esc)"><i class="fas fa-arrow-left"></i> Voltar</button><button class="modal-close" onclick="closeRoom()" title="Fechar">&times;</button></div></div>
       <div class="modal-body">
         <form id="uploadForm">
           <label class="dropzone" for="fileInput">
@@ -237,6 +237,7 @@
             <span class="dz-progress" id="uploadBar" style="display:none;"><span class="dz-bar" id="uploadBarFill"></span></span>
             <span id="uploadStatus" class="dz-status"></span>
             <input id="fileInput" type="file" multiple hidden>
+            <input id="chatFileInput" type="file" multiple hidden>
           </label>
         </form>
         <div class="section-title"><i class="fas fa-folder-open"></i> Arquivos <span id="fileCount" class="section-count"></span></div>
@@ -396,7 +397,13 @@
       const finish = () => { if (token !== roomTransition) return; modal.style.display = 'none'; modal.classList.remove('room-morph-active'); content.style.transformOrigin = ''; content.style.transform = ''; roomOrigin = null; roomClosePending = false; };
       if (destination && playRoomMorph(startRect, destination, token, true, finish)) roomClosePending = true; else finish();
     }
-    function roomFileMarkup(file, insideCollection = false) {
+    window.toggleChatExpand = function () {
+      const modal = document.getElementById('roomModal');
+      if (!modal) return;
+      modal.classList.toggle('chat-expanded');
+      const btn = document.getElementById('expandChatBtn');
+      if (btn) btn.innerHTML = modal.classList.contains('chat-expanded') ? '<i class="fas fa-compress"></i>' : '<i class="fas fa-expand"></i>';
+    };
       return `<div class="file-row"><div class="file-main">${insideCollection ? '' : uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button><button class="btn btn-sm ${Number(file.in_library) ? 'btn-primary' : 'btn-outline'}" title="${Number(file.in_library) ? 'Editar no Minha Biblioteca' : 'Guardar no Minha Biblioteca'}" aria-label="${Number(file.in_library) ? 'Editar no Minha Biblioteca' : 'Guardar no Minha Biblioteca'}" onclick="saveRoomFileToLibrary(this.dataset.id)" data-id="${esc(file.id)}" data-name="${esc(file.original_name)}" data-saved="${Number(file.in_library) ? 1 : 0}"><i class="fas ${Number(file.in_library) ? 'fa-bookmark' : 'fa-bookmark'}"></i></button>${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green btn-download" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`;
     }
     function renderRoomFiles(files) {
@@ -496,41 +503,44 @@
       const button = event.target.closest('[data-reply-id]'); if (!button) return;
       setRoomReply(button.dataset.replyId, button.dataset.replyName, button.dataset.replyText);
     });
-    async function sendFiles(list) {
+    async function sendFiles(list, options) {
+      options = options || {};
+      const chatOnly = !!options.chatOnly;
       const files = Array.from(list);
       if (!files.length || !currentRoom) return;
       const status = document.getElementById('uploadStatus'), bar = document.getElementById('uploadBar'), fill = document.getElementById('uploadBarFill');
       bar.style.display = 'block'; fill.style.width = '0%';
       try {
-        const result = await uploadToRoom(currentRoom, files, text => { status.textContent = text; const m = text.match(/(\d+)%$/); if (m) fill.style.width = m[1] + '%'; });
+        const result = await uploadToRoom(currentRoom, files, text => { status.textContent = text; const m = text.match(/(\d+)%$/); if (m) fill.style.width = m[1] + '%'; }, { chatOnly });
         const warn = skippedMessage(result);
         if (result.sent) toast(result.sent === 1 ? 'Arquivo enviado' : result.sent + ' arquivos enviados');
         if (warn) toast(warn, 'error');
         status.textContent = result.sent ? 'Envio concluído' : '';
         fill.style.width = result.sent ? '100%' : '0%';
         loadFiles(); loadRooms();
-         if (result.files && result.files.length) {
-           for (const f of result.files) {
-             const token = '[[file:' + f.id + '|' + (f.name || 'arquivo') + '|' + (f.mime || '') + ']]';
-             try {
-               await api('/api/rooms/' + encodeURIComponent(currentRoom) + '/messages', {
-                 method: 'POST',
-                 credentials: 'same-origin',
-                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                 body: JSON.stringify({ content: token })
-               });
-             } catch (e) { }
-           }
-           lastChatSig = '';
-           await loadMessages(true);
-         }
+        if (chatOnly && result.files && result.files.length) {
+          for (const f of result.files) {
+            const token = '[[file:' + f.id + '|' + (f.name || 'arquivo') + '|' + (f.mime || '') + ']]';
+            try {
+              await api('/api/rooms/' + encodeURIComponent(currentRoom) + '/messages', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ content: token })
+              });
+            } catch (e) { }
+          }
+          lastChatSig = '';
+          await loadMessages(true);
+        }
       } catch (error) { status.textContent = ''; toast(error.message, 'error'); }
       setTimeout(() => { if (!/Enviando/.test(status.textContent)) { bar.style.display = 'none'; status.textContent = ''; } }, 2500);
     }
     document.getElementById('uploadForm').addEventListener('submit', event => event.preventDefault());
     document.getElementById('fileInput').addEventListener('change', event => { const files = Array.from(event.target.files); event.target.value = ''; sendFiles(files); });
+    document.getElementById('chatFileInput').addEventListener('change', event => { const files = Array.from(event.target.files); event.target.value = ''; sendFiles(files, { chatOnly: true }); });
     const attachFileBtn = document.getElementById('attachFileBtn');
-    if (attachFileBtn) attachFileBtn.addEventListener('click', () => document.getElementById('fileInput').click());
+    if (attachFileBtn) attachFileBtn.addEventListener('click', () => document.getElementById('chatFileInput').click());
     enableDrop(document.getElementById('roomModal'), '.drop-target', (el, files) => sendFiles(files));
     const messageInput = document.getElementById('messageInput');
     const focusChatInput = () => {
