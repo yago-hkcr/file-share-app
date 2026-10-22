@@ -298,5 +298,157 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 #roomModal.chat-expanded .modal-body > form,
 #roomModal.chat-expanded .section-title:first-of-type,
 #roomModal.chat-expanded #roomFiles { display: none !important; }
-#roomModal.chat-expanded .chat-box { min-height: 70vh; }
+#roomModal.chat-expanded .chat-box { min-height: 70vh; display: flex; flex-direction: column; }
 #roomModal.chat-expanded .chat-list { max-height: 68vh !important; height: 68vh !important; }
+/* Mantém a área de composição (input + botões) visível e no rodapé, inclusive no celular com chat expandido. */
+#roomModal.chat-expanded .chat-compose {
+  position: sticky;
+  top: auto;
+  bottom: 0;
+  z-index: 10;
+  flex: none;
+  padding: 10px 14px;
+  gap: 8px;
+  border-top: 1px solid rgba(var(--cy-rgb), .3);
+  background: rgba(var(--cy-rgb), .06);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, .25);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+#roomModal.chat-expanded .chat-compose input { height: 46px; font-size: 15px; }
+#roomModal.chat-expanded .chat-send { width: 48px; height: 46px; padding: 0; flex: none; }
+#roomModal.chat-expanded .attach-button { width: 46px; height: 46px; min-width: 46px; padding: 0; display: grid; place-items: center; }
+@media (max-width: 640px) {
+  #roomModal.chat-expanded .chat-compose { padding: 8px 12px calc(8px + var(--safe-b)); }
+  #roomModal.chat-expanded .chat-compose input { height: 44px; }
+  #roomModal.chat-expanded .chat-send { width: 44px; height: 44px; }
+  #roomModal.chat-expanded .attach-button { width: 44px; height: 44px; min-width: 44px; }
+}
+
+/* Alinhamento e enquadramento dos botões de anexar / enviar no chat (salas e conversas diretas). */
+.chat-compose {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid rgba(var(--cy-rgb), .3);
+  background: rgba(var(--cy-rgb), .05);
+}
+.chat-compose input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: 44px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 15px;
+  border-radius: 10px;
+}
+.chat-compose input::placeholder { color: var(--muted); }
+.chat-send {
+  width: 48px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  flex: none;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+.attach-button {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  padding: 0;
+  justify-content: center;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+}
+.ocr-button {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  padding: 0;
+  justify-content: center;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+}
+
+/* Botões de preview/download dos anexos no chat: enquadramento consistente. */
+.chat-attachment-preview,
+.chat-attachment-link {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-attachment-preview img {
+  display: block;
+  border-radius: 10px;
+}
+.chat-attachment-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--cy);
+  text-decoration: none;
+  background: rgba(var(--cy-rgb), .08);
+  border: 1px solid rgba(var(--cy-rgb), .18);
+  flex: 0 0 auto;
+}
+.chat-attachment-download:hover { background: rgba(var(--cy-rgb), .16); }
+
+/* Composição de conversas diretas (DM) — mesmo enquadramento do chat de sala. */
+.direct-compose {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(var(--cy-rgb), .3);
+  background: rgba(var(--cy-rgb), .05);
+}
+.direct-compose input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: 44px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 15px;
+  border-radius: 10px;
+}
+.direct-compose .attach-button,
+.direct-compose .ocr-button,
+.direct-compose button.chat-send {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+}
+.direct-compose button.chat-send { width: 48px; }
+@media (max-width: 640px) {
+  .direct-compose { padding: 8px 12px calc(8px + var(--safe-b)); }
+  .direct-compose input { height: 44px; font-size: 15px; }
+  .direct-compose .attach-button,
+  .direct-compose .ocr-button { width: 42px; height: 42px; min-width: 42px; }
+  .direct-compose button.chat-send { width: 46px; height: 44px; }
+}
+
+/* Ajuste de toque: input e botões do chat nunca ficam cobertos pelo teclado no mobile. */
+@media (max-width: 640px) {
+  .chat-compose { padding-bottom: calc(10px + var(--safe-b)); }
+  .chat-list { padding-bottom: 70px; }
+}

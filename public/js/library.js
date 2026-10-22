@@ -599,6 +599,9 @@
   $('uploadLibraryBtn')?.addEventListener('click', () => {
     $('uploadLibraryInput').click();
   });
+  $('libraryFabUpload')?.addEventListener('click', () => {
+    $('uploadLibraryInput').click();
+  });
   $('uploadLibraryInput')?.addEventListener('change', async () => {
     const input = $('uploadLibraryInput');
     const picked = Array.from(input.files || []);

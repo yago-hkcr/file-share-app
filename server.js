@@ -3454,7 +3454,10 @@ app.post('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
   const id = uuidv4(), createdAt = ts();
   await q('INSERT INTO direct_messages (id, sender_id, recipient_id, content, reply_to_id, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
     [id, me, friend.id, content, replyTo, createdAt]);
-  await notify(friend.id, 'Nova mensagem de ' + req.user.username, content.slice(0, 140), 'info');
+  // Não cria notificação quando o usuário envia mensagem para si mesmo ("eu mesmo").
+  if (friend.id !== me) {
+    await notify(friend.id, 'Nova mensagem de ' + req.user.username, content.slice(0, 140), 'info');
+  }
   res.json({ success: true, id, created_at: createdAt });
 }));
 
