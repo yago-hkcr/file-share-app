@@ -3353,7 +3353,11 @@ app.post('/api/admin/settings', asAdmin, wrap(async (req, res) => {
 const MAX_PRIVATE_ROOMS = 5;
 const PAIR_SQL = '((requester_id = $1 AND addressee_id = $2) OR (requester_id = $2 AND addressee_id = $1))';
 async function friendshipBetween(a, b) { return one(`SELECT * FROM friendships WHERE ${PAIR_SQL}`, [a, b]); }
-async function areFriends(a, b) { const f = await friendshipBetween(a, b); return !!(f && f.status === 'accepted'); }
+async function areFriends(a, b) {
+  if (String(a) === String(b)) return true;
+  const f = await friendshipBetween(a, b);
+  return !!(f && f.status === 'accepted');
+}
 // Quem remove um amigo o tira das salas privadas que ele (dono) criou
 async function dropFromPrivateRooms(ownerId, friendId) {
   await q('DELETE FROM room_members WHERE user_id = $2 AND room_id IN (SELECT id FROM rooms WHERE created_by = $1 AND is_public = 0)', [ownerId, friendId]);
@@ -3390,6 +3394,12 @@ app.get('/api/friends', asMember, wrap(async (req, res) => {
 }));
 
 async function directFriend(req, res) {
+  if (String(req.params.id) === String(req.user.id)) {
+    const self = await one('SELECT id, username, role, status, avatar_color, avatar_image FROM users WHERE id = $1', [req.user.id]);
+    if (!self || !usableUser(self)) { res.status(404).json({ error: 'Amigo não encontrado.' }); return null; }
+    self.username = 'eu mesmo';
+    return self;
+  }
   const target = await one('SELECT id, username, role, status, avatar_color, avatar_image FROM users WHERE id = $1', [req.params.id]);
   if (!target || !usableUser(target)) { res.status(404).json({ error: 'Amigo não encontrado.' }); return null; }
   if (!(await areFriends(req.user.id, target.id))) { res.status(403).json({ error: 'A conversa direta só está disponível entre amigos.' }); return null; }
@@ -3412,6 +3422,9 @@ app.get('/api/dm/conversations', asMember, wrap(async (req, res) => {
     const latest = latestByFriend.get(friend.id);
     conversations.push({ ...friend, latest_content: latest && latest.content, latest_at: latest && latest.created_at, latest_from_me: !!(latest && latest.sender_id === me) });
   }
+  // Contato "eu mesmo": permite conversar e anexar arquivos para si mesmo.
+  const selfLatest = latestByFriend.get(me);
+  conversations.push({ id: me, username: 'eu mesmo', role: req.user.role, avatar_color: req.user.avatar_color, avatar_image: req.user.avatar_image, latest_content: selfLatest && selfLatest.content, latest_at: selfLatest && selfLatest.created_at, latest_from_me: !!(selfLatest && selfLatest.sender_id === me) });
   conversations.sort((a, b) => String(b.latest_at || '').localeCompare(String(a.latest_at || '')) || a.username.localeCompare(b.username));
   res.json(conversations);
 }));

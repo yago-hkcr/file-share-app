@@ -42,6 +42,11 @@
         const conversation = conversations.find(item => item.id === friend.user_id) || {};
         return { ...friend, ...conversation, id: friend.user_id, avatar_image: friend.avatar_image || cachedAvatars.get(friend.user_id) || null };
       });
+      // Contato "eu mesmo": disponível para qualquer usuário, mesmo sem amizade.
+      if (me && me.id && !dmFriends.some(friend => friend.id === me.id)) {
+        const conversation = conversations.find(item => item.id === me.id) || {};
+        dmFriends.unshift({ user_id: me.id, username: 'eu mesmo', avatar_color: (me.avatar_color || '#35f28b'), avatar_image: me.avatar_image || null, ...conversation, id: me.id });
+      }
       renderDmFriends(dmFriends);
       if (activeFriend) {
         const refreshed = dmFriends.find(friend => friend.id === activeFriend.id);
@@ -71,8 +76,8 @@
       const isImage = /^image\//i.test(mime) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name);
       const previewUrl = '/preview/' + encodeURIComponent(id);
       const downloadUrl = '/download/' + encodeURIComponent(id);
-      if (isImage) return '<div class="chat-attachment chat-attachment-image"><a href="' + previewUrl + '" target="_blank" rel="noopener"><img src="' + previewUrl + '" alt="' + escHtml(name) + '" loading="lazy"></a><div class="chat-attachment-name">' + escHtml(name) + '</div></div>';
-      return '<div class="chat-attachment chat-attachment-file"><span class="chat-attachment-icon"><i class="fas fa-file"></i></span><a class="chat-attachment-link" href="' + previewUrl + '" target="_blank" rel="noopener">' + escHtml(name) + '</a><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
+      if (isImage) return '<div class="chat-attachment chat-attachment-image"><button type="button" class="chat-attachment-preview" onclick="previewFile(\'' + id + '\',\'' + escHtml(name) + '\',\'' + escHtml(mime) + '\',0,{preview:\'' + previewUrl + '\',download:\'' + downloadUrl + '\'});return false;"><img src="' + previewUrl + '" alt="' + escHtml(name) + '" loading="lazy"></button><div class="chat-attachment-name">' + escHtml(name) + '</div><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
+      return '<div class="chat-attachment chat-attachment-file"><span class="chat-attachment-icon"><i class="fas fa-file"></i></span><button type="button" class="chat-attachment-link" onclick="previewFile(\'' + id + '\',\'' + escHtml(name) + '\',\'' + escHtml(mime) + '\',0,{preview:\'' + previewUrl + '\',download:\'' + downloadUrl + '\'});return false;">' + escHtml(name) + '</button><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
     };
     const host = $('directMessageList'), sig = JSON.stringify(messages);
     if (sig === lastDmSig) return;
