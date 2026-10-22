@@ -3235,14 +3235,21 @@ app.get('/api/admin/overview', asAdmin, wrap(async (req, res) => {
     (SELECT COUNT(*) FROM files WHERE uploaded_at >= $3) AS uploads24,
     (SELECT COUNT(*) FROM rooms WHERE expires_at IS NOT NULL AND expires_at > $4) AS temp_rooms,
     (SELECT COUNT(*) FROM activity_log WHERE action = 'login_falhou' AND created_at >= $3) AS fails24`, [online, d7, d1, ts()]);
-  const days = await q('SELECT SUBSTR(uploaded_at, 1, 10) AS d, COUNT(*) AS n, COALESCE(SUM(size),0) AS bytes FROM files WHERE uploaded_at >= $1 GROUP BY 1 ORDER BY 1', [agoTs(7 * 86400000)]);
+  const rawDays = await q('SELECT SUBSTR(uploaded_at, 1, 10) AS d, COUNT(*) AS n, COALESCE(SUM(size),0) AS bytes FROM files WHERE uploaded_at >= $1 GROUP BY 1 ORDER BY 1', [agoTs(7 * 86400000)]);
+  const dayMap = new Map(rawDays.map(x => [x.d, x]));
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const row = dayMap.get(d);
+    days.push(row ? { d: row.d, n: num(row.n), bytes: num(row.bytes) } : { d, n: 0, bytes: 0 });
+  }
   const top = await q(`SELECT u.username, u.role, COUNT(f.id) AS n, COALESCE(SUM(f.size),0) AS bytes FROM files f JOIN users u ON u.id = f.uploaded_by GROUP BY u.username, u.role ORDER BY bytes DESC LIMIT 5`);
   const big = await q(`SELECT f.id, f.original_name, f.size, r.name AS room, u.username FROM files f LEFT JOIN rooms r ON r.id = f.room_id LEFT JOIN users u ON u.id = f.uploaded_by ORDER BY f.size DESC LIMIT 5`);
   const onl = await q('SELECT username, role, avatar_color, last_seen FROM users WHERE last_seen >= $1 ORDER BY last_seen DESC LIMIT 20', [online]);
   const recent = await q('SELECT username, role, action, detail, created_at FROM activity_log ORDER BY created_at DESC LIMIT 8');
   res.json({
     online: num(c.online), banned: num(c.banned), newUsers: num(c.new_users), messages: num(c.messages), uploads24: num(c.uploads24), tempRooms: num(c.temp_rooms), fails24: num(c.fails24),
-    days: days.map(x => ({ d: x.d, n: num(x.n), bytes: num(x.bytes) })),
+    days,
     top: top.map(x => ({ ...x, n: num(x.n), bytes: num(x.bytes) })), big: big.map(x => ({ ...x, size: num(x.size) })), onlineUsers: onl, recent
   });
 }));
