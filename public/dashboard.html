@@ -465,9 +465,9 @@
       const previewUrl = '/preview/' + encodeURIComponent(id);
       const downloadUrl = '/download/' + encodeURIComponent(id);
       if (isImage) {
-        return '<div class="chat-attachment chat-attachment-image"><a href="' + previewUrl + '" target="_blank" rel="noopener"><img src="' + previewUrl + '" alt="' + esc(name) + '" loading="lazy"></a><div class="chat-attachment-name">' + esc(name) + '</div></div>';
+        return '<div class="chat-attachment chat-attachment-image"><button type="button" class="chat-attachment-preview" onclick="previewFile(\'' + id + '\',\'' + esc(name) + '\',\'' + esc(mime) + '\',0,{preview:\'' + previewUrl + '\',download:\'' + downloadUrl + '\'});return false;"><img src="' + previewUrl + '" alt="' + esc(name) + '" loading="lazy"></button><div class="chat-attachment-name">' + esc(name) + '</div><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
       }
-      return '<div class="chat-attachment chat-attachment-file"><span class="chat-attachment-icon"><i class="fas fa-file"></i></span><a class="chat-attachment-link" href="' + previewUrl + '" target="_blank" rel="noopener">' + esc(name) + '</a><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
+      return '<div class="chat-attachment chat-attachment-file"><span class="chat-attachment-icon"><i class="fas fa-file"></i></span><button type="button" class="chat-attachment-link" onclick="previewFile(\'' + id + '\',\'' + esc(name) + '\',\'' + esc(mime) + '\',0,{preview:\'' + previewUrl + '\',download:\'' + downloadUrl + '\'});return false;">' + esc(name) + '</button><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
     }
     async function loadMessages(forceBottom = false) {
       const roomId = currentRoom; if (!roomId) return;
@@ -663,7 +663,7 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
   </script>
   <script src="/js/social.js?v=20261014d"></script>
-  <script src="/js/personal.js?v=20261014d"></script>
+  <script src="/js/personal.js?v=20261014e"></script>
   <script src="/js/cursor.js?v=20261014d"></script>
   <script src="/js/preview.js?v=20261014d"></script>
   <script src="/js/collections.js?v=20261014d"></script>
