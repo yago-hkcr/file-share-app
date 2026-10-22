@@ -110,6 +110,22 @@
     return '';
   }
 
+  function selectedLibraryUploadTarget() {
+    const value = $('libraryShelfFilter').value;
+    if (value.startsWith('bookcase:')) {
+      const bookcaseId = value.slice(9);
+      const bookcase = allBookcases().find(entry => entry.id === bookcaseId);
+      const space = spaces.find(entry => entry.id === (bookcase?.space_id || ''));
+      return { space: space || null, bookcaseId: bookcase ? bookcase.id : '' };
+    }
+    if (value.startsWith('space:')) {
+      const space = spaces.find(entry => entry.id === value.slice(6));
+      const bookcaseId = (space?.shelves && space.shelves[0] && space.shelves[0].id) || '';
+      return { space: space || null, bookcaseId };
+    }
+    return { space: null, bookcaseId: '' };
+  }
+
   function renderFilterOptions() {
     const select = $('libraryShelfFilter');
     const current = select.value;
@@ -467,9 +483,10 @@
       openSpaceModal('space');
       return;
     }
-    const spaceId = selectedSpaceId() || spaces[0].id;
-    const space = spaces.find(entry => entry.id === spaceId) || spaces[0];
-    const bookcaseId = (space.shelves && space.shelves[0] && space.shelves[0].id) || '';
+    const target = selectedLibraryUploadTarget();
+    const space = target.space || spaces[0];
+    const bookcaseId = target.bookcaseId || (space.shelves && space.shelves[0] && space.shelves[0].id) || '';
+    const spaceId = space.id;
     if (!bookcaseId) {
       window.toast?.('Crie uma prateleira neste espaço antes de guardar o arquivo.', 'error');
       pendingLibraryEditor = { pendingFileId: String(fileId) };
@@ -556,23 +573,20 @@
   $('libraryFavoritesFilter').addEventListener('click', () => { favoritesOnly = !favoritesOnly; render(); });
   $('createLibrarySpaceBtn').addEventListener('click', () => openSpaceModal('space'));
   $('createLibraryBookcaseBtn').addEventListener('click', () => openSpaceModal('bookcase'));
-  $('uploadLibraryBtn')?.addEventListener('click', () => {
-    $('uploadLibraryInput').click();
-  });
-  $('uploadLibraryInput')?.addEventListener('change', async () => {
-    const input = $('uploadLibraryInput');
-    const picked = Array.from(input.files || []);
-    input.value = '';
+  async function uploadLibraryFiles(picked) {
+    picked = Array.from(picked || []);
     if (!picked.length) return;
-    const spaceId = selectedSpaceId() || spaces[0]?.id || '';
-    const space = spaces.find(entry => entry.id === spaceId) || spaces[0];
-    const bookcaseId = (space.shelves && space.shelves[0] && space.shelves[0].id) || '';
+    const target = selectedLibraryUploadTarget();
+    let space = target.space;
+    let bookcaseId = target.bookcaseId;
+    if (!space) space = spaces[0] || null;
     if (!space) {
       window.toast?.('Crie um espaço antes de enviar arquivos na Biblioteca.', 'error');
       pendingLibraryEditor = { pendingDirectFiles: picked.slice(0, 5) };
       openSpaceModal('space');
       return;
     }
+    if (!bookcaseId) bookcaseId = (space.shelves && space.shelves[0] && space.shelves[0].id) || '';
     if (!bookcaseId) {
       window.toast?.('Crie uma prateleira neste espaço antes de enviar arquivos.', 'error');
       pendingLibraryEditor = { pendingDirectFiles: picked.slice(0, 5) };
@@ -580,7 +594,39 @@
       return;
     }
     await uploadDirectFiles(picked, space, bookcaseId);
+  }
+
+  $('uploadLibraryBtn')?.addEventListener('click', () => {
+    $('uploadLibraryInput').click();
   });
+  $('uploadLibraryInput')?.addEventListener('change', async () => {
+    const input = $('uploadLibraryInput');
+    const picked = Array.from(input.files || []);
+    input.value = '';
+    await uploadLibraryFiles(picked);
+  });
+
+  // Drag-and-drop + colar (Ctrl+V) na Biblioteca
+  const libraryPanel = $('libraryPanel');
+  if (libraryPanel) {
+    libraryPanel.classList.add('drop-target');
+    if (!libraryPanel.querySelector('.drop-veil')) {
+      const veil = document.createElement('div');
+      veil.className = 'drop-veil';
+      veil.innerHTML = '<i class="fas fa-cloud-arrow-up"></i><span>Solte para enviar à Biblioteca</span>';
+      libraryPanel.insertBefore(veil, libraryPanel.firstChild);
+    }
+    if (typeof window.enableDrop === 'function') {
+      window.enableDrop(libraryPanel, '.drop-target', (el, files) => uploadLibraryFiles(files));
+    }
+  }
+  if (typeof window.enablePaste === 'function') {
+    window.enablePaste(files => {
+      if (libraryPanel && !libraryPanel.hidden) {
+        uploadLibraryFiles(files);
+      }
+    });
+  }
   $('libraryCreateSpaceFromEditor').addEventListener('click', () => openSpaceModal('space'));
   $('libraryCreateBookcaseFromEditor').addEventListener('click', () => openSpaceModal('bookcase', $('libraryEditorSpace').value));
   $('refreshLibraryBtn').addEventListener('click', () => loadLibrary());
