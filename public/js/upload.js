@@ -47,6 +47,7 @@
 
   async function legacyUpload(roomId, files) {
     const max = limitBytes || 4 * 1024 * 1024;
+    const inserted = [];
     for (const file of files) {
       if (file.size > max) throw new Error('Limite de ' + sizeLabel(max) + ' por arquivo neste ambiente.');
       const form = new FormData();
@@ -54,7 +55,10 @@
       const response = await fetch('/api/rooms/' + roomId + '/files', { method: 'POST', body: form });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Erro ao enviar arquivos');
+      if (Array.isArray(data)) inserted.push(...data);
+      else if (data && data.id) inserted.push(data);
     }
+    return inserted;
   }
 
   // Texto de aviso para arquivos que ficaram de fora (grandes demais, vazios ou pastas)
@@ -112,11 +116,11 @@
     });
   };
 
-  // Devolve { sent, skipped }
+  // Devolve { sent, skipped, files }
   const _uploadInner = async function (roomId, fileList, onStatus) {
     let all = Array.from(fileList); // copia já: o <input> pode ser limpo logo depois
     all = await window.confirmUpload(all);
-    if (!all) return { sent: 0, skipped: [], cancelled: true };
+    if (!all) return { sent: 0, skipped: [], cancelled: true, files: [] };
     const say = onStatus || function () {};
     await limitReady;
     const files = [], skipped = [];
@@ -125,6 +129,7 @@
       else if (limitBytes && f.size > limitBytes) skipped.push({ name: f.name, reason: 'grande demais' });
       else files.push(f);
     });
+    const uploaded = [];
     let sent = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -151,8 +156,10 @@
         const prep = await postJson('/api/rooms/' + roomId + '/upload-url', { name: file.name, size: file.size, type: file.type });
         if (prep.status === 501) {
           const rest = files.slice(i);
-          await legacyUpload(roomId, rest);
-          return { sent: sent + rest.length, skipped };
+          const inserted = await legacyUpload(roomId, rest);
+          (inserted || []).forEach(item => uploaded.push({ id: item.id, name: item.original_name || item.name, size: item.size || 0, mime: item.mime_type || file.type || 'application/octet-stream' }));
+          sent += rest.length;
+          return { sent, skipped, files: uploaded };
         }
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
         // URL pre-assinada: o servidor valida e devolve um link PUT; enviamos o arquivo
@@ -165,9 +172,10 @@
         pathname, name: file.name, size: file.size, mime: file.type
       });
       if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
+      uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: file.type || 'application/octet-stream' });
       sent++;
     }
-    return { sent, skipped };
+    return { sent, skipped, files: uploaded };
   };
   window.__fsBusy = 0;
   window.uploadToRoom = async function (roomId, fileList, onStatus) {

@@ -447,6 +447,20 @@
     setInterval(tickExpiry, 1000);
     enablePaste(files => { if (currentRoom && document.getElementById('roomModal').style.display !== 'none') sendFiles(files); });
     const chatTime = value => { const d = new Date(String(value).replace(' ', 'T') + 'Z'); const hm = d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }); return d.toDateString() === new Date().toDateString() ? hm : d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' }) + ' ' + hm; };
+    function chatAttachmentHtml(content) {
+      const match = String(content || '').match(/^\[\[file:([^|]+)\|([^|]*)\|([^\]]*)\]\]$/);
+      if (!match) return null;
+      const id = match[1];
+      const name = match[2] || 'arquivo';
+      const mime = match[3] || '';
+      const isImage = /^image\//i.test(mime) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name);
+      const previewUrl = '/preview/' + encodeURIComponent(id);
+      const downloadUrl = '/download/' + encodeURIComponent(id);
+      if (isImage) {
+        return '<div class="chat-attachment chat-attachment-image"><a href="' + previewUrl + '" target="_blank" rel="noopener"><img src="' + previewUrl + '" alt="' + esc(name) + '" loading="lazy"></a><div class="chat-attachment-name">' + esc(name) + '</div></div>';
+      }
+      return '<div class="chat-attachment chat-attachment-file"><a class="chat-attachment-link" href="' + previewUrl + '" target="_blank" rel="noopener"><i class="fas fa-file"></i> ' + esc(name) + '</a><a class="chat-attachment-download" href="' + downloadUrl + '"><i class="fas fa-download"></i></a></div>';
+    }
     async function loadMessages(forceBottom = false) {
       const roomId = currentRoom; if (!roomId) return;
       const messages = await api('/api/rooms/' + roomId + '/messages'); if (roomId !== currentRoom) return;
@@ -461,7 +475,7 @@
         const animateNew = !first && m.id && !chatSeenIds.has(m.id); if (m.id) chatSeenIds.add(m.id);
         const quote = m.reply_to_id ? `<button class="reply-quote" type="button" data-jump-id="${esc(m.reply_to_id)}"><b>${esc(m.reply_username || 'Mensagem respondida')}</b><span>${esc(m.reply_content || 'Mensagem indisponível')}</span></button>` : '';
         const messageAvatar = m.avatar_image ? `<img src="${esc(m.avatar_image)}" alt="">` : esc(m.username[0].toUpperCase());
-        return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || 'var(--primary,var(--cy))')}">${messageAvatar}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}${quote}<div class="msg-text">${linkify(m.content)}</div><button class="msg-copy-trigger" type="button" data-copy-text="${esc(m.content)}" aria-label="Copiar mensagem" title="Copiar mensagem"><i class="fas fa-copy" aria-hidden="true"></i><span>Copiar</span></button><button class="msg-reply-trigger" type="button" data-reply-id="${esc(m.id)}" data-reply-name="${esc(m.username)}" data-reply-text="${esc(m.content)}" aria-label="Responder ${esc(m.username)}"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></div></div>`;
+        return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || 'var(--primary,var(--cy))')}">${messageAvatar}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}${quote}<div class="msg-text">${chatAttachmentHtml(m.content) || linkify(m.content)}</div><button class="msg-copy-trigger" type="button" data-copy-text="${esc(m.content)}" aria-label="Copiar mensagem" title="Copiar mensagem"><i class="fas fa-copy" aria-hidden="true"></i><span>Copiar</span></button><button class="msg-reply-trigger" type="button" data-reply-id="${esc(m.id)}" data-reply-name="${esc(m.username)}" data-reply-text="${esc(m.content)}" aria-label="Responder ${esc(m.username)}"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></div></div>`;
       }).join('') : '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
       if (first || forceBottom || atBottom) box.scrollTop = box.scrollHeight;
     }
@@ -495,6 +509,21 @@
         status.textContent = result.sent ? 'Envio concluído' : '';
         fill.style.width = result.sent ? '100%' : '0%';
         loadFiles(); loadRooms();
+         if (result.files && result.files.length) {
+           for (const f of result.files) {
+             const token = '[[file:' + f.id + '|' + (f.name || 'arquivo') + '|' + (f.mime || '') + ']]';
+             try {
+               await api('/api/rooms/' + encodeURIComponent(currentRoom) + '/messages', {
+                 method: 'POST',
+                 credentials: 'same-origin',
+                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                 body: JSON.stringify({ content: token })
+               });
+             } catch (e) { }
+           }
+           lastChatSig = '';
+           await loadMessages(true);
+         }
       } catch (error) { status.textContent = ''; toast(error.message, 'error'); }
       setTimeout(() => { if (!/Enviando/.test(status.textContent)) { bar.style.display = 'none'; status.textContent = ''; } }, 2500);
     }
