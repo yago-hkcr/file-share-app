@@ -1,4 +1,4 @@
-#libraryPanel .dashboard-intro h2 { color:var(--gray-900); }
+﻿#libraryPanel .dashboard-intro h2 { color:var(--gray-900); }
 #libraryPanel .dashboard-intro p { color:var(--gray-500); }
 .library-toolbar { display:grid; grid-template-columns:minmax(220px,1fr) minmax(150px,220px) auto; gap:10px; align-items:end; margin:0 0 15px; }
 .library-search { display:flex; align-items:center; gap:10px; min-width:0; height:44px; padding:0 13px; border:1px solid var(--gray-300); border-radius:12px; color:var(--gray-500); background:var(--gray-50); transition:border-color .2s,box-shadow .2s,transform .2s; }
@@ -217,3 +217,17 @@ html[data-theme="dark"] .library-editor-field select { color-scheme:dark; }
 @media (max-width: 640px) {
   .library-fab { right: 14px; bottom: 14px; width: 52px; height: 52px; min-width: 52px; font-size: 18px; }
 }
+
+/* Alinhamento dos botões de ação no topo da Minha Biblioteca */
+.library-intro-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.library-intro-actions .btn {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+

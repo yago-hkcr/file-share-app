@@ -1,4 +1,4 @@
-/* Amigos, salas privadas e painel ADM de salas privadas/amizades */
+﻿/* Amigos, salas privadas e painel ADM de salas privadas/amizades */
 .social-sheet .modal-content { max-width: 560px; width: 100%; }
 .social-sheet .modal-body { max-height: 70vh; overflow-y: auto; }
 .social-sheet input[type=text], .social-sheet select, .soc-box input[type=text], .soc-box select { font-size: 16px; min-height: 42px; }
@@ -286,6 +286,29 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   border: 1px solid rgba(var(--cy-rgb), .18);
 }
 .chat-attachment-download:hover { background: rgba(var(--cy-rgb), .16); }
+/* Enquadramento: anexo de imagem — imagem no topo, nome + botão de download na mesma linha */
+.chat-attachment-image {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.chat-attachment-image .chat-attachment-preview {
+  flex: 0 0 100%;
+  max-width: 100%;
+}
+.chat-attachment-image .chat-attachment-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-attachment-image .chat-attachment-download {
+  flex: 0 0 auto;
+}
+
 
 @media (max-width: 640px) {
   .chat-attachment-image,
@@ -407,6 +430,7 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 }
 .chat-attachment-download:hover { background: rgba(var(--cy-rgb), .16); }
 
+
 /* Composição de conversas diretas (DM) — mesmo enquadramento do chat de sala. */
 .direct-compose {
   flex: none;
@@ -452,3 +476,7 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   .chat-compose { padding-bottom: calc(10px + var(--safe-b)); }
   .chat-list { padding-bottom: 70px; }
 }
+
+
+
+
