@@ -75,7 +75,7 @@ pre, code, table { max-width: 100%; }
   .modal-content, .rename-box { max-height: calc(100dvh - 12px); } body.auth-page .auth-container { margin: 8px auto; } .fx-orb { display: none; }
 }
 /* Toque: alvos de 42px e sem efeitos de mouse */
-@media (hover: none) { .btn, .nav-item, .modal-close { min-height: 42px; } .room-card, .stat-card, .sala-file-card { will-change: auto; } #cursor, .cursor { display: none !important; } }
+@media (hover: none) { .btn, .nav-item, .modal-close { min-height: 44px; } .room-card, .stat-card, .sala-file-card { will-change: auto; } #cursor, .cursor { display: none !important; } }
 
 /* Regras finais para componentes com muitos controles e conteúdo comprido. */
 .flex, .grid, .card-row, .file-row, .sala-file-card, .room-actions, .room-actions-bar,
@@ -99,7 +99,7 @@ input, select, textarea { min-width: 0; }
 @media (max-width: 480px) {
   /* Cards de arquivo empilham metadados e ações para preservar a área tocável. */
   .file-row > .text-muted { flex: 1 1 100%; }
-  .file-row > .btn, .file-row > a.btn, .file-row > button { min-height: 42px; }
+  .file-row > .btn, .file-row > a.btn, .file-row > button { min-height: 44px; }
   .room-link-bar { gap: 8px; padding-left: 14px; padding-right: 14px; }
   .room-link-bar a { min-width: 0; }
   .toast { min-width: 0; width: 100%; }
@@ -110,7 +110,7 @@ input, select, textarea { min-width: 0; }
 @media (max-width: 360px) {
   .main-content, .dashboard-content, .sala-container { padding-left: 10px; padding-right: 10px; }
   .card, .room-card, .auth-card { padding-left: 14px; padding-right: 14px; }
-  .file-row > .btn, .file-row > a.btn, .file-row > button { flex: 1 1 42px; }
+  .file-row > .btn, .file-row > a.btn, .file-row > button { flex: 1 1 44px; }
 }
 @supports not (height: 100dvh) {
   body { min-height: 100vh; }
@@ -191,6 +191,6 @@ html[data-pointer="coarse"] .btn, html[data-pointer="coarse"] .nav-item { min-he
   .room-files-list .file-row > .btn,
   .room-files-list .file-row > a.btn,
   .room-files-list .file-row > button {
-    min-height: 42px;
+    min-height: 44px;
   }
 }
