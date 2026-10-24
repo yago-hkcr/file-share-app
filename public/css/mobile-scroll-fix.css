@@ -133,10 +133,20 @@ body.auth-page {
     gap: 8px;
     width: 100%;
     box-sizing: border-box;
-    padding: 8px 0 max(8px, env(safe-area-inset-bottom, 0px));
+    padding: 8px max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
     margin: 0;
     position: relative;
     z-index: 5;
+  }
+  /* Inputs de arquivo ocultos nunca devem ocupar espaço no compositor. */
+  #roomModal #messageForm.chat-compose input[type="file"] {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: hidden !important;
   }
   #roomModal #messageInput {
     flex: 1 1 auto;
@@ -146,14 +156,77 @@ body.auth-page {
     font-size: 16px !important;
     touch-action: auto;
   }
-  #roomModal #ocrButton { flex: 0 0 44px; width: 44px; }
-  #roomModal #chatSendBtn { flex: 0 0 48px; width: 48px; }
+  #roomModal #attachFileBtn {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 0;
+    margin: 0;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  #roomModal #ocrButton {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 0;
+    margin: 0;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  #roomModal #chatSendBtn {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 0;
+    margin: 0;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0;
+  }
 }
 
 @media (max-width: 380px) {
   #roomModal #messageForm.chat-compose {
-    grid-template-columns: minmax(0, 1fr) 42px 42px 46px !important;
     gap: 6px;
+    padding: 6px max(6px, env(safe-area-inset-right, 0px)) max(6px, env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
+  }
+  #roomModal #messageInput {
+    height: 44px;
+    font-size: 15px !important;
+  }
+  #roomModal #attachFileBtn,
+  #roomModal #ocrButton {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+  }
+  #roomModal #chatSendBtn {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
   }
 }
 

@@ -3,6 +3,8 @@
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const body = document.body;
   const root = document.documentElement;
+  const gfxLevel = root.getAttribute('data-gfx') || 'high';
+  const lowGfx = gfxLevel === 'minimal' || gfxLevel === 'basic' || gfxLevel === 'low';
   // Desktop (tela maior com ponteiro fino): o fundo pode ser mais presente sem pesar.
   const desktop = !!(window.matchMedia && window.matchMedia('(min-width: 769px) and (pointer: fine)').matches);
 
@@ -21,7 +23,7 @@
   // ---- Chuva de código ----
   // Páginas internas (painel/sala/admin/coleta) ganham o MESMO fundo do login/cadastro:
   // chuva de matriz + piso em grade 3D + varredura, tudo atrás do conteúdo.
-  const interior = !reduce && (body.classList.contains('app-page') || body.classList.contains('sala-page') || body.classList.contains('collection-page'));
+  const interior = !reduce && !lowGfx && (body.classList.contains('app-page') || body.classList.contains('sala-page') || body.classList.contains('collection-page'));
   let canvas = document.getElementById('cyberRain');
   const created = !canvas && interior;
   if (created) {
@@ -45,7 +47,7 @@
     // senão o fundo opaco do body cobre o canvas e a chuva fica invisível.
     root.classList.add('cy-interior');
   }
-  if (!canvas || reduce) return;
+  if (!canvas || reduce || lowGfx) return;
   const ctx = canvas.getContext('2d');
   const chars = '01ABCDEF<>/{}[]#$%=+*'.split('');
   const size = 16; // mesma densidade do login/cadastro

@@ -5,9 +5,16 @@
   const $ = (s, r) => (r || document).querySelector(s);
   const mobile = matchMedia('(max-width: 700px)').matches;
   const weak = (navigator.hardwareConcurrency || 4) <= 4 || (navigator.deviceMemory || 4) <= 4;
-  if (weak) root.classList.add('fx-lite');
+  const gfxLevel = root.getAttribute('data-gfx') || 'high';
+  const lowGfx = gfxLevel === 'minimal' || gfxLevel === 'basic' || gfxLevel === 'low';
+  if (weak || lowGfx) root.classList.add('fx-lite');
 
   function start() {
+    if (gfxLevel === 'minimal' || gfxLevel === 'basic') {
+      // Niveis muito leves: sem canvas, sem particulas, sem orbs
+      root.classList.add('fx-off');
+      return;
+    }
     // entrada da página (some depois, para não repetir nas atualizações da lista)
     root.classList.add('fx-boot'); setTimeout(() => root.classList.remove('fx-boot'), 1600);
     ['a', 'b'].forEach(k => { const o = document.createElement('div'); o.className = 'fx-orb ' + k; o.setAttribute('aria-hidden', 'true'); document.body.prepend(o); });
@@ -25,7 +32,7 @@
     addEventListener('pointermove', moveGlow, { passive:true }); addEventListener('pointerdown', moveGlow, { passive:true });
     addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && e.pointerType !== 'pen') glow.classList.remove('is-visible'); });
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    let W = 0, H = 0, N = mobile ? 22 : (weak ? 34 : 54), nodes = [], pulses = [], mx = -999, my = -999, rgb = '53,242,139';
+    let W = 0, H = 0, N = mobile ? 22 : (lowGfx ? 0 : (weak ? 34 : 54)), nodes = [], pulses = [], mx = -999, my = -999, rgb = '53,242,139';
     const LINK = mobile ? 110 : 140;
     const rnd = (a, b) => a + Math.random() * (b - a);
     function size() { W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }

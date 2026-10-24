@@ -52,13 +52,22 @@
 @media (max-width: 640px) {
   .personal-sheet .direct-compose {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px 48px;
+    grid-template-columns: minmax(0, 1fr) 44px 44px 44px;
     align-items: center;
     gap: 8px;
     width: 100%;
     max-width: 100%;
     padding: 10px max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px));
     box-sizing: border-box;
+  }
+  .personal-sheet .direct-compose input[type="file"] {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: hidden !important;
   }
   .personal-sheet .direct-compose #directMessageInput {
     width: 100%;
@@ -68,17 +77,27 @@
   }
   .personal-sheet .direct-compose .chat-send,
   .personal-sheet .direct-compose .ocr-button {
-    width: 48px;
-    min-width: 48px;
-    height: 48px;
-    min-height: 48px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
     padding: 0;
-    border-radius: 14px;
+    border-radius: 13px;
     clip-path: none;
     justify-content: center;
     box-sizing: border-box;
   }
   .personal-sheet .direct-compose .ocr-button { width: 44px; min-width: 44px; height: 44px; min-height: 44px; border-radius: 13px; }
+  .personal-sheet .direct-compose .attach-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    border-radius: 13px;
+    padding: 0;
+    justify-content: center;
+    box-sizing: border-box;
+  }
   .personal-sheet .direct-compose .chat-send {
     color: #fff;
     border: 0;
@@ -218,7 +237,7 @@
   }
   #roomModal #messageForm.chat-compose {
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) 44px 44px 48px !important;
+    grid-template-columns: minmax(0, 1fr) 44px 44px 44px !important;
     align-items: center;
     gap: 8px;
     width: 100%;
@@ -249,7 +268,7 @@
     pointer-events: auto !important;
     touch-action: auto !important;
   }
-  #roomModal #ocrButton {
+  #roomModal #attachFileBtn {
     grid-column: 2;
     width: 44px;
     min-width: 44px;
@@ -261,13 +280,25 @@
     pointer-events: auto !important;
     touch-action: manipulation;
   }
-  #roomModal #chatSendBtn {
+  #roomModal #ocrButton {
     grid-column: 3;
-    width: 48px;
-    min-width: 48px;
-    max-width: 48px;
-    height: 48px;
-    min-height: 48px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    justify-content: center;
+    pointer-events: auto !important;
+    touch-action: manipulation;
+  }
+  #roomModal #chatSendBtn {
+    grid-column: 4;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
     padding: 0;
     justify-content: center;
     pointer-events: auto !important;
@@ -277,18 +308,29 @@
 
 @media (max-width: 380px) {
   #roomModal #messageForm.chat-compose {
-    grid-template-columns: minmax(0, 1fr) 42px 42px 46px !important;
+    grid-template-columns: minmax(0, 1fr) 44px 44px 44px !important;
     gap: 6px;
   }
+  #roomModal #attachFileBtn {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
   #roomModal #ocrButton {
-    width: 42px;
-    min-width: 42px;
-    max-width: 42px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
   #roomModal #chatSendBtn {
-    width: 46px;
-    min-width: 46px;
-    max-width: 46px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 }
 

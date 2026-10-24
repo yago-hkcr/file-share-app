@@ -119,6 +119,35 @@ input, select, textarea { min-width: 0; }
 
 
 /* Correção mobile definitiva da lista de arquivos do painel administrativo.
+/* Sistema adaptativo (adaptive.js): estado por dispositivo */
+html[data-viewport="xs"] body { font-size: 15px; }
+html[data-viewport="sm"] body { font-size: 15px; }
+html[data-viewport="md"] body { font-size: 16px; }
+html[data-viewport="lg"] body { font-size: 16px; }
+html[data-viewport="xl"] body { font-size: 16px; }
+html[data-viewport="xxl"] body { font-size: 16px; }
+
+html[data-orientation="landscape"] .adaptive-stack { flex-direction: row; }
+html[data-orientation="portrait"] .adaptive-stack { flex-direction: column; }
+
+/* Elementos que devem se enquadrar ao contêiner */
+[data-fit] {
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+  will-change: transform;
+}
+
+/* Garante que o conteúdo principal nunca estoure horizontalmente */
+.main-content, .dashboard-content, .sala-container, .auth-card, .modal-content {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Utilitários responsivos por entrada */
+html[data-input="touch"] .hover-only { display: none !important; }
+html[data-pointer="coarse"] .btn, html[data-pointer="coarse"] .nav-item { min-height: 44px; }
+
    Os controles são empilhados para impedir qualquer overflow horizontal. */
 @media (max-width: 800px) {
   .room-files-list .file-row {

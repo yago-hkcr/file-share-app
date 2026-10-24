@@ -96,6 +96,7 @@
 .notice-item p { margin: 2px 0 4px; color: var(--muted); overflow-wrap: anywhere; }
 .notice-item time { color: var(--muted); font-size: 11px; }
 .settings-sections { display: grid; gap: 12px; }
+.settings-card-wide { grid-column: 1 / -1; grid-template-columns: 1fr; }
 .settings-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 240px); align-items: center; gap: 14px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .settings-card > div:first-child { min-width: 0; }
 .settings-card h4 { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; color: var(--ink); }
@@ -113,6 +114,7 @@
 .settings-actions { display: flex; justify-content: flex-end; }
 .settings-actions .btn { min-height: 44px; }
 .settings-hint { grid-column: 1 / -1; min-height: 1em; }
+.settings-gfx-options { grid-column: 1 / -1; }
 .personal-sheet button:focus-visible, .personal-sheet a:focus-visible, .personal-sheet input:focus-visible, .personal-sheet select:focus-visible, .intro-actions button:focus-visible, .reply-preview button:focus-visible { outline: 3px solid var(--cy); outline-offset: 2px; }
 .intro-actions .btn { flex: 1 1 145px; justify-content: center; white-space: normal; }
 body.personal-compact .room-card { min-height: 180px; }
@@ -176,8 +178,8 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 #directReplyPreview[hidden], #roomReplyPreview[hidden] { display: none !important; }
 
 /* Transcrição de imagens e cópia rápida de mensagens */
-.ocr-button { flex: 0 0 42px; min-width: 42px; justify-content: center; padding: 7px; }
-.attach-button { flex: 0 0 42px; min-width: 42px; justify-content: center; padding: 7px; }
+.ocr-button { flex: 0 0 44px; min-width: 44px; max-width: 44px; justify-content: center; padding: 0; }
+.attach-button { flex: 0 0 44px; min-width: 44px; max-width: 44px; justify-content: center; padding: 0; }
 .msg-bubble, .direct-bubble { position: relative; }
 .msg-copy-trigger, .direct-copy-trigger { display: inline-flex; align-items: center; gap: 5px; min-height: 27px; padding: 3px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .15s ease, background .15s ease, color .15s ease; }
 .msg-bubble:hover .msg-copy-trigger, .msg-bubble:focus-within .msg-copy-trigger, .direct-bubble:hover .direct-copy-trigger, .direct-bubble:focus-within .direct-copy-trigger { opacity: .9; pointer-events: auto; }
@@ -213,30 +215,75 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 
 /* Imagem anexada no chat: enquadrada, sem estourar a bolha */
 .chat-attachment-image {
-  display: inline-block;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   max-width: min(100%, 320px);
   border-radius: 14px;
-  overflow: hidden;
   border: 1px solid rgba(var(--cy-rgb), .28);
-  background: var(--bubble);
+  background: transparent;
   box-shadow: 0 10px 24px rgba(0, 0, 0, .12);
+  overflow: hidden;
+  padding: 0;
 }
-.chat-attachment-image a { display: block; }
-.chat-attachment-image img {
+.chat-attachment-image .chat-attachment-preview {
+  flex: 0 0 100%;
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   display: block;
-  width: 100%;
-  height: auto;
-  max-height: 280px;
-  object-fit: contain;
-  background: rgba(var(--cy-rgb), .04);
+  line-height: 0;
 }
-.chat-attachment-name {
+.chat-attachment-image .chat-attachment-preview img {
+  display: block;
+  width: 100% !important;
+  height: auto;
+  max-height: 420px;
+  object-fit: contain;
+  background: transparent;
+  border-radius: 0;
+  margin: 0;
+  padding: 0;
+}
+.chat-attachment-image .chat-attachment-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 0 6px 10px;
   font-size: 12px;
   color: var(--muted);
-  margin-top: 6px;
-  word-break: break-word;
-  max-width: min(100%, 320px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+  box-sizing: border-box;
 }
+.chat-attachment-image .chat-attachment-download {
+  flex: 0 0 auto;
+  margin: 0 10px 0 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--cy);
+  text-decoration: none;
+  background: rgba(var(--cy-rgb), .08);
+  border: 1px solid rgba(var(--cy-rgb), .18);
+  line-height: 1;
+  align-self: center;
+}
+.chat-attachment-image .chat-attachment-download i {
+  line-height: 1;
+  vertical-align: middle;
+  display: block;
+}
+.chat-attachment-image .chat-attachment-download:hover { background: rgba(var(--cy-rgb), .16); }
 
 /* Arquivo anexado no chat: cartão compacto e legível */
 .chat-attachment-file {
@@ -284,38 +331,19 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   text-decoration: none;
   background: rgba(var(--cy-rgb), .08);
   border: 1px solid rgba(var(--cy-rgb), .18);
+  line-height: 1;
 }
+.chat-attachment-download i { line-height: 1; vertical-align: middle; display: block; }
 .chat-attachment-download:hover { background: rgba(var(--cy-rgb), .16); }
-/* Enquadramento: anexo de imagem — imagem no topo, nome + botão de download na mesma linha */
-.chat-attachment-image {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.chat-attachment-image .chat-attachment-preview {
-  flex: 0 0 100%;
-  max-width: 100%;
-}
-.chat-attachment-image .chat-attachment-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin-top: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chat-attachment-image .chat-attachment-download {
-  flex: 0 0 auto;
-}
 
 
 @media (max-width: 640px) {
   .chat-attachment-image,
   .chat-attachment-name { max-width: 100%; }
-  .chat-attachment-image img { max-height: 220px; }
+  .chat-attachment-image .chat-attachment-preview img { max-height: 320px; }
   .chat-attachment-file { max-width: 100%; padding: 9px 10px; }
   .chat-attachment-link { font-size: 13px; }
+  .chat-attachment-image .chat-attachment-download { width: 32px; height: 32px; }
 }
 /* Expanded chat in room */
 #roomModal.chat-expanded .modal-body > form,
@@ -339,8 +367,8 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   -webkit-backdrop-filter: blur(6px);
 }
 #roomModal.chat-expanded .chat-compose input { height: 46px; font-size: 15px; }
-#roomModal.chat-expanded .chat-send { width: 48px; height: 46px; padding: 0; flex: none; }
-#roomModal.chat-expanded .attach-button { width: 46px; height: 46px; min-width: 46px; padding: 0; display: grid; place-items: center; }
+#roomModal.chat-expanded .chat-send { width: 44px; height: 44px; padding: 0; flex: 0 0 44px; }
+#roomModal.chat-expanded .attach-button { width: 44px; height: 44px; min-width: 44px; padding: 0; display: grid; place-items: center; }
 @media (max-width: 640px) {
   #roomModal.chat-expanded .chat-compose { padding: 8px 12px calc(8px + var(--safe-b)); }
   #roomModal.chat-expanded .chat-compose input { height: 44px; }
@@ -348,7 +376,18 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   #roomModal.chat-expanded .attach-button { width: 44px; height: 44px; min-width: 44px; }
 }
 
-/* Alinhamento e enquadramento dos botões de anexar / enviar no chat (salas e conversas diretas). */
+/* Inputs de arquivo ocultos nunca ocupam espaço em flex/grid. */
+input[type="file"][hidden] {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  position: absolute !important;
+  left: -9999px !important;
+}
 .chat-compose {
   display: flex;
   align-items: stretch;
@@ -369,31 +408,37 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 }
 .chat-compose input::placeholder { color: var(--muted); }
 .chat-send {
-  width: 48px;
+  width: 44px;
   height: 44px;
+  min-width: 44px;
+  max-width: 44px;
   padding: 0;
   justify-content: center;
-  flex: none;
+  flex: 0 0 44px;
   border-radius: 10px;
   display: grid;
   place-items: center;
 }
 .attach-button {
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  max-width: 44px;
   padding: 0;
   justify-content: center;
+  flex: 0 0 44px;
   display: grid;
   place-items: center;
   border-radius: 10px;
 }
 .ocr-button {
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  max-width: 44px;
   padding: 0;
   justify-content: center;
+  flex: 0 0 44px;
   display: grid;
   place-items: center;
   border-radius: 10px;
@@ -407,12 +452,15 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   color: inherit;
   cursor: pointer;
   padding: 0;
+  margin: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font: inherit;
 }
 .chat-attachment-preview img {
   display: block;
+  width: 100% !important;
   border-radius: 10px;
 }
 .chat-attachment-download {
@@ -454,27 +502,177 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 .direct-compose .attach-button,
 .direct-compose .ocr-button,
 .direct-compose button.chat-send {
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   padding: 0;
   display: grid;
   place-items: center;
   border-radius: 10px;
 }
-.direct-compose button.chat-send { width: 48px; }
+.direct-compose button.chat-send { width: 44px; }
 @media (max-width: 640px) {
   .direct-compose { padding: 8px 12px calc(8px + var(--safe-b)); }
   .direct-compose input { height: 44px; font-size: 15px; }
   .direct-compose .attach-button,
-  .direct-compose .ocr-button { width: 42px; height: 42px; min-width: 42px; }
-  .direct-compose button.chat-send { width: 46px; height: 44px; }
+  .direct-compose .ocr-button { width: 44px; height: 44px; min-width: 44px; }
+  .direct-compose button.chat-send { width: 44px; height: 44px; }
 }
 
 /* Ajuste de toque: input e botões do chat nunca ficam cobertos pelo teclado no mobile. */
 @media (max-width: 640px) {
   .chat-compose { padding-bottom: calc(10px + var(--safe-b)); }
   .chat-list { padding-bottom: 70px; }
+}
+
+/* =====================================================================
+   SETTINGS MODAL (painel de configurações pessoal)
+   - Enquadramento: largura limitada, cabeçalho fixo, corpo com scroll
+   - Dois temas: usa variáveis --surface/--ink/--line/--muted/--cy
+   - Celular: colunas empilham, ações em largura cheia, safe areas
+   ===================================================================== */
+.settings-sheet .modal-content {
+  width: min(700px, 92vw);
+  max-width: 100%;
+  max-height: min(88vh, 88dvh);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.settings-sheet .modal-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.settings-sections {
+  display: grid;
+  gap: 12px;
+}
+.settings-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 260px);
+  align-items: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.settings-card > div:first-child { min-width: 0; }
+.settings-card h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 15px;
+}
+.settings-card h4 i { color: var(--cy); }
+.settings-card p, .settings-hint {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.settings-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.settings-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--ink);
+}
+.settings-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  color: var(--ink);
+  cursor: pointer;
+}
+.settings-switch input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  accent-color: var(--cy);
+}
+.settings-switch span { display: grid; min-width: 0; }
+.settings-switch small { color: var(--muted); font-size: 12px; }
+.settings-card > .btn, .avatar-upload-button {
+  justify-self: start;
+  white-space: normal;
+  min-height: 44px;
+}
+.avatar-editor {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.avatar-upload-button { cursor: pointer; }
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.settings-actions .btn { min-height: 44px; }
+.settings-hint { grid-column: 1 / -1; min-height: 1em; }
+.settings-gfx-options { grid-column: 1 / -1; }
+.personal-sheet button:focus-visible,
+.personal-sheet a:focus-visible,
+.personal-sheet input:focus-visible,
+.personal-sheet select:focus-visible {
+  outline: 3px solid var(--cy);
+  outline-offset: 2px;
+}
+
+/* Celular: settings card empilha em 1 coluna e as ações ficam fáceis de tocar. */
+@media (max-width: 640px) {
+  .settings-sheet .modal-content {
+    width: 100%;
+    max-width: 100%;
+    max-height: 92dvh;
+    border-radius: 0;
+  }
+  .settings-sheet .modal-body { padding-bottom: calc(10px + var(--safe-b)); }
+  .settings-card {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .settings-card-wide { grid-column: 1; }
+  .settings-actions {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .settings-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .settings-field select { min-height: 46px; font-size: 15px; }
+}
+
+/* Toque: alvos de 44px em dispositivos sem hover. */
+@media (hover: none) {
+  .settings-card > .btn,
+  .settings-switch,
+  .settings-field select { min-height: 44px; }
 }
 
 

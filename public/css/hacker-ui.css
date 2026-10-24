@@ -499,6 +499,18 @@ html[data-gfx="low"] .btn-share, html[data-gfx="low"] .btn-delete,
 .dashboard-shell.is-compact .dashboard-tool .dashboard-tool-count { display: none; }
 .dashboard-shell.is-compact .dashboard-tool { justify-content: center; padding: 7px; }
 
+html[data-gfx="minimal"] .btn-new, html[data-gfx="minimal"] .btn-auth,
+html[data-gfx="minimal"] .btn.btn-danger, html[data-gfx="minimal"] .btn.btn-green { transition: none; }
+html[data-gfx="minimal"] .btn-upload::after, html[data-gfx="minimal"] .btn-download::after,
+html[data-gfx="minimal"] .btn-share::after, html[data-gfx="minimal"] .btn-delete::after,
+html[data-gfx="minimal"] .btn-new::after, html[data-gfx="minimal"] .btn-auth::after,
+html[data-gfx="minimal"] .btn.btn-danger::after, html[data-gfx="minimal"] .btn.btn-green::after { display: none; }
+html[data-gfx="basic"] .btn-new, html[data-gfx="basic"] .btn-auth,
+html[data-gfx="basic"] .btn.btn-danger, html[data-gfx="basic"] .btn.btn-green { transition: none; }
+html[data-gfx="basic"] .btn-upload::after, html[data-gfx="basic"] .btn-download::after,
+html[data-gfx="basic"] .btn-share::after, html[data-gfx="basic"] .btn-delete::after,
+html[data-gfx="basic"] .btn-new::after, html[data-gfx="basic"] .btn-auth::after,
+html[data-gfx="basic"] .btn.btn-danger::after, html[data-gfx="basic"] .btn.btn-green::after { display: none; }
 html[data-gfx="low"] .btn-new, html[data-gfx="low"] .btn-auth,
 html[data-gfx="low"] .btn.btn-danger, html[data-gfx="low"] .btn.btn-green { transition: none; }
 html[data-gfx="low"] .btn-upload::after, html[data-gfx="low"] .btn-download::after,
@@ -514,6 +526,16 @@ html[data-gfx="low"] .btn.btn-danger::after, html[data-gfx="low"] .btn.btn-green
   clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
 }
 /* gráficos no baixo: só a retícula e o bloco, sem enfeites */
+html[data-gfx="minimal"] .cy-b-cross,
+html[data-gfx="minimal"] .cy-b-scan,
+html[data-gfx="minimal"] .cy-b-tag,
+html[data-gfx="minimal"] .cy-trail { display: none !important; }
+html[data-gfx="minimal"] .cy-b-ring { filter: none; }
+html[data-gfx="basic"] .cy-b-cross,
+html[data-gfx="basic"] .cy-b-scan,
+html[data-gfx="basic"] .cy-b-tag,
+html[data-gfx="basic"] .cy-trail { display: none !important; }
+html[data-gfx="basic"] .cy-b-ring { filter: none; }
 html[data-gfx="low"] .cy-b-cross,
 html[data-gfx="low"] .cy-b-scan,
 html[data-gfx="low"] .cy-b-tag,
