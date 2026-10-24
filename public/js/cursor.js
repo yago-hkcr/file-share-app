@@ -6,7 +6,7 @@
 
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const root = document.documentElement;
-  const lowGfx = () => root.getAttribute('data-gfx') === 'low';
+  const lowGfx = () => { var g = root.getAttribute('data-gfx'); return g === 'low' || g === 'basic' || g === 'minimal'; };
   root.classList.add('has-bubble');
 
   const bubble = document.createElement('div');

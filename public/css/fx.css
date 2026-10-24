@@ -88,9 +88,23 @@ body.app-page .btn-primary:not(:disabled)::after, body.app-page .btn-green:not(:
   #fxCanvas, .fx-orb, .fx-pointer-glow { display: none; }
 }
 /* Nivel de graficos escolhido pelo usuario (engrenagem no login; vale no site todo). */
+/* minimal: absoluto minimo */
+html[data-gfx="minimal"] #fxCanvas, html[data-gfx="minimal"] .fx-orb, html[data-gfx="minimal"] .fx-pointer-glow,
+html[data-gfx="minimal"] #cyberRain, html[data-gfx="minimal"] .cy-grid, html[data-gfx="minimal"] .cy-scan { display: none !important; }
+html[data-gfx="minimal"] *, html[data-gfx="minimal"] *::before, html[data-gfx="minimal"] *::after { animation: none !important; transition: none !important; box-shadow: none !important; text-shadow: none !important; }
+html[data-gfx="minimal"] .fx-ripple, html[data-gfx="minimal"] .cy-trail, html[data-gfx="minimal"] .cy-ripple { display: none !important; }
+html[data-gfx="minimal"] .room-card, html[data-gfx="minimal"] .stat-card, html[data-gfx="minimal"] .sala-file-card { will-change: auto; transform: none !important; }
+/* basic: muito leve */
+html[data-gfx="basic"] #fxCanvas, html[data-gfx="basic"] .fx-orb, html[data-gfx="basic"] .fx-pointer-glow,
+html[data-gfx="basic"] #cyberRain, html[data-gfx="basic"] .cy-grid, html[data-gfx="basic"] .cy-scan { display: none !important; }
+html[data-gfx="basic"] *, html[data-gfx="basic"] *::before, html[data-gfx="basic"] *::after { animation: none !important; }
+html[data-gfx="basic"] .room-card, html[data-gfx="basic"] .stat-card, html[data-gfx="basic"] .sala-file-card { transition: none !important; will-change: auto; transform: none !important; }
+html[data-gfx="basic"] .fx-ripple, html[data-gfx="basic"] .cy-trail, html[data-gfx="basic"] .cy-ripple { display: none !important; }
+/* low: leve */
 html[data-gfx="low"] #fxCanvas, html[data-gfx="low"] .fx-orb, html[data-gfx="low"] .fx-pointer-glow,
 html[data-gfx="low"] #cyberRain, html[data-gfx="low"] .cy-grid, html[data-gfx="low"] .cy-scan { display: none !important; }
 html[data-gfx="low"] *, html[data-gfx="low"] *::before, html[data-gfx="low"] *::after { animation: none !important; transition: none !important; }
+/* medium: equilibrado */
 html[data-gfx="medium"] .fx-orb, html[data-gfx="medium"] .fx-pointer-glow { display: none !important; }
 html[data-gfx="medium"] #fxCanvas { opacity: .55; }
 /* Engrenagem ancorada ao canto superior direito do cartao (dentro dele), sempre enquadrada. */

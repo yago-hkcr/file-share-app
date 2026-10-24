@@ -125,6 +125,7 @@ let localDatabasePromise = null;
 async function localDatabase() {
   if (!localDatabasePromise) {
     const moduleUrl = pathToFileURL(path.join(__dirname, 'local-runtime', 'database.mjs')).href;
+    try { fs.mkdirSync(LOCAL_DATA_DIR, { recursive: true }); } catch (e) { /* ignora */ }
     localDatabasePromise = import(moduleUrl).then(({ openLocalDatabase }) => openLocalDatabase(path.join(LOCAL_DATA_DIR, 'database')));
   }
   return localDatabasePromise;
@@ -896,6 +897,7 @@ const cleanCollectionFileName = value => String(value || 'arquivo').replace(/[\u
 const collectionLeaseUntil = () => new Date(Date.now() + COLLECTION_ACCESS_LEASE_MS).toISOString().slice(0, 19).replace('T', ' ');
 const collectionCookieOptions = token => ({ httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: `/api/coletas/enviar/${encodeURIComponent(token)}`, maxAge: COLLECTION_ACCESS_LEASE_MS });
 function clearCollectionAccessCookie(res, token) {
+  if (res.headersSent) return;
   res.clearCookie(COLLECTION_ACCESS_COOKIE, { ...collectionCookieOptions(token), maxAge: undefined });
 }
 
@@ -965,13 +967,24 @@ async function getCollectionRecipient(token) {
     WHERE cr.token_hash = $1`, [hashToken(token)]);
 }
 
-function collectionAccessError(row, res) {
+function collectionAccessError(row, res, token) {
+  const hasError = !row
+    || row.collection_status === 'closed'
+    || row.collection_status === 'suspended'
+    || row.recipient_status === 'submitted'
+    || row.recipient_status === 'revoked'
+    || row.recipient_status === 'expired'
+    || (row.expires_at && row.expires_at <= ts())
+    || (row.destination_type === 'room' && row.room_expires_at && row.room_expires_at <= ts())
+    || row.collection_status !== 'active'
+    || !['pending', 'uploading', 'submitting'].includes(row.recipient_status);
+  if (hasError && token) clearCollectionAccessCookie(res, token);
   if (!row) return res.status(404).json({ state: 'invalid', error: 'Este link de envio não é válido.' });
   if (row.collection_status === 'closed') return res.status(410).json({ state: 'closed', error: 'Coleta encerrada pelo organizador. Este link não aceita novos arquivos.' });
   if (row.collection_status === 'suspended') return res.status(410).json({ state: 'suspended', error: 'Coleta suspensa pelo organizador. Este link foi temporariamente bloqueado e não aceita novos arquivos.' });
   if (row.recipient_status === 'submitted') return res.status(410).json({ state: 'submitted', error: 'Envio concluído: seus arquivos foram recebidos e este link foi encerrado.' });
   if (row.recipient_status === 'revoked') return res.status(410).json({ state: 'suspended', error: 'Envio suspenso pelo organizador. Este link foi encerrado e não aceita novos arquivos.' });
-  if (row.recipient_status === 'expired' || row.expires_at <= ts() || (row.destination_type === 'room' && row.room_expires_at && row.room_expires_at <= ts())) return res.status(410).json({ state: 'expired', error: 'Prazo não cumprido: o prazo terminou antes da confirmação do envio.' });
+  if (row.recipient_status === 'expired' || (row.expires_at && row.expires_at <= ts()) || (row.destination_type === 'room' && row.room_expires_at && row.room_expires_at <= ts())) return res.status(410).json({ state: 'expired', error: 'Prazo não cumprido: o prazo terminou antes da confirmação do envio.' });
   if (row.collection_status !== 'active') return res.status(410).json({ state: 'closed', error: 'Esta coleta não aceita novos arquivos.' });
   if (!['pending', 'uploading', 'submitting'].includes(row.recipient_status)) return res.status(410).json({ state: 'closed', error: 'Este link foi encerrado e não aceita novos arquivos.' });
   return null;
@@ -1058,7 +1071,7 @@ async function sendCollectionClosedError(token, res, fallback = 'Este link foi e
     if (closed && closed.closed_reason === 'replaced') return res.status(410).json({ state: 'replaced', error: 'Link substituído pelo organizador. Peça o link mais recente para enviar.' });
   }
   recipient = await expireCollectionRecipientIfNeeded(recipient, token);
-  const accessError = collectionAccessError(recipient, res);
+  const accessError = collectionAccessError(recipient, res, token);
   if (accessError) return accessError;
   return res.status(410).json({ state: 'closed', error: fallback });
 }
@@ -2571,9 +2584,8 @@ const publicCollectionAccess = wrap(async (req, res, next) => {
     }
   }
   recipient = await expireCollectionRecipientIfNeeded(recipient, req.params.token);
-  const error = collectionAccessError(recipient, res);
+  const error = collectionAccessError(recipient, res, req.params.token);
   if (error) {
-    clearCollectionAccessCookie(res, req.params.token);
     return error;
   }
   if (Number(recipient.exclusive_access)) {
@@ -2585,9 +2597,8 @@ const publicCollectionAccess = wrap(async (req, res, next) => {
   if (!isUploadActivity) {
     await recoverStaleCollectionUploadState(recipient.id, hashToken(req.params.token));
     recipient = await getCollectionRecipient(req.params.token);
-    const currentError = collectionAccessError(recipient, res);
+    const currentError = collectionAccessError(recipient, res, req.params.token);
     if (currentError) {
-      clearCollectionAccessCookie(res, req.params.token);
       return currentError;
     }
   }
@@ -2654,7 +2665,7 @@ app.post('/api/coletas/enviar/:token/reservar', publicCollectionAccess, wrap(asy
     WHERE id = $1 AND status = 'pending' AND token_hash = $2 RETURNING id`, [recipient.id, hashToken(req.params.token)]);
   if (!locked.length) {
     const latest = await expireCollectionRecipientIfNeeded(await getCollectionRecipient(req.params.token), req.params.token);
-    const accessError = collectionAccessError(latest, res);
+    const accessError = collectionAccessError(latest, res, req.params.token);
     if (accessError) return accessError;
     return res.status(409).json({ error: 'Outro arquivo está sendo enviado. Aguarde o término.' });
   }
@@ -2794,7 +2805,7 @@ app.post('/api/coletas/enviar/:token/upload', publicCollectionAccess, (req, res,
     WHERE id = $1 AND status = 'pending' AND token_hash = $2 RETURNING id`, [recipient.id, tokenHash]);
   if (!locked.length) {
     const latest = await expireCollectionRecipientIfNeeded(await getCollectionRecipient(req.params.token), req.params.token);
-    const accessError = collectionAccessError(latest, res);
+    const accessError = collectionAccessError(latest, res, req.params.token);
     if (accessError) return accessError;
     return res.status(409).json({ error: 'Outro arquivo está sendo enviado. Aguarde o término.' });
   }
@@ -2920,7 +2931,7 @@ app.post('/api/coletas/enviar/:token/finalizar', publicCollectionAccess, wrap(as
     RETURNING id`, [submittedAt, recipient.id, tokenHash]);
   if (!locked.length) {
     const latest = await getCollectionRecipient(req.params.token);
-    const accessError = collectionAccessError(latest, res);
+    const accessError = collectionAccessError(latest, res, req.params.token);
     if (accessError) return accessError;
     if (latest.recipient_status === 'submitting') return res.status(409).json({ state: 'submitting', error: 'O envio está sendo confirmado. Aguarde um instante.' });
     return res.status(409).json({ error: 'Ainda há um arquivo sendo enviado. Aguarde o fim e tente novamente.' });
@@ -2994,7 +3005,7 @@ app.post('/api/coletas/enviar/:token/finalizar', publicCollectionAccess, wrap(as
   if (!completed.length) {
     await q("UPDATE file_collection_recipients SET status = 'pending', submission_started_at = NULL WHERE id = $1 AND status = 'submitting' AND token_hash = $2", [recipient.id, tokenHash]);
     const latest = await getCollectionRecipient(req.params.token);
-    const accessError = collectionAccessError(latest, res);
+    const accessError = collectionAccessError(latest, res, req.params.token);
     if (accessError) return accessError;
     const missing = await q(`SELECT i.label, i.quantity FROM file_collection_items i WHERE i.collection_id = $1 AND i.required = 1
       AND (SELECT COUNT(*) FROM file_collection_uploads u WHERE u.recipient_id = $2 AND u.item_id = i.id AND u.submission_id IS NULL AND u.status = 'ready'
