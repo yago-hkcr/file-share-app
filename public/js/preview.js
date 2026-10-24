@@ -51,9 +51,12 @@
     const overlay = document.createElement('div');
     overlay.id = 'filePreviewOverlay';
     overlay.className = 'fp-overlay';
+    overlay.style.display = 'grid';
+    overlay.style.zIndex = '21000';
     overlay.innerHTML = '<div class="fp-shell" role="dialog" aria-modal="true" aria-label="Visualização do arquivo"><div class="fp-top"><div class="fp-icon"><i class="fas ' + icon + '"></i></div><div class="fp-heading"><h2 class="fp-title">' + esc(meta.name) + '</h2><div class="fp-sub">' + label + ' · ' + sizeLabel(meta.size) + '</div></div><button class="fp-close" type="button" aria-label="Fechar"><i class="fas fa-xmark"></i></button></div><div class="fp-stage">' + body + '</div><div class="fp-bottom"><div class="fp-meta">' + esc(meta.name) + '</div><a class="btn btn-green btn-download fp-open" data-fp-dl="1" href="' + esc(meta.downloadUrl) + '"><i class="fas fa-download"></i> Baixar</a></div></div>';
     document.body.appendChild(overlay);
-    overlay.querySelector('.fp-close').onclick = close;
+    const closeBtn = overlay.querySelector('.fp-close');
+    if (closeBtn) closeBtn.onclick = close;
     overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
     document.addEventListener('keydown', onKeyDown);
     document.body.classList.add('fp-opened');
@@ -61,40 +64,45 @@
   }
 
   async function previewFile(id, name, mime, size, urls) {
-    close();
-    const meta = {
-      id: String(id),
-      name: name || 'Arquivo',
-      mime: mime || '',
-      size: size || 0,
-      downloadUrl: (urls && urls.download) || '/download/' + encodeURIComponent(String(id)),
-      previewUrl: (urls && urls.preview) || '/preview/' + encodeURIComponent(String(id))
-    };
-    const overlay = shell(meta, '<div class="fp-empty"><i class="fas fa-spinner fa-spin"></i><strong>Preparando visualização</strong><span>Carregando o arquivo com segurança...</span></div>');
-    const stage = overlay.querySelector('.fp-stage');
-    const url = meta.previewUrl;
-
     try {
+      console.log('[preview] chamado', id, name, mime, size, urls);
+      close();
+      const meta = {
+        id: String(id),
+        name: name || 'Arquivo',
+        mime: mime || '',
+        size: size || 0,
+        downloadUrl: (urls && urls.download) || '/download/' + encodeURIComponent(String(id)),
+        previewUrl: (urls && urls.preview) || '/preview/' + encodeURIComponent(String(id))
+      };
+      const overlay = shell(meta, '<div class="fp-empty"><i class="fas fa-spinner fa-spin"></i><strong>Preparando visualização</strong><span>Carregando o arquivo com segurança...</span></div>');
+      const stage = overlay.querySelector('.fp-stage');
+      const url = meta.previewUrl;
+
       const type = String(meta.mime).toLowerCase();
       const fileName = String(meta.name).toLowerCase();
       if (type.startsWith('image/')) {
+        console.log('[preview] image type, url:', url);
         stage.innerHTML = '<div class="fp-empty"><i class="fas fa-spinner fa-spin"></i><strong>Carregando imagem</strong></div>';
         const image = new Image();
         image.className = 'fp-media fp-image';
         image.alt = meta.name;
         image.onclick = event => event.currentTarget.classList.toggle('fp-zoomed');
-        image.onload = () => { if (overlay.isConnected) stage.replaceChildren(image); };
-        image.onerror = () => showPreviewError(stage, meta);
+        image.onload = () => { console.log('[preview] image loaded'); if (overlay.isConnected) stage.replaceChildren(image); };
+        image.onerror = () => { console.log('[preview] image error'); showPreviewError(stage, meta); };
         image.src = url;
       } else if (type.startsWith('video/')) {
         stage.innerHTML = '<video class="fp-media fp-video" src="' + esc(url) + '" controls playsinline></video>';
-        stage.querySelector('video').addEventListener('error', () => showPreviewError(stage, meta), { once: true });
+        const video = stage.querySelector('video');
+        if (video) video.addEventListener('error', () => showPreviewError(stage, meta), { once: true });
       } else if (type.startsWith('audio/')) {
         stage.innerHTML = '<div class="fp-audio"><div class="fp-empty" style="width:auto;border:0;background:transparent;padding:18px"><i class="fas fa-music"></i><strong>' + esc(meta.name) + '</strong><span>Reprodução de áudio</span></div><audio src="' + esc(url) + '" controls style="width:100%"></audio></div>';
-        stage.querySelector('audio').addEventListener('error', () => showPreviewError(stage, meta), { once: true });
+        const audio = stage.querySelector('audio');
+        if (audio) audio.addEventListener('error', () => showPreviewError(stage, meta), { once: true });
       } else if (type === 'application/pdf' || fileName.endsWith('.pdf')) {
         stage.innerHTML = '<iframe class="fp-pdf" src="' + esc(url) + '" title="' + esc(meta.name) + '"></iframe>';
-        stage.querySelector('iframe').addEventListener('error', () => showPreviewError(stage, meta), { once: true });
+        const iframe = stage.querySelector('iframe');
+        if (iframe) iframe.addEventListener('error', () => showPreviewError(stage, meta), { once: true });
       } else if (type.startsWith('text/') || /\.(txt|md|json|csv|log|js|css|html|xml|svg|yml|yaml|ini|conf)$/i.test(fileName)) {
         const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
         if (!response.ok) throw new Error('Não foi possível carregar o texto.');
@@ -106,9 +114,17 @@
         stage.innerHTML = '<div class="fp-empty"><i class="fas fa-eye-slash"></i><strong>Pré-visualização indisponível</strong><span>Este formato não pode ser exibido diretamente no navegador. Use o botão Baixar.</span></div>';
       }
     } catch (error) {
-      showPreviewError(stage, meta);
+      console.error('[preview] erro:', error);
+      const overlayEl = document.getElementById('filePreviewOverlay');
+      if (overlayEl) {
+        const stageEl = overlayEl.querySelector('.fp-stage');
+        if (stageEl) showPreviewError(stageEl, { id: String(id), name: name || 'Arquivo', mime: mime || '', size: size || 0, previewUrl: '/preview/' + encodeURIComponent(String(id)), downloadUrl: '/download/' + encodeURIComponent(String(id)) });
+      } else {
+        alert('Erro ao abrir visualização: ' + error.message);
+      }
     }
   }
 
   window.previewFile = previewFile;
+  console.log('[preview] loaded, previewFile assigned:', typeof window.previewFile);
 })();
