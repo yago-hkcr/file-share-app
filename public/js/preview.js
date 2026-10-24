@@ -93,7 +93,7 @@
         image.className = 'fp-media fp-image';
         image.alt = meta.name;
         image.onclick = event => event.currentTarget.classList.toggle('fp-zoomed');
-        image.onload = () => { console.log('[preview] image loaded'); if (overlay.isConnected) stage.replaceChildren(image); };
+        image.onload = () => { console.log('[preview] image loaded'); if (overlay.isConnected) { stage.innerHTML = ''; stage.appendChild(image); } };
         image.onerror = () => { console.log('[preview] image error'); showPreviewError(stage, meta); };
         image.src = url;
       } else if (type.startsWith('video/')) {
@@ -114,7 +114,8 @@
         const code = document.createElement('pre');
         code.className = 'fp-code';
         code.textContent = await response.text();
-        stage.replaceChildren(code);
+        stage.innerHTML = '';
+        stage.appendChild(code);
       } else {
         stage.innerHTML = '<div class="fp-empty"><i class="fas fa-eye-slash"></i><strong>Pré-visualização indisponível</strong><span>Este formato não pode ser exibido diretamente no navegador. Use o botão Baixar.</span></div>';
       }
