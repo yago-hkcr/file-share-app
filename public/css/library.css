@@ -16,7 +16,7 @@
 .library-filter-menu { position:absolute; z-index:80; top:calc(100% + 7px); right:0; left:0; max-height:min(58vh,360px); padding:6px; overflow:auto; border:1px solid var(--gray-300); border-radius:13px; color:var(--gray-800); background:var(--gray-50); box-shadow:var(--shadow-xl); }
 .library-filter-menu.is-floating { position:fixed; z-index:1500; right:auto; }
 .library-filter-menu[hidden] { display:none !important; }
-.library-filter-option { display:flex; align-items:center; gap:9px; width:100%; min-width:0; min-height:42px; padding:8px 10px; border:0; border-radius:9px; color:var(--gray-700); background:transparent; font:inherit; font-size:12px; text-align:left; cursor:pointer; }
+.library-filter-option { display:flex; align-items:center; gap:9px; width:100%; min-width:0; min-height:44px; padding:8px 10px; border:0; border-radius:9px; color:var(--gray-700); background:transparent; font:inherit; font-size:12px; text-align:left; cursor:pointer; }
 .library-filter-option > i { flex:none; width:16px; color:var(--primary); text-align:center; }
 .library-filter-option > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .library-filter-option:hover,.library-filter-option:focus-visible { outline:0; background:var(--gray-100); }
@@ -169,12 +169,12 @@ html[data-theme="dark"] .library-editor-field select { color-scheme:dark; }
   .library-editor-actions { position:sticky; bottom:0; background:var(--gray-50); }
   .library-editor-actions #removeLibraryItem { flex:1 0 100%; justify-content:center; }
   .library-editor-actions .library-editor-spacer { display:none; }
-  .library-editor-actions > .btn:not(#removeLibraryItem) { flex:1; justify-content:center; }
+  .library-editor-actions > .btn:not(#removeLibraryItem) { flex:1; justify-content:center; min-height:44px; }
   .library-space-actions { position:sticky; bottom:0; background:var(--gray-50); }
-  .library-space-actions .btn { flex:1; }
+  .library-space-actions .btn { flex:1; min-height:44px; }
   .library-bookcases-panel { padding:10px; }
   .library-bookcase-option,.library-bookcase-tile { flex:1 1 calc(50% - 8px); min-width:0; }
-  .library-location-actions button { flex:1 1 auto; min-height:38px; }
+  .library-location-actions button { flex:1 1 auto; min-height:44px; }
 }
 @media (max-width:520px) { .library-bookcases { display:grid; grid-template-columns:minmax(0,1fr); } .library-bookcases-option { flex:none; min-width:0; } } @media (max-width:360px) {
   .library-toolbar { grid-template-columns:minmax(0,1fr) auto; }

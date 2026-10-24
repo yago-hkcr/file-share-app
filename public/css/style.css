@@ -53,12 +53,13 @@ a:hover {
   text-decoration: underline;
 }
 
-/* ===================== BUTTONS ===================== */
+/* ===================== BUTTONS (padronizados: alvo de toque >= 44px) ===================== */
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 10px 20px;
+  padding: 10px 16px;
   border: none;
   border-radius: var(--radius-sm);
   font-family: inherit;
@@ -66,7 +67,11 @@ a:hover {
   font-weight: 500;
   cursor: pointer;
   transition: var(--transition);
-  white-space: nowrap;
+  min-height: 44px;
+  min-width: 44px;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .btn:hover {
@@ -76,6 +81,18 @@ a:hover {
 
 .btn:active {
   transform: translateY(0);
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .btn-primary {
@@ -108,8 +125,45 @@ a:hover {
 }
 
 .btn-sm {
-  padding: 6px 12px;
+  padding: 8px 12px;
   font-size: 13px;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Botão verde (success) para ações positivas */
+.btn-success {
+  background: var(--success);
+  color: #000;
+  font-weight: 600;
+}
+
+.btn-success:hover {
+  background: #16a34a;
+}
+
+.btn-green {
+  background: var(--success);
+  color: #000;
+  font-weight: 600;
+}
+
+.btn-green:hover {
+  background: #16a34a;
+}
+
+/* Botão apenas com ícone */
+.btn-icon {
+  padding: 0;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+}
+
+.btn-icon i {
+  font-size: 16px;
 }
 
 /* Rótulo de texto ao lado do ícone em botões do cabeçalho (escondido no mobile). */
@@ -122,6 +176,19 @@ a:hover {
   justify-content: center;
   padding: 12px;
   font-size: 15px;
+  min-height: 48px;
+}
+
+/* Links que atuam como botões */
+a.btn, button.btn {
+  text-decoration: none;
+}
+
+/* Grupo de botões */
+.btn-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* ===================== FORMS ===================== */
