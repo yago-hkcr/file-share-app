@@ -57,9 +57,14 @@
     document.body.appendChild(overlay);
     const closeBtn = overlay.querySelector('.fp-close');
     if (closeBtn) closeBtn.onclick = close;
-    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+    // Mobile: tap outside to close, also swipe down works
+    overlay.addEventListener('click', event => { if (event.target === overlay || event.target.className === 'fp-overlay') close(); });
+    // Allow swipe-down to close on mobile
+    let touchStartY = 0;
+    overlay.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, { passive: true });
+    overlay.addEventListener('touchend', e => { const touchEndY = e.changedTouches[0].clientY; if (touchEndY - touchStartY > 50) close(); }, { passive: true });
     document.addEventListener('keydown', onKeyDown);
-    document.body.classList.add('fp-opened');
+    // Don't add fp-opened on mobile to avoid body scroll lock issues; handle via CSS instead
     return overlay;
   }
 
