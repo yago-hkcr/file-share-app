@@ -27,6 +27,23 @@
     return ['ARQUIVO', 'fa-file'];
   };
 
+  const mimeFromExt = (fileName) => {
+    const name = String(fileName || '').toLowerCase();
+    const ext = name.slice(name.lastIndexOf('.'));
+    const map = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+      '.webp': 'image/webp', '.avif': 'image/avif', '.bmp': 'image/bmp', '.svg': 'image/svg+xml',
+      '.mp4': 'video/mp4', '.webm': 'video/webm', '.ogg': 'video/ogg', '.mov': 'video/quicktime',
+      '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.aac': 'audio/aac', '.oga': 'audio/ogg',
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+      '.csv': 'text/csv', '.log': 'text/plain', '.js': 'text/javascript', '.css': 'text/css',
+      '.html': 'text/html', '.xml': 'application/xml', '.yml': 'application/x-yaml',
+      '.yaml': 'application/x-yaml', '.ini': 'text/plain', '.conf': 'text/plain'
+    };
+    return map[ext] || null;
+  };
+
   function close() {
     const overlay = document.getElementById('filePreviewOverlay');
     if (!overlay) return;
@@ -84,8 +101,13 @@
       const stage = overlay.querySelector('.fp-stage');
       const url = meta.previewUrl;
 
-      const type = String(meta.mime).toLowerCase();
+      let type = String(meta.mime || '').toLowerCase();
       const fileName = String(meta.name).toLowerCase();
+      // Fallback: detect MIME type from file extension when server mime is missing/empty
+      if (!type || !/(image|video|audio|application|text)\//.test(type)) {
+        const extType = mimeFromExt(fileName);
+        if (extType) type = extType;
+      }
       if (type.startsWith('image/')) {
         console.log('[preview] image type, url:', url);
         stage.innerHTML = '<div class="fp-empty"><i class="fas fa-spinner fa-spin"></i><strong>Carregando imagem</strong></div>';
