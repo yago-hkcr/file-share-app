@@ -137,6 +137,8 @@
       const label = '(' + (i + 1) + '/' + files.length + ') ' + file.name;
       say('Enviando ' + label + '...');
       let pathname;
+      let bgKind = null;
+      try {
       if (file.size > 100 * 1024 * 1024) {
         try {
           const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
@@ -150,6 +152,7 @@
             onUploadProgress: event => say('Enviando ' + label + ' ' + Math.round(event.percentage) + '%')
           });
           pathname = blob.pathname;
+          bgKind = 'presigned';
         } catch (error) {
           throw new Error(error && error.message ? error.message : 'Falha no envio multipart. Confira sua conexão e tente novamente.');
         }
@@ -168,6 +171,7 @@
         if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponivel).');
         await putWithProgress(prep.data.presignedUrl, file, percent => say('Enviando ' + label + ' ' + percent + '%'));
         pathname = prep.data.pathname;
+        bgKind = 'presigned';
       }
       const done = await postJson('/api/rooms/' + roomId + '/files/register', {
         pathname, name: file.name, size: file.size, mime: file.type, chat_only: options.chatOnly ? 1 : 0
@@ -175,10 +179,72 @@
       if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
       uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: file.type || 'application/octet-stream' });
       sent++;
+      } catch (error) {
+        const msg = String(error && error.message ? error.message : error);
+        const isNetwork = error.name === 'TypeError' || /failed to fetch|network|offline|failed to execute/i.test(msg);
+        if (isNetwork) {
+          say('Sem conexão — arquivo enfileirado para enviar quando voltar online.');
+          const item = {
+            kind: bgKind || 'legacy',
+            roomId,
+            file,
+            pathname,
+            name: file.name,
+            size: file.size,
+            mime: file.type,
+            chatOnly: !!options.chatOnly
+          };
+          try {
+            await window.enqueueBackgroundUpload(item);
+            uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true });
+            sent++;
+            continue;
+          } catch (enqueueError) {
+            say('Falha ao enfileirar: ' + String(enqueueError && enqueueError.message ? enqueueError.message : enqueueError));
+          }
+        }
+        throw error;
+      }
     }
     return { sent, skipped, files: uploaded };
   };
   window.__fsBusy = 0;
+
+  // ---------------------------------------------------------------
+  // Upload em segundo plano: quando a rede falha, o arquivo é
+  // enfileirado no Service Worker (IndexedDB) e reenviado assim que
+  // o navegador volta online (Background Sync). Funciona mesmo se a
+  // aba for fechada.
+  // ---------------------------------------------------------------
+  async function toArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsArrayBuffer(file);
+    });
+  }
+
+  window.enqueueBackgroundUpload = async function (item) {
+    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+      throw new Error('Service Worker não está ativo.');
+    }
+    const buffer = await toArrayBuffer(item.file);
+    // O ArrayBuffer viaja com a mensagem (transferable) para o SW recriar o Blob.
+    const channel = new MessageChannel();
+    return new Promise((resolve, reject) => {
+      channel.port1.onmessage = e => {
+        if (e.data && e.data.type === 'fs-enqueued') resolve(e.data.id);
+        else reject(new Error(e.data && e.data.error ? e.data.error : 'Falha ao enfileirar'));
+      };
+      channel.port1.onerror = () => reject(new Error('Canal do Service Worker com erro.'));
+      navigator.serviceWorker.controller.postMessage(
+        { type: 'fs-enqueue-upload', item, buffer },
+        [channel.port2, buffer]
+      );
+    });
+  };
+
   window.uploadToRoom = async function (roomId, fileList, onStatus, options) {
     window.__fsBusy++;
     try { return await _uploadInner(roomId, fileList, onStatus, options); }

@@ -1,0 +1,51 @@
+{
+  "name": "FileShare",
+  "short_name": "FileShare",
+  "description": "Compartilhe arquivos em salas privadas com preview e chat em tempo real.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#000000",
+  "background_color": "#0f172a",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "categories": ["productivity", "utilities", "file-sharing"],
+  "icons": [
+    {
+      "src": "/favicon-48.png",
+      "sizes": "48x48",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Minhas salas",
+      "short_name": "Salas",
+      "url": "/dashboard",
+      "description": "Acesse suas salas de arquivos",
+      "icons": [{ "src": "/favicon-48.png", "sizes": "48x48", "type": "image/png" }]
+    },
+    {
+      "name": "Minha biblioteca",
+      "short_name": "Biblioteca",
+      "url": "/library",
+      "description": "Seus arquivos guardados",
+      "icons": [{ "src": "/favicon-48.png", "sizes": "48x48", "type": "image/png" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}

@@ -3,6 +3,7 @@
 <head>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#000000">
@@ -239,8 +240,8 @@
             <span class="dz-limit"><i class="fas fa-triangle-exclamation"></i> Limite máximo de <b class="limit-note">50 GB</b> por arquivo · <i class="fas fa-paste"></i> Ctrl+V cola imagem</span>
             <span class="dz-progress" id="uploadBar" style="display:none;"><span class="dz-bar" id="uploadBarFill"></span></span>
             <span id="uploadStatus" class="dz-status"></span>
-            <input id="fileInput" type="file" multiple hidden>
-            <input id="chatFileInput" type="file" multiple hidden>
+            <input id="fileInput" type="file" multiple hidden accept="image/*,video/*,audio/*,application/pdf,*/*" capture>
+            <input id="chatFileInput" type="file" multiple hidden accept="image/*,video/*,audio/*,application/pdf,*/*" capture>
           </label>
         </form>
         <div class="section-title"><i class="fas fa-folder-open"></i> Arquivos <span id="fileCount" class="section-count"></span></div>
@@ -674,6 +675,13 @@
   <script src="/js/dashboard-shell.js?v=20261014o"></script>
   <script src="/js/announce.js?v=20261014o"></script>
 <script src="/js/cyber.js?v=20261014o"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js?v=20261014o').then(reg => {
+      console.log('[SW] Registrado:', reg.scope);
+    }).catch(err => console.warn('[SW] Falha ao registrar:', err));
+  }
+</script>
 </body>
 </html>
 
