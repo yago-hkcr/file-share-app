@@ -105,21 +105,21 @@ body.auth-page {
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
   }
-  /* Chat: NÃO força altura — deixa o modal-body rolar naturalmente. */
+  /* Chat: o modal-body é o scroller principal no celular. O chat-box não deve
+     capturar o toque (overflow: hidden), delegando o scroll ao chat-list. */
   #roomModal .chat-box {
     display: block !important;
     height: auto !important;
     min-height: 0;
     max-height: none !important;
-    overflow: visible !important;
+    overflow: hidden !important;
   }
   #roomModal .chat-list {
     height: auto !important;
     min-height: 180px !important;
-    max-height: none !important;
     max-height: 50dvh !important;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
