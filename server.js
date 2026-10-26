@@ -12,6 +12,7 @@ const { spawn } = require('child_process');
 const { pathToFileURL } = require('url');
 const { Readable } = require('stream');
 const { once } = require('events');
+const { isBlobPath } = require('./lib/blob-paths');
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
 
@@ -91,7 +92,6 @@ async function verifyPassword(value, storedHash) {
 const blobSdk = () => import('@vercel/blob');
 const blobClientSdk = () => import('@vercel/blob/client');
 const blobEnabled = () => !LOCAL_MODE && Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
-const isBlobPath = name => typeof name === 'string' && (name.startsWith('rooms/') || name.startsWith('collections/') || name.startsWith('library/'));
 async function deleteBlobs(pathnames) {
   const list = pathnames.filter(isBlobPath);
   if (!list.length) return;
