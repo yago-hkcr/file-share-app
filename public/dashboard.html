@@ -525,6 +525,7 @@
         loadFiles(); loadRooms();
         if (chatOnly && result.files && result.files.length) {
           for (const f of result.files) {
+            if (f.pending) continue; // o Service Worker publicará a referência quando concluir o envio
             const token = '[[file:' + f.id + '|' + (f.name || 'arquivo') + '|' + (f.mime || '') + ']]';
             try {
               await api('/api/rooms/' + encodeURIComponent(currentRoom) + '/messages', {
@@ -665,6 +666,10 @@
     window.dashboardRefreshTimer = setInterval(autoRefresh, 2000);
     window.setDashboardRefresh = seconds => { clearInterval(window.dashboardRefreshTimer); window.dashboardRefreshTimer = setInterval(autoRefresh, Math.max(2, Number(seconds) || 2) * 1000); };
     document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
+    window.addEventListener('fileshare:background-upload-complete', () => {
+      loadRooms();
+      if (currentRoom) Promise.all([loadFiles(), loadMessages(true)]).catch(() => {});
+    });
   </script>
   <script src="/js/social.js?v=20261014o"></script>
   <script src="/js/personal.js?v=20261014o"></script>

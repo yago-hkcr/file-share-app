@@ -22,7 +22,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PORT = Number(process.env.TEST_PORT || 4783);
+const PORT = Number(process.env.TEST_PORT || (48000 + Math.floor(Math.random() * 10000)));
 const ADMIN_PASSWORD = 'senha-teste-123456';
 const SESSION_SECRET = 'sessao-teste-segura-1234567890';
 

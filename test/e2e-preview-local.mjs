@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PORT = Number(process.env.TEST_PORT || 4786);
+const PORT = Number(process.env.TEST_PORT || (48000 + Math.floor(Math.random() * 10000)));
 const ADMIN_PASSWORD = 'senha-teste-123456';
 const SESSION_SECRET = 'sessao-teste-segura-1234567890';
 const dataDir = mkdtempSync(path.join(tmpdir(), 'preview-e2e-'));
@@ -37,6 +37,15 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const ORIGIN = { origin: BASE };
 try {
   await waitHealthy();
+  // Páginas protegidas não podem ser obtidas diretamente via express.static.
+  for (const page of ['/admin.html', '/dashboard.html', '/change-password.html', '/%61dmin.html', '/admin%2ehtml', '/dashboard%2ehtml', '/%2561dmin%252ehtml']) {
+    const direct = await fetch(BASE + page, { redirect: 'manual' });
+    check(direct.status === 404, `acesso direto bloqueado para ${page} (status ${direct.status})`);
+  }
+  for (const page of ['/admin', '/dashboard']) {
+    const protectedPage = await fetch(BASE + page, { redirect: 'manual' });
+    check(protectedPage.status === 302 && protectedPage.headers.get('location') === '/', `rota protegida ${page} exige sessão`);
+  }
   // 1) login como admin local
   let res = await fetch(`${BASE}/api/login`, {
     method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN },

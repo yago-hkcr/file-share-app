@@ -137,9 +137,12 @@
       const label = '(' + (i + 1) + '/' + files.length + ') ' + file.name;
       say('Enviando ' + label + '...');
       let pathname;
+      let uploadUrl;
+      let uploadCompleted = false;
       let bgKind = null;
       try {
       if (file.size > 100 * 1024 * 1024) {
+        bgKind = 'multipart';
         try {
           const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
           const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
@@ -152,7 +155,7 @@
             onUploadProgress: event => say('Enviando ' + label + ' ' + Math.round(event.percentage) + '%')
           });
           pathname = blob.pathname;
-          bgKind = 'presigned';
+          uploadCompleted = true;
         } catch (error) {
           throw new Error(error && error.message ? error.message : 'Falha no envio multipart. Confira sua conexão e tente novamente.');
         }
@@ -169,9 +172,10 @@
         // URL pre-assinada: o servidor valida e devolve um link PUT; enviamos o arquivo
         // direto ao Blob (mesmo fluxo estavel das Coletas, sem callback de token do SDK).
         if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponivel).');
-        await putWithProgress(prep.data.presignedUrl, file, percent => say('Enviando ' + label + ' ' + percent + '%'));
+        uploadUrl = prep.data.presignedUrl;
         pathname = prep.data.pathname;
-        bgKind = 'presigned';
+        await putWithProgress(uploadUrl, file, percent => say('Enviando ' + label + ' ' + percent + '%'));
+        uploadCompleted = true;
       }
       const done = await postJson('/api/rooms/' + roomId + '/files/register', {
         pathname, name: file.name, size: file.size, mime: file.type, chat_only: options.chatOnly ? 1 : 0
@@ -182,17 +186,20 @@
       } catch (error) {
         const msg = String(error && error.message ? error.message : error);
         const isNetwork = error.name === 'TypeError' || /failed to fetch|network|offline|failed to execute/i.test(msg);
-        if (isNetwork) {
-          say('Sem conexão — arquivo enfileirado para enviar quando voltar online.');
+        if (isNetwork && ((bgKind === 'presigned' && uploadUrl && pathname) || (bgKind === 'multipart' && uploadCompleted && pathname))) {
+          say('Sem conexão — arquivo enfileirado para confirmar quando voltar online.');
           const item = {
-            kind: bgKind || 'legacy',
+            kind: bgKind,
+            stage: uploadCompleted ? 'register' : 'upload',
             roomId,
             file,
             pathname,
+            uploadUrl,
             name: file.name,
             size: file.size,
             mime: file.type,
-            chatOnly: !!options.chatOnly
+            chatOnly: !!options.chatOnly,
+            ownerId: String(document.body.dataset.userId || '')
           };
           try {
             await window.enqueueBackgroundUpload(item);
@@ -202,6 +209,10 @@
           } catch (enqueueError) {
             say('Falha ao enfileirar: ' + String(enqueueError && enqueueError.message ? enqueueError.message : enqueueError));
           }
+        } else if (isNetwork) {
+          say(bgKind === 'multipart'
+            ? 'A conexão caiu durante o envio multipart. Esse arquivo não pode ser retomado em segundo plano; tente novamente.'
+            : 'A conexão caiu antes da preparação segura do envio. Tente novamente quando estiver online.');
         }
         throw error;
       }
@@ -226,24 +237,77 @@
   }
 
   window.enqueueBackgroundUpload = async function (item) {
-    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+    if (!navigator.serviceWorker) {
       throw new Error('Service Worker não está ativo.');
     }
-    const buffer = await toArrayBuffer(item.file);
+    if (!item.ownerId) {
+      const response = await fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) throw new Error('Não foi possível confirmar a conta para o envio em segundo plano.');
+      const user = await response.json();
+      item.ownerId = String(user.id || '');
+    }
+    if (!item.ownerId) throw new Error('Não foi possível associar o envio à conta atual.');
+    const needsFileBytes = item.kind === 'presigned' && item.stage === 'upload' && item.file;
+    const buffer = needsFileBytes ? await toArrayBuffer(item.file) : null;
+    const queuedItem = { ...item };
+    // File não transferido seria clonado junto com a mensagem, duplicando RAM;
+    // envie os bytes uma única vez pelo ArrayBuffer transferível.
+    delete queuedItem.file;
+    const registration = await navigator.serviceWorker.ready;
+    const worker = navigator.serviceWorker.controller || registration.active;
+    if (!worker) throw new Error('Service Worker ainda não está pronto.');
     // O ArrayBuffer viaja com a mensagem (transferable) para o SW recriar o Blob.
     const channel = new MessageChannel();
     return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { channel.port1.close(); reject(new Error('Tempo esgotado ao salvar o upload para segundo plano.')); }, 15000);
       channel.port1.onmessage = e => {
+        clearTimeout(timeout);
+        channel.port1.close();
         if (e.data && e.data.type === 'fs-enqueued') resolve(e.data.id);
         else reject(new Error(e.data && e.data.error ? e.data.error : 'Falha ao enfileirar'));
       };
-      channel.port1.onerror = () => reject(new Error('Canal do Service Worker com erro.'));
-      navigator.serviceWorker.controller.postMessage(
-        { type: 'fs-enqueue-upload', item, buffer },
-        [channel.port2, buffer]
-      );
+      channel.port1.onerror = () => { clearTimeout(timeout); channel.port1.close(); reject(new Error('Canal do Service Worker com erro.')); };
+      try {
+        worker.postMessage(
+          { type: 'fs-enqueue-upload', item: queuedItem, buffer },
+          buffer ? [channel.port2, buffer] : [channel.port2]
+        );
+      } catch (error) {
+        clearTimeout(timeout);
+        channel.port1.close();
+        reject(error);
+      }
     });
   };
+
+  // Alguns navegadores não implementam Background Sync. Neles, retoma a fila
+  // quando a rede volta ou quando o painel é aberto novamente.
+  async function resumeQueuedUploads() {
+    if (!navigator.onLine || !navigator.serviceWorker) return;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      if (registration.sync) await registration.sync.register('fs-upload-sync');
+      else (navigator.serviceWorker.controller || registration.active)?.postMessage({ type: 'fs-process-uploads' });
+    } catch (error) {
+      console.warn('[Upload] Não foi possível retomar a fila offline:', error);
+    }
+  }
+  window.addEventListener('online', resumeQueuedUploads);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resumeQueuedUploads, { once: true });
+  else resumeQueuedUploads();
+  if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', event => {
+    if (!event.data) return;
+    if (event.data.type === 'fs-upload-done') {
+      const message = 'Um upload em segundo plano foi concluído.';
+      if (typeof window.toast === 'function') window.toast(message, 'success');
+      else if (typeof window.showToast === 'function') window.showToast(message, 'success');
+      window.dispatchEvent(new CustomEvent('fileshare:background-upload-complete', { detail: event.data }));
+    } else if (event.data.type === 'fs-upload-failed') {
+      const message = 'Um upload pendente precisa de atenção. Entre na conta que iniciou o envio e tente novamente.';
+      if (typeof window.toast === 'function') window.toast(message, 'error');
+      else if (typeof window.showToast === 'function') window.showToast(message, 'error');
+    }
+  });
 
   window.uploadToRoom = async function (roomId, fileList, onStatus, options) {
     window.__fsBusy++;
