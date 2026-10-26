@@ -41,7 +41,7 @@
     {
       "name": "Minha biblioteca",
       "short_name": "Biblioteca",
-      "url": "/library",
+      "url": "/dashboard#library",
       "description": "Seus arquivos guardados",
       "icons": [{ "src": "/favicon-48.png", "sizes": "48x48", "type": "image/png" }]
     }

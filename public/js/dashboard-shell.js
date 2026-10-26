@@ -67,7 +67,9 @@
   function chooseInitialTab() {
     let saved = '';
     try { saved = localStorage.getItem('fileshare-dashboard-tab') || ''; } catch (error) {}
-    const tab = tabs.find(candidate => tabKey(candidate) === saved) || tabs.find(candidate => candidate.getAttribute('aria-selected') === 'true') || tabs[0];
+    const requested = window.location.hash.replace(/^#/, '').toLowerCase();
+    const hashKey = requested === 'rooms' || requested === 'collections' || requested === 'library' ? requested : '';
+    const tab = tabs.find(candidate => tabKey(candidate) === hashKey) || tabs.find(candidate => tabKey(candidate) === saved) || tabs.find(candidate => candidate.getAttribute('aria-selected') === 'true') || tabs[0];
     // O clique também aciona o carregamento legado de Coletas/Acervo em collections.js.
     tab.click();
   }

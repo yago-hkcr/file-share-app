@@ -729,7 +729,8 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  const cameraPolicy = req.path === '/dashboard' ? '(self)' : '()';
+  res.setHeader('Permissions-Policy', `camera=${cameraPolicy}, microphone=(), geolocation=(), payment=(), usb=()`);
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   if (IS_VERCEL && req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -738,6 +739,23 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '220kb' }));
 app.use(express.urlencoded({ extended: false, limit: '50kb', parameterLimit: 100 }));
+// As páginas HTML só podem ser entregues pelas rotas abaixo, que aplicam
+// autenticação/autorização. Não deixe express.static expor /admin.html,
+// /dashboard.html ou outras páginas diretamente.
+app.use((req, res, next) => {
+  let requestPath = req.path;
+  try {
+    // express.static também decodifica o caminho; valide formas codificadas
+    // para que /admin%2ehtml não contorne o bloqueio.
+    for (let i = 0; i < 2; i++) {
+      const decoded = decodeURIComponent(requestPath);
+      if (decoded === requestPath) break;
+      requestPath = decoded;
+    }
+  } catch (error) { return res.status(400).end(); }
+  if (/\.html?$/i.test(requestPath)) return res.status(404).end();
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon-48.png')));
 app.use(cookieSession({
@@ -2228,7 +2246,11 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
   const room = await one('SELECT id FROM rooms WHERE id = $1', [req.params.id]);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
   if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala antes de enviar arquivos' });
-  if (await one('SELECT id FROM files WHERE stored_name = $1', [pathname])) return res.status(400).json({ error: 'Arquivo já registrado' });
+  const existing = await one('SELECT id, room_id, uploaded_by, original_name, size, chat_only FROM files WHERE stored_name = $1', [pathname]);
+  if (existing) {
+    if (existing.room_id !== room.id || existing.uploaded_by !== req.user.id) return res.status(409).json({ error: 'Arquivo já registrado por outra conta' });
+    return res.json({ id: existing.id, original_name: existing.original_name, size: num(existing.size), chat_only: num(existing.chat_only) });
+  }
 
   let size = Number(req.body.size) || 0;
   try {
@@ -2237,7 +2259,7 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
     if (info && Number(info.size)) size = Number(info.size);
     else return res.status(400).json({ error: 'Não foi possível validar o tamanho do arquivo' });
   } catch (e) {
-    if (e && e.name === 'BlobNotFoundError') return res.status(400).json({ error: 'O envio do arquivo não foi concluído' });
+    if (e && e.name === 'BlobNotFoundError') return res.status(409).json({ state: 'upload_incomplete', error: 'O envio do arquivo não foi concluído' });
     console.error('head do Blob falhou:', e && e.message);
     return res.status(502).json({ error: 'Não foi possível validar o arquivo no armazenamento' });
   }
