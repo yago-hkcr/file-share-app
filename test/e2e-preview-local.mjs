@@ -78,6 +78,41 @@ try {
   const imagem = await sendFile('dot.png', 'image/png', Buffer.from(pngB64, 'base64'));
   check(imagem.status === 200 && imagem.file, 'upload de imagem');
 
+  // A Biblioteca edita somente o nome da cópia particular, nunca o original da sala.
+  res = await fetch(`${BASE}/api/library/spaces`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },
+    body: JSON.stringify({ name: 'Arquivos de teste' })
+  });
+  const space = res.ok ? await res.json() : null;
+  check(res.status === 201 && space, 'criação de espaço da Biblioteca');
+  res = await fetch(`${BASE}/api/library/spaces/${space?.id}/shelves`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },
+    body: JSON.stringify({ name: 'Documentos' })
+  });
+  const shelf = res.ok ? await res.json() : null;
+  check(res.status === 201 && shelf, 'criação de prateleira da Biblioteca');
+  res = await fetch(`${BASE}/api/library`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },
+    body: JSON.stringify({ file_id: texto.file.id, space_id: space?.id, bookcase_id: shelf?.id })
+  });
+  const libraryItem = res.ok ? await res.json() : null;
+  check(res.ok && libraryItem, 'guardar cópia de arquivo da sala na Biblioteca');
+  if (libraryItem) {
+    res = await fetch(`${BASE}/api/library/${libraryItem.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },
+      body: JSON.stringify({ original_name: 'nota-renomeada.txt' })
+    });
+    const renamed = res.ok ? await res.json() : null;
+    check(res.ok && renamed?.original_name === 'nota-renomeada.txt', 'renomear item da Biblioteca preserva demais dados');
+    res = await fetch(`${BASE}/api/library`, { headers: { cookie: cookies, ...ORIGIN } });
+    const library = res.ok ? await res.json() : null;
+    check(library?.items?.some(item => item.id === libraryItem.id && item.original_name === 'nota-renomeada.txt'), 'nome novo aparece na lista da Biblioteca');
+    res = await fetch(`${BASE}/api/rooms`, { headers: { cookie: cookies, ...ORIGIN } });
+    const rooms = res.ok ? await res.json() : [];
+    const roomFile = rooms.find(item => item.id === room.id)?.files?.find(item => item.id === texto.file.id);
+    check(roomFile?.original_name === 'nota.txt', 'renomear a cópia não altera o nome do original na sala');
+  }
+
   // 4) preview do texto
   res = await fetch(`http://127.0.0.1:${PORT}/preview/${texto.file.id}`, { headers: { cookie: cookies } });
   const textoCorpo = await res.text();

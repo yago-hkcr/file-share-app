@@ -65,6 +65,9 @@
 .direct-thread-heading > span:last-child { display: grid; min-width: 0; }
 .direct-thread-heading small { color: var(--muted); font-size: 12px; }
 .direct-message-list { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; padding: 14px; overflow-y: auto; overscroll-behavior: contain; }
+.direct-thread, .direct-message-list, .direct-message, .direct-bubble, .direct-message-text { min-width: 0; }
+.direct-message { width: fit-content; max-width: min(84%, 620px); }
+.direct-bubble { max-width: 100%; }
 .direct-message { display: flex; align-self: flex-start; max-width: min(84%, 620px); min-width: 0; }
 .direct-message.mine { align-self: flex-end; }
 .direct-bubble { min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 14px 14px 14px 3px; background: var(--surface); overflow-wrap: anywhere; }
@@ -212,6 +215,7 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 }
 
 .chat-attachment { margin: 6px 0; max-width: 100%; }
+.msg-text, .direct-message-text { min-width: 0; max-width: 100%; }
 
 /* Imagem anexada no chat: enquadrada, sem estourar a bolha */
 .chat-attachment-image {
@@ -241,8 +245,8 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 .chat-attachment-image .chat-attachment-preview img {
   display: block;
   width: 100% !important;
-  height: auto;
-  max-height: 420px;
+  height: auto !important;
+  max-height: min(52vh, 420px);
   object-fit: contain;
   background: transparent;
   border-radius: 0;
@@ -262,6 +266,7 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   line-height: 1.4;
   box-sizing: border-box;
 }
+.chat-attachment-image .chat-attachment-name { overflow-wrap: anywhere; }
 .chat-attachment-image .chat-attachment-download {
   flex: 0 0 auto;
   margin: 0 10px 0 0;
@@ -340,10 +345,13 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
 @media (max-width: 640px) {
   .chat-attachment-image,
   .chat-attachment-name { max-width: 100%; }
-  .chat-attachment-image .chat-attachment-preview img { max-height: 320px; }
+  .chat-attachment-image { width: min(100%, 280px); }
+  .chat-attachment-image .chat-attachment-preview { width: 100%; overflow: hidden; background: rgba(0,0,0,.06); }
+  .chat-attachment-image .chat-attachment-preview img { width: 100% !important; height: auto !important; max-height: 280px; object-fit: contain; }
   .chat-attachment-file { max-width: 100%; padding: 9px 10px; }
   .chat-attachment-link { font-size: 13px; }
   .chat-attachment-image .chat-attachment-download { width: 32px; height: 32px; }
+  .direct-message { max-width: 94%; }
 }
 /* Expanded chat in room */
 #roomModal.chat-expanded .modal-body > form,

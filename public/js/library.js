@@ -454,6 +454,7 @@
     renderShelves();
     $('libraryItemId').value = item.id;
     $('libraryEditorFileName').textContent = item.original_name || String(fileName || 'Arquivo');
+    $('libraryEditorOriginalName').value = item.original_name || String(fileName || 'Arquivo');
     const currentSpace = item.space_id || selectedSpaceId() || spaces[0]?.id || '';
     $('libraryEditorSpace').value = currentSpace;
     renderEditorBookcases(item.bookcase_id || '');
@@ -466,7 +467,7 @@
     const modal = $('libraryEditorModal');
     modal.style.display = 'flex';
     modal.setAttribute('aria-hidden', 'false');
-    window.setTimeout(() => $('libraryEditorSpaceButton').focus(), 40);
+    window.setTimeout(() => $('libraryEditorOriginalName').focus(), 40);
   }
 
   window.openLibraryEditor = openEditor;
@@ -825,13 +826,19 @@
     const button = $('saveLibraryItem');
     const itemId = $('libraryItemId').value;
     if (!itemId) { closeEditor(); return; }
+    const originalName = $('libraryEditorOriginalName').value.trim();
+    if (!originalName) {
+      window.toast?.('Informe um nome para o arquivo.', 'error');
+      $('libraryEditorOriginalName').focus();
+      return;
+    }
     if (!$('libraryEditorSpace').value || !$('libraryEditorShelf').value) {
       window.toast?.('Escolha ou crie uma prateleira para guardar este arquivo.', 'error');
       return;
     }
     button.disabled = true;
     try {
-      const common = { space_id: $('libraryEditorSpace').value, bookcase_id: $('libraryEditorShelf').value, note: $('libraryEditorNote').value, is_favorite: $('libraryEditorFavorite').checked };
+      const common = { original_name: originalName, space_id: $('libraryEditorSpace').value, bookcase_id: $('libraryEditorShelf').value, note: $('libraryEditorNote').value, is_favorite: $('libraryEditorFavorite').checked };
       await api('/api/library/' + encodeURIComponent(itemId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

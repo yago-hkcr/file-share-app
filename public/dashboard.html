@@ -15,9 +15,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014o">
   <link rel="stylesheet" href="/css/style.css?v=20261014c"><link rel="stylesheet" href="/css/onboarding.css?v=20261014c">
-  <link rel="stylesheet" href="/css/social.css?v=20261014c">
+  <link rel="stylesheet" href="/css/social.css?v=20261026a">
   <link rel="stylesheet" href="/css/collections.css?v=20261014c">
-  <link rel="stylesheet" href="/css/library.css?v=20261014c">
+  <link rel="stylesheet" href="/css/library.css?v=20261026a">
   <script src="/js/common.js?v=20261014c"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261014o" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
@@ -80,7 +80,7 @@
   <script src="/js/gfx.js?v=20261014p"></script><script src="/js/fx.js?v=20261014o" defer></script>
   <link rel="stylesheet" href="/css/preview.css?v=20261014o">
   <link rel="stylesheet" href="/css/dashboard-redesign.css?v=20261014o">
-<link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014o">
+<link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261026a">
 <link rel="stylesheet" href="/css/hacker-ui.css?v=20261014o">
 </head>
 <body class="app-page">
@@ -214,6 +214,7 @@
         <div class="modal-body">
           <input id="libraryFileId" type="hidden"><input id="libraryItemId" type="hidden">
           <div class="library-editor-file"><i class="fas fa-file-arrow-down"></i><span id="libraryEditorFileName"></span></div>
+          <label class="library-editor-field" for="libraryEditorOriginalName">Nome do arquivo<input id="libraryEditorOriginalName" type="text" maxlength="255" autocomplete="off" required><small>Digite também a extensão do arquivo, por exemplo .jpg ou .pdf. Esta alteração vale só para sua cópia na Biblioteca.</small></label>
           <div class="library-editor-location">
             <div class="library-editor-field"><span>Espaço</span><div class="library-select-picker"><select id="libraryEditorSpace" hidden aria-hidden="true"></select><button id="libraryEditorSpaceButton" class="library-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="libraryEditorSpaceMenu" aria-label="Escolher espaço"><span id="libraryEditorSpaceLabel">Escolha um espaço</span><i class="fas fa-chevron-down" aria-hidden="true"></i></button><div id="libraryEditorSpaceMenu" class="library-filter-menu" role="listbox" aria-label="Escolher espaço" hidden></div></div></div>
             <div class="library-editor-field"><span>Prateleira</span><div class="library-select-picker"><select id="libraryEditorShelf" hidden aria-hidden="true"></select><button id="libraryEditorShelfButton" class="library-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="libraryEditorShelfMenu" aria-label="Escolher prateleira"><span id="libraryEditorShelfLabel">Escolha uma prateleira</span><i class="fas fa-chevron-down" aria-hidden="true"></i></button><div id="libraryEditorShelfMenu" class="library-filter-menu" role="listbox" aria-label="Escolher prateleira" hidden></div></div></div>
@@ -479,7 +480,10 @@
       const sig = JSON.stringify(messages); if (sig === lastChatSig) return;
       const first = lastChatSig === ''; lastChatSig = sig;
       const box = document.getElementById('chatList');
-      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      const scroller = window.matchMedia('(max-width: 640px)').matches
+        ? document.querySelector('#roomModal .modal-body')
+        : box;
+      const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
       let prev = null;
       box.innerHTML = messages.length ? messages.map(m => {
         const mine = me && m.user_id === me.id;
@@ -489,7 +493,7 @@
         const messageAvatar = m.avatar_image ? `<img src="${esc(m.avatar_image)}" alt="">` : esc(m.username[0].toUpperCase());
         return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || 'var(--primary,var(--cy))')}">${messageAvatar}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}${quote}<div class="msg-text">${chatAttachmentHtml(m.content) || linkify(m.content)}</div><button class="msg-copy-trigger" type="button" data-copy-text="${esc(m.content)}" aria-label="Copiar mensagem" title="Copiar mensagem"><i class="fas fa-copy" aria-hidden="true"></i><span>Copiar</span></button><button class="msg-reply-trigger" type="button" data-reply-id="${esc(m.id)}" data-reply-name="${esc(m.username)}" data-reply-text="${esc(m.content)}" aria-label="Responder ${esc(m.username)}"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></div></div>`;
       }).join('') : '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
-      if (first || forceBottom || atBottom) box.scrollTop = box.scrollHeight;
+      if (first || forceBottom || atBottom) scroller.scrollTop = scroller.scrollHeight;
     }
     function setRoomReply(id, name, content) {
       roomReplyTo = { id, name, content };
@@ -676,7 +680,7 @@
   <script src="/js/cursor.js?v=20261014o"></script>
   <script src="/js/preview.js?v=20261014o"></script>
   <script src="/js/collections.js?v=20261014o"></script>
-  <script src="/js/library.js?v=20261014o"></script>
+  <script src="/js/library.js?v=20261026a"></script>
   <script src="/js/dashboard-shell.js?v=20261014o"></script>
   <script src="/js/announce.js?v=20261014o"></script>
 <script src="/js/cyber.js?v=20261014o"></script>

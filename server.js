@@ -1967,9 +1967,13 @@ app.post('/api/library/upload', asMember, (req, res, next) => {
 }));
 
 app.patch('/api/library/:id', asMember, wrap(async (req, res) => {
-  const current = await one('SELECT id, file_id, shelf, space_id, bookcase_id, note, is_favorite FROM personal_library_items WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  const current = await one('SELECT id, file_id, original_name, shelf, space_id, bookcase_id, note, is_favorite FROM personal_library_items WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
   if (!current) return res.status(404).json({ error: 'Item não encontrado no seu Acervo.' });
   const body = req.body || {};
+  const originalName = Object.prototype.hasOwnProperty.call(body, 'original_name')
+    ? cleanPersonalLibraryName(body.original_name)
+    : current.original_name;
+  if (!originalName || originalName.length > 255) return res.status(400).json({ error: 'Informe um nome de arquivo válido com até 255 caracteres.' });
   const location = Object.prototype.hasOwnProperty.call(body, 'space_id') || Object.prototype.hasOwnProperty.call(body, 'bookcase_id') || typeof body.shelf === 'string'
     ? await resolvePersonalLibraryLocation(req.user.id, body)
     : { space: { id: current.space_id }, bookcase: { id: current.bookcase_id, name: current.shelf } };
@@ -1978,9 +1982,9 @@ app.patch('/api/library/:id', asMember, wrap(async (req, res) => {
   const favorite = Object.prototype.hasOwnProperty.call(body, 'is_favorite')
     ? (body.is_favorite === true || body.is_favorite === 1 || body.is_favorite === '1' ? 1 : 0)
     : Number(current.is_favorite) || 0;
-  const updated = await one(`UPDATE personal_library_items SET shelf = $1, space_id = $2, bookcase_id = $3, note = $4, is_favorite = $5, updated_at = $6
-    WHERE id = $7 AND user_id = $8 RETURNING id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at`,
-    [location.bookcase.name, location.space.id, location.bookcase.id, note, favorite, ts(), current.id, req.user.id]);
+  const updated = await one(`UPDATE personal_library_items SET original_name = $1, shelf = $2, space_id = $3, bookcase_id = $4, note = $5, is_favorite = $6, updated_at = $7
+    WHERE id = $8 AND user_id = $9 RETURNING id, file_id, original_name, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at`,
+    [originalName, location.bookcase.name, location.space.id, location.bookcase.id, note, favorite, ts(), current.id, req.user.id]);
   res.json({ ...updated, is_favorite: Boolean(updated.is_favorite) });
 }));
 

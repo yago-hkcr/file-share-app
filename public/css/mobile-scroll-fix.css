@@ -376,6 +376,53 @@ body.auth-page {
   align-self: center;
   transform: none;
 }
+
+/* Sala no celular: um único ponto de rolagem evita que arquivos e chat
+   capturem gestos separadamente e permite chegar ao chat e ao compositor. */
+@media (max-width: 640px) {
+  #roomModal .modal-content { min-height: 0; }
+  #roomModal .modal-body {
+    display: flex !important;
+    flex-direction: column;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  #roomModal #roomFiles {
+    flex: 0 0 auto;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  #roomModal .chat-box {
+    display: flex !important;
+    flex: 0 0 auto;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  #roomModal .chat-list {
+    flex: 0 0 auto;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 12px 4px;
+  }
+  #roomModal.chat-expanded .chat-box { min-height: 0 !important; }
+  #roomModal.chat-expanded .chat-list {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  #roomModal #messageForm.chat-compose { flex: 0 0 auto; }
+}
 /* Celular: botão confortável ao toque, sem estourar a largura. */
 @media (max-width: 640px) {
   .empty-state { padding: 40px 16px; }
