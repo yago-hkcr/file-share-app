@@ -25,7 +25,7 @@
   // Conversas diretas entre amigos.
   const dm = modal('directMessagesSheet', '<i class="fas fa-message"></i> Conversas', 'direct-sheet');
   dm.querySelector('.modal-content').classList.add('direct-modal-content');
-  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread"><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><input id="directMessageInput" type="text" maxlength="1000" placeholder="Escreva uma mensagem…" aria-label="Mensagem" disabled><input id="directFileInput" type="file" multiple hidden><input id="directOcrFileInput" type="file" accept="image/*" hidden><button class="btn btn-outline attach-button" type="button" id="directAttachFileBtn" title="Anexar arquivos" aria-label="Anexar arquivos"><i class="fas fa-paperclip"></i></button><button class="btn btn-outline ocr-button" type="button" id="directOcrButton" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
+  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread"><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><textarea id="directMessageInput" rows="1" placeholder="Mensagem ou cole texto grande… (Enter envia · Shift+Enter quebra linha)" aria-label="Mensagem" disabled required></textarea><input id="directFileInput" type="file" multiple hidden><input id="directOcrFileInput" type="file" accept="image/*" hidden><button class="btn btn-outline attach-button" type="button" id="directAttachFileBtn" title="Anexar arquivos" aria-label="Anexar arquivos"><i class="fas fa-paperclip"></i></button><button class="btn btn-outline ocr-button" type="button" id="directOcrButton" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
   let dmFriends = [], activeFriend = null, lastDmSig = '', dmReply = null, initialDm = true, dmAvatarsLoaded = false;
   const renderDmFriends = conversations => {
     const host = $('directFriendList');
@@ -145,6 +145,19 @@
     dmReply = { id: reply.dataset.replyId, name: reply.dataset.replyName, content: reply.dataset.replyText }; showDmReply(); $('directMessageInput').focus();
   });
   $('directReplyCancel').addEventListener('click', clearDmReply);
+  const directMessageInput = $('directMessageInput');
+  function resizeDirectComposer() {
+    directMessageInput.style.height = 'auto';
+    directMessageInput.style.height = Math.min(directMessageInput.scrollHeight, 180) + 'px';
+    directMessageInput.style.overflowY = directMessageInput.scrollHeight > 180 ? 'auto' : 'hidden';
+  }
+  directMessageInput.addEventListener('input', resizeDirectComposer);
+  directMessageInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      $('directMessageForm').requestSubmit();
+    }
+  });
   const directOcrButton = $('directOcrButton'), directOcrFileInput = $('directOcrFileInput');
   directOcrButton?.addEventListener('click', () => directOcrFileInput?.click());
   const directAttachFileBtn = $('directAttachFileBtn'), directFileInput = $('directFileInput');
@@ -168,9 +181,30 @@
   });
   dm.querySelector('#directMessageForm').addEventListener('submit', async event => {
     event.preventDefault(); if (!activeFriend) return;
-    const input = $('directMessageInput'), content = input.value.trim(); if (!content) return;
+    const input = $('directMessageInput'), content = input.value; if (!content.trim()) return;
     const targetId = activeFriend.id;
-    try { await post('/api/dm/' + encodeURIComponent(targetId) + '/messages', { content, reply_to_id: dmReply && dmReply.id }); input.value = ''; clearDmReply(); await Promise.all([loadDmMessages(), loadDmFriends()]); }
+    const replyToId = dmReply && dmReply.id;
+    try {
+      const longMessage = window.createLongMessageFile(content);
+      if (longMessage) {
+        toast(window.describeLongMessage(content), 'info');
+        const result = await window.uploadToDm(targetId, [longMessage.file], text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); });
+        const warn = window.skippedMessage ? window.skippedMessage(result) : '';
+        if (!result.sent) { if (warn) toast(warn, 'error'); return; }
+        for (const uploaded of (result.files || [])) {
+          const token = '[[file:' + uploaded.id + '|' + (uploaded.name || 'arquivo') + '|' + (uploaded.mime || '') + ']]';
+          await post('/api/dm/' + encodeURIComponent(targetId) + '/messages', { content: token, reply_to_id: replyToId });
+        }
+        if (input.value === content) { input.value = ''; resizeDirectComposer(); }
+        if ((dmReply && dmReply.id || null) === (replyToId || null)) clearDmReply();
+        await Promise.all([loadDmMessages(), loadDmFriends()]);
+        return;
+      }
+      await post('/api/dm/' + encodeURIComponent(targetId) + '/messages', { content, reply_to_id: replyToId });
+      if (input.value === content) { input.value = ''; resizeDirectComposer(); }
+      if ((dmReply && dmReply.id || null) === (replyToId || null)) clearDmReply();
+      await Promise.all([loadDmMessages(), loadDmFriends()]);
+    }
     catch (error) { toast(error.message, 'error'); }
   });
   window.openDirectChat = async (userId, username) => {

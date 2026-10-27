@@ -369,12 +369,12 @@ html.personal-reduced-motion *, html.personal-reduced-motion *::before, html.per
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
-#roomModal.chat-expanded .chat-compose input { height: 46px; font-size: 15px; }
+#roomModal.chat-expanded .chat-compose input:not([type="file"]), #roomModal.chat-expanded .chat-compose textarea { min-height: 44px; height: 44px; font-size: 15px; }
 #roomModal.chat-expanded .chat-send { width: 44px; height: 44px; padding: 0; flex: 0 0 44px; }
 #roomModal.chat-expanded .attach-button { width: 44px; height: 44px; min-width: 44px; padding: 0; display: grid; place-items: center; }
 @media (max-width: 640px) {
   #roomModal.chat-expanded .chat-compose { padding: 8px 12px calc(8px + var(--safe-b)); }
-  #roomModal.chat-expanded .chat-compose input { height: 44px; }
+  #roomModal.chat-expanded .chat-compose input:not([type="file"]), #roomModal.chat-expanded .chat-compose textarea { min-height: 44px; height: 44px; }
   #roomModal.chat-expanded .chat-send { width: 44px; height: 44px; }
   #roomModal.chat-expanded .attach-button { width: 44px; height: 44px; min-width: 44px; }
 }
@@ -399,17 +399,28 @@ input[type="file"][hidden] {
   border-top: 1px solid rgba(var(--cy-rgb), .3);
   background: rgba(var(--cy-rgb), .05);
 }
-.chat-compose input {
+.chat-compose input:not([type="file"]), .chat-compose textarea {
   flex: 1;
   min-width: 0;
   width: auto;
+  min-height: 44px;
+  max-height: 180px;
   height: 44px;
-  padding: 0 14px;
+  padding: 10px 14px;
   font: inherit;
   font-size: 15px;
   border-radius: 10px;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-.chat-compose input::placeholder { color: var(--muted); }
+.chat-compose input::placeholder, .chat-compose textarea::placeholder { color: var(--muted); }
+.chat-compose textarea { box-sizing: border-box; border: 1px solid rgba(var(--cy-rgb), .35); background: var(--field); color: var(--ink); touch-action: auto; -webkit-user-select: text; user-select: text; }
+.chat-compose textarea:focus { outline: none; border-color: var(--cy); box-shadow: 0 0 0 1px var(--cy), 0 0 16px rgba(var(--cy-rgb), .3); }
+#roomModal #messageInput, #directMessageInput { caret-color: var(--cy); }
 .chat-send {
   width: 44px;
   height: 44px;
@@ -492,16 +503,25 @@ input[type="file"][hidden] {
   border-top: 1px solid rgba(var(--cy-rgb), .3);
   background: rgba(var(--cy-rgb), .05);
 }
-.direct-compose input {
+.direct-compose input:not([type="file"]), .direct-compose textarea {
   flex: 1;
   min-width: 0;
   width: auto;
+  min-height: 44px;
+  max-height: 180px;
   height: 44px;
-  padding: 0 14px;
+  padding: 10px 14px;
   font: inherit;
   font-size: 15px;
   border-radius: 10px;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
+.direct-compose textarea { box-sizing: border-box; touch-action: auto; -webkit-user-select: text; user-select: text; }
 .direct-compose .attach-button,
 .direct-compose .ocr-button,
 .direct-compose button.chat-send {
@@ -516,7 +536,7 @@ input[type="file"][hidden] {
 .direct-compose button.chat-send { width: 44px; }
 @media (max-width: 640px) {
   .direct-compose { padding: 8px 12px calc(8px + var(--safe-b)); }
-  .direct-compose input { height: 44px; font-size: 15px; }
+  .direct-compose input:not([type="file"]), .direct-compose textarea { min-height: 44px; height: 44px; font-size: 15px; }
   .direct-compose .attach-button,
   .direct-compose .ocr-button { width: 44px; height: 44px; min-width: 44px; }
   .direct-compose button.chat-send { width: 44px; height: 44px; }

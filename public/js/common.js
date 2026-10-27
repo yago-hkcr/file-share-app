@@ -100,7 +100,13 @@
 
   window.enablePaste = function (onFiles) {
     document.addEventListener('paste', function (e) {
+      // Texto colado em um compositor deve seguir o comportamento nativo da
+      // textarea: preserva quebras de linha, tabs e a posição do cursor. O
+      // handler global continua tratando imagens/arquivos colados.
+      const pastedText = e.clipboardData && e.clipboardData.getData ? e.clipboardData.getData('text/plain') : '';
       const items = e.clipboardData && e.clipboardData.files ? Array.from(e.clipboardData.files) : [];
+      const target = e.target && e.target.closest && e.target.closest('#messageInput, #directMessageInput');
+      if (target && pastedText && !items.length) return;
       if (!items.length) return;
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '').replace(/^(\d{8})(\d{6})$/, '$1-$2');
       const files = items.map(f => /^image\.(png|jpe?g|gif|webp)$/i.test(f.name)

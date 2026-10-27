@@ -9,23 +9,23 @@
 
 const CACHE_NAME = 'fileshare-v3';
 const ASSETS = [
-  '/css/social.css?v=20261027b',
+  '/css/social.css?v=20261027c',
   '/css/style.css?v=20261014o',
   '/css/mobile.css?v=20261014o',
   '/css/adaptive.css?v=20261014b',
-  '/css/mobile-scroll-fix.css?v=20261014o',
+  '/css/mobile-scroll-fix.css?v=20261027a',
   '/css/fx.css?v=20261014o',
   '/css/preview.css?v=20261014o',
   '/css/hacker-ui.css?v=20261014o',
-  '/js/common.js?v=20261014o',
+  '/js/common.js?v=20261027a',
   '/js/adaptive.js?v=20261014a',
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261014p',
   '/js/fx.js?v=20261014o',
   '/js/upload.js?v=20261014o',
   '/js/social.js?v=20261014o',
-  '/js/personal.js?v=20261027b',
-  '/js/message-export.js?v=20261027b',
+  '/js/personal.js?v=20261027c',
+  '/js/message-export.js?v=20261027c',
   '/js/cursor.js?v=20261014o',
   '/js/preview.js?v=20261014o',
   '/js/collections.js?v=20261014o',
@@ -169,7 +169,7 @@ function replayUpload(item) {
     const response = await fetch('/api/rooms/' + encodeURIComponent(roomId) + '/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content })
+      body: JSON.stringify({ content, reply_to_id: item.replyToId || null })
     });
     if (!response.ok) throw new Error('Arquivo enviado, mas não foi possível publicá-lo no chat (' + response.status + ')');
     item.stage = 'complete';

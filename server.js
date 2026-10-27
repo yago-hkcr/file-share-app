@@ -185,6 +185,10 @@ async function one(text, params = []) {
 const num = v => Number(v) || 0;
 const ts = () => new Date().toISOString().slice(0, 19).replace('T', ' '); // UTC "YYYY-MM-DD HH:MM:SS"
 const isUnique = e => e && (e.code === '23505' || /unique|duplicate/i.test(String(e.message)));
+function messageContent(body) {
+  const value = body && body.content;
+  return value == null ? '' : String(value);
+}
 
 function cleanPersonalLibraryName(value) {
   return String(value || '').replace(/[\\/\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -3228,8 +3232,8 @@ app.get('/api/rooms/:id/messages', requireAuth, wrap(async (req, res) => {
 
 app.post('/api/rooms/:id/messages', asMember, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Entre na sala para enviar mensagens' });
-  const content = String((req.body && req.body.content) || '').trim().slice(0, 1000);
-  if (!content) return res.status(400).json({ error: 'Mensagem vazia' });
+  const content = messageContent(req.body);
+  if (!content.trim()) return res.status(400).json({ error: 'Mensagem vazia' });
   const replyTo = String((req.body && req.body.reply_to_id) || '').trim() || null;
   if (replyTo && !(await one('SELECT id FROM messages WHERE id = $1 AND room_id = $2', [replyTo, req.params.id]))) return res.status(400).json({ error: 'A mensagem escolhida para responder não está mais disponível.' });
   const id = uuidv4();
@@ -3480,8 +3484,8 @@ app.get('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
 
 app.post('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
   const friend = await directFriend(req, res); if (!friend) return;
-  const content = String((req.body && req.body.content) || '').trim().slice(0, 1000);
-  if (!content) return res.status(400).json({ error: 'Mensagem vazia.' });
+  const content = messageContent(req.body);
+  if (!content.trim()) return res.status(400).json({ error: 'Mensagem vazia.' });
   const me = req.user.id;
   const replyTo = String((req.body && req.body.reply_to_id) || '').trim() || null;
   if (replyTo && !(await one(`SELECT id FROM direct_messages WHERE id = $1 AND

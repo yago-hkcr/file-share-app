@@ -15,10 +15,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014o">
   <link rel="stylesheet" href="/css/style.css?v=20261014c"><link rel="stylesheet" href="/css/onboarding.css?v=20261014c">
-  <link rel="stylesheet" href="/css/social.css?v=20261027b">
+  <link rel="stylesheet" href="/css/social.css?v=20261027c">
   <link rel="stylesheet" href="/css/collections.css?v=20261014c">
   <link rel="stylesheet" href="/css/library.css?v=20261026a">
-  <script src="/js/common.js?v=20261014c"></script><script src="/js/message-export.js?v=20261027b"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261014o" defer></script>
+  <script src="/js/common.js?v=20261027a"></script><script src="/js/message-export.js?v=20261027c"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261014o" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
     .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
@@ -80,7 +80,7 @@
   <script src="/js/gfx.js?v=20261014p"></script><script src="/js/fx.js?v=20261014o" defer></script>
   <link rel="stylesheet" href="/css/preview.css?v=20261014o">
   <link rel="stylesheet" href="/css/dashboard-redesign.css?v=20261014o">
-<link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261026a">
+<link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261027a">
 <link rel="stylesheet" href="/css/hacker-ui.css?v=20261014o">
 </head>
 <body class="app-page">
@@ -253,7 +253,7 @@
           <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
           <div id="roomReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="roomReplyName"></span></b><span id="roomReplyText"></span></span><button class="btn btn-outline" type="button" onclick="cancelRoomReply()" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div>
           <form id="messageForm" class="chat-compose" autocomplete="off">
-            <input id="messageInput" type="text" inputmode="text" enterkeyhint="send" autocapitalize="sentences" autocomplete="off" spellcheck="true" placeholder="Escreva uma mensagem... (Ctrl+V cola imagem)" maxlength="1000" required>
+            <textarea id="messageInput" rows="1" inputmode="text" enterkeyhint="send" autocapitalize="sentences" autocomplete="off" spellcheck="true" placeholder="Mensagem ou cole texto grande… (Enter envia · Shift+Enter quebra linha)" required></textarea>
             <input id="ocrFileInput" type="file" accept="image/*" hidden>
             <button id="attachFileBtn" class="btn btn-outline attach-button" type="button" title="Anexar arquivos" aria-label="Anexar arquivos"><i class="fas fa-paperclip"></i></button>
             <button id="ocrButton" class="btn btn-outline ocr-button" type="button" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button>
@@ -525,36 +525,38 @@
     async function sendFiles(list, options) {
       options = options || {};
       const chatOnly = !!options.chatOnly;
+      const targetRoomId = options.roomId || currentRoom;
       const files = Array.from(list);
-      if (!files.length || !currentRoom) return;
+      if (!files.length || !targetRoomId) return false;
       const status = document.getElementById('uploadStatus'), bar = document.getElementById('uploadBar'), fill = document.getElementById('uploadBarFill');
       bar.style.display = 'block'; fill.style.width = '0%';
       try {
-        const result = await uploadToRoom(currentRoom, files, text => { status.textContent = text; const m = text.match(/(\d+)%$/); if (m) fill.style.width = m[1] + '%'; }, { chatOnly });
+        const result = await uploadToRoom(targetRoomId, files, text => { status.textContent = text; const m = text.match(/(\d+)%$/); if (m) fill.style.width = m[1] + '%'; }, { chatOnly });
         const warn = skippedMessage(result);
         if (result.sent) toast(result.sent === 1 ? 'Arquivo enviado' : result.sent + ' arquivos enviados');
         if (warn) toast(warn, 'error');
         status.textContent = result.sent ? 'Envio concluído' : '';
         fill.style.width = result.sent ? '100%' : '0%';
-        loadFiles(); loadRooms();
+        if (currentRoom === targetRoomId) loadFiles();
+        loadRooms();
         if (chatOnly && result.files && result.files.length) {
           for (const f of result.files) {
             if (f.pending) continue; // o Service Worker publicará a referência quando concluir o envio
             const token = '[[file:' + f.id + '|' + (f.name || 'arquivo') + '|' + (f.mime || '') + ']]';
             try {
-              await api('/api/rooms/' + encodeURIComponent(currentRoom) + '/messages', {
+              await api('/api/rooms/' + encodeURIComponent(targetRoomId) + '/messages', {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ content: token })
+                body: JSON.stringify({ content: token, reply_to_id: options.replyToId || null })
               });
             } catch (e) { }
           }
-          lastChatSig = '';
-          await loadMessages(true);
+          if (currentRoom === targetRoomId) { lastChatSig = ''; await loadMessages(true); }
         }
-      } catch (error) { status.textContent = ''; toast(error.message, 'error'); }
-      setTimeout(() => { if (!/Enviando/.test(status.textContent)) { bar.style.display = 'none'; status.textContent = ''; } }, 2500);
+        return result.sent > 0;
+      } catch (error) { status.textContent = ''; toast(error.message, 'error'); return false; }
+      finally { setTimeout(() => { if (!/Enviando/.test(status.textContent)) { bar.style.display = 'none'; status.textContent = ''; } }, 2500); }
     }
     document.getElementById('uploadForm').addEventListener('submit', event => event.preventDefault());
     document.getElementById('fileInput').addEventListener('change', event => { const files = Array.from(event.target.files); event.target.value = ''; sendFiles(files); });
@@ -584,26 +586,42 @@
         document.getElementById('messageForm').requestSubmit();
       }
     });
+    function resizeMessageComposer() {
+      messageInput.style.height = 'auto';
+      messageInput.style.height = Math.min(messageInput.scrollHeight, 180) + 'px';
+      messageInput.style.overflowY = messageInput.scrollHeight > 180 ? 'auto' : 'hidden';
+    }
+    messageInput.addEventListener('input', resizeMessageComposer);
     let sendingRoomMessage = false;
     async function sendRoomMessage(event) {
       if (event) event.preventDefault();
       const input = document.getElementById('messageInput');
       const button = document.getElementById('chatSendBtn');
       const roomId = currentRoom;
-      const content = input ? input.value.trim() : '';
-      if (!roomId || !content || sendingRoomMessage) return;
+      const content = input ? input.value : '';
+      if (!roomId || !content.trim() || sendingRoomMessage) return;
       sendingRoomMessage = true;
       if (button) { button.disabled = true; button.classList.add('is-loading'); }
       stopRoomTyping();
       try {
+        const longMessage = window.createLongMessageFile(content);
+        const replyToId = roomReplyTo && roomReplyTo.id;
+        if (longMessage) {
+          toast(window.describeLongMessage(content), 'info');
+          const sent = await sendFiles([longMessage.file], { chatOnly: true, roomId, replyToId });
+          if (!sent) return;
+          if (input.value === content) { input.value = ''; resizeMessageComposer(); }
+          if ((roomReplyTo && roomReplyTo.id || null) === (replyToId || null)) cancelRoomReply();
+          return;
+        }
         await api('/api/rooms/' + encodeURIComponent(roomId) + '/messages', {
           method:'POST',
           credentials:'same-origin',
           headers:{'Content-Type':'application/json','Accept':'application/json'},
-          body:JSON.stringify({content, reply_to_id:roomReplyTo && roomReplyTo.id})
+          body:JSON.stringify({content, reply_to_id:replyToId})
         });
-        input.value = '';
-        cancelRoomReply();
+        if (input.value === content) { input.value = ''; resizeMessageComposer(); }
+        if ((roomReplyTo && roomReplyTo.id || null) === (replyToId || null)) cancelRoomReply();
         lastChatSig = '';
         await loadMessages(true);
       } catch (error) {
@@ -686,7 +704,7 @@
     });
   </script>
   <script src="/js/social.js?v=20261014o"></script>
-  <script src="/js/personal.js?v=20261027b"></script>
+  <script src="/js/personal.js?v=20261027c"></script>
   <script src="/js/cursor.js?v=20261014o"></script>
   <script src="/js/preview.js?v=20261014o"></script>
   <script src="/js/collections.js?v=20261014o"></script>
