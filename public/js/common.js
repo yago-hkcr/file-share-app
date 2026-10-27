@@ -4,7 +4,7 @@
   const root = document.documentElement;
   const systemTheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   const saved = (() => { try { return localStorage.getItem(KEY); } catch (e) { return null; } })();
-  const normalizeTheme = theme => ['system', 'light', 'dark'].includes(theme) ? theme : 'system';
+  const normalizeTheme = theme => ['system', 'light', 'dark'].includes(theme) ? theme : 'dark';
   let preference = normalizeTheme(saved);
 
   function applyTheme(theme) {

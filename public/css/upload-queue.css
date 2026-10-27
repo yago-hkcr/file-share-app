@@ -1,0 +1,29 @@
+.fs-upload-launcher { position: fixed; z-index: 1800; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 9px 14px; border: 1px solid var(--line, #39453e); border-radius: 999px; background: var(--surface, #111713); color: var(--ink, #f3f7f4); box-shadow: 0 8px 28px rgba(0,0,0,.28); font: inherit; font-weight: 700; cursor: pointer; }
+.fs-upload-launcher:hover { border-color: var(--cy, #35f28b); }
+.fs-upload-launcher.has-failure { border-color: #f87171; }
+.fs-upload-count { display: inline-grid; min-width: 21px; height: 21px; padding: 0 5px; place-items: center; border-radius: 999px; background: var(--cy, #35f28b); color: #07120b; font-size: 11px; }
+.fs-upload-launcher.has-failure .fs-upload-count { background: #ef4444; color: #fff; }
+.fs-upload-panel { position: fixed; z-index: 1801; right: max(18px, env(safe-area-inset-right)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 56px); display: flex; flex-direction: column; width: min(440px, calc(100vw - 24px)); max-height: min(65vh, 540px); overflow: hidden; border: 1px solid var(--line, #39453e); border-radius: 16px; background: var(--surface, #111713); color: var(--ink, #f3f7f4); box-shadow: 0 18px 54px rgba(0,0,0,.38); }
+.fs-upload-panel[hidden] { display: none; }
+.fs-upload-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; border-bottom: 1px solid var(--line, #39453e); }
+.fs-upload-panel-head > div:first-child { display: grid; gap: 3px; }
+.fs-upload-panel-head strong { display: flex; align-items: center; gap: 8px; }
+.fs-upload-panel-head small, .fs-upload-item small { color: var(--muted, #9eaaa2); font-size: 12px; }
+.fs-upload-panel-actions { display: flex; align-items: center; gap: 8px; }
+.fs-upload-clear, .fs-upload-close { border: 0; background: transparent; color: var(--ink, #f3f7f4); cursor: pointer; }
+.fs-upload-clear { color: var(--muted, #9eaaa2); font: inherit; font-size: 12px; }
+.fs-upload-clear[hidden] { display: none; }
+.fs-upload-close { width: 34px; height: 34px; border-radius: 8px; font-size: 22px; }
+.fs-upload-list { display: grid; gap: 8px; padding: 10px; overflow: auto; overscroll-behavior: contain; }
+.fs-upload-item { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line, #39453e); border-radius: 12px; background: color-mix(in srgb, var(--surface, #111713) 88%, var(--ink, #fff) 12%); }
+.fs-upload-file-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: rgba(53,242,139,.12); color: var(--cy, #35f28b); }
+.fs-upload-item.is-failed .fs-upload-file-icon, .fs-upload-error { color: #f87171 !important; }
+.fs-upload-item.is-done .fs-upload-file-icon { color: #4ade80; }
+.fs-upload-item-body { display: grid; min-width: 0; gap: 3px; }
+.fs-upload-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.fs-upload-item progress { width: 100%; height: 6px; accent-color: var(--cy, #35f28b); }
+.fs-upload-percent { justify-self: end; }
+.fs-upload-retry { grid-column: 2 / 4; justify-self: end; min-height: 36px; padding: 6px 10px; border: 1px solid rgba(248,113,113,.45); border-radius: 8px; background: rgba(248,113,113,.1); color: #fca5a5; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.fs-upload-empty { margin: 0; padding: 18px; color: var(--muted, #9eaaa2); text-align: center; font-size: 13px; }
+html:not([data-theme="dark"]) .fs-upload-panel { --surface: #fff; --ink: #252525; --muted: #686868; --line: #dedede; }
+@media (max-width: 520px) { .fs-upload-launcher { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); } .fs-upload-panel { right: 12px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 54px); width: calc(100vw - 24px); max-height: 58vh; } }

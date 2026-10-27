@@ -7,9 +7,10 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v3';
+const CACHE_NAME = 'fileshare-v4';
 const ASSETS = [
   '/css/social.css?v=20261027c',
+  '/css/upload-queue.css?v=20261027a',
   '/css/style.css?v=20261014o',
   '/css/mobile.css?v=20261014o',
   '/css/adaptive.css?v=20261014b',
@@ -17,19 +18,21 @@ const ASSETS = [
   '/css/fx.css?v=20261014o',
   '/css/preview.css?v=20261014o',
   '/css/hacker-ui.css?v=20261014o',
-  '/js/common.js?v=20261027a',
+  '/js/common.js?v=20261027b',
   '/js/adaptive.js?v=20261014a',
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261014p',
   '/js/fx.js?v=20261014o',
-  '/js/upload.js?v=20261014o',
+  '/js/upload-queue.js?v=20261027a',
+  '/js/upload.js?v=20261027a',
   '/js/social.js?v=20261014o',
-  '/js/personal.js?v=20261027c',
+  '/js/personal.js?v=20261027d',
   '/js/message-export.js?v=20261027c',
   '/js/cursor.js?v=20261014o',
   '/js/preview.js?v=20261014o',
-  '/js/collections.js?v=20261014o',
-  '/js/library.js?v=20261014o',
+  '/js/collections.js?v=20261027a',
+  '/js/collection-upload.js?v=20261027a',
+  '/js/library.js?v=20261027a',
   '/js/dashboard-shell.js?v=20261014o',
   '/js/announce.js?v=20261014o',
   '/js/cyber.js?v=20261014o',
@@ -242,11 +245,11 @@ async function processUploadQueue() {
       await removePendingUpload(item.id);
       const clients = await self.clients.matchAll({ includeUncontrolled: true });
       // Não divulgar nome, sala ou dono da fila a outras sessões abertas na mesma origem.
-      clients.forEach(c => c.postMessage({ type: 'fs-upload-done' }));
+      clients.forEach(c => c.postMessage({ type: 'fs-upload-done', id: item.id }));
     } catch (err) {
       console.warn('[SW] Upload falhou, mantendo na fila:', item.id, err.message);
       const clients = await self.clients.matchAll({ includeUncontrolled: true });
-      clients.forEach(c => c.postMessage({ type: 'fs-upload-failed' }));
+      clients.forEach(c => c.postMessage({ type: 'fs-upload-failed', id: item.id }));
       firstFailure = firstFailure || err;
     }
   }
