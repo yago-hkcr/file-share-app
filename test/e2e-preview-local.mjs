@@ -63,6 +63,27 @@ try {
   if (!res.ok) { console.error('sala resposta:', res.status, (await res.text()).slice(0, 300)); }
   check(res.ok, 'criação de sala');
   const room = res.ok ? await res.json() : { id: '' };
+  // Mensagens longas preservam a estrutura original e não são truncadas na API.
+  const roomLongContent = '  início  \r\n\tlinha indentada\n\n' + 'á🙂'.repeat(7000) + '\n fim  ';
+  res = await fetch(`${BASE}/api/rooms/${room.id}/messages`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },
+    body: JSON.stringify({ content: roomLongContent })
+  });
+  const roomLongMessage = res.ok ? await res.json() : null;
+  check(res.ok && roomLongMessage?.content === roomLongContent,
+    'API da sala aceita mais de 12.000 caracteres sem truncar ou normalizar espaços e quebras de linha');
+  const me = await (await fetch(`${BASE}/api/me`, { headers: { cookie: cookies, ...ORIGIN } })).json();
+  const directLongContent = '  SELECT *\r\n\tFROM teste;\n\n' + 'conteúdo🙂'.repeat(4000) + '  ';
+  res = await fetch(`${BASE}/api/dm/${me.id}/messages`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },
+    body: JSON.stringify({ content: directLongContent })
+  });
+  const directLongResult = res.ok ? await res.json() : null;
+  const directHistoryResponse = await fetch(`${BASE}/api/dm/${me.id}/messages`, { headers: { cookie: cookies, ...ORIGIN } });
+  const directHistory = directHistoryResponse.ok ? await directHistoryResponse.json() : [];
+  const directLongMessage = directHistory.find(message => message.id === directLongResult?.id);
+  check(res.ok && directLongMessage?.content === directLongContent,
+    'API da conversa direta aceita mais de 12.000 caracteres sem truncar ou normalizar espaços e quebras de linha');
   // 3) envia um arquivo pequeno (texto) e uma imagem
   const sendFile = async (name, mime, buffer) => {
     const form = new FormData();

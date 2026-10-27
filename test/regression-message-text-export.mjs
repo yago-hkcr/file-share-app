@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const exporterSource = readFileSync(path.join(ROOT, 'public', 'js', 'message-export.js'), 'utf8');
+const commonSource = readFileSync(path.join(ROOT, 'public', 'js', 'common.js'), 'utf8');
 const dashboard = readFileSync(path.join(ROOT, 'public', 'dashboard.html'), 'utf8');
 const directChat = readFileSync(path.join(ROOT, 'public', 'js', 'personal.js'), 'utf8');
 const styles = readFileSync(path.join(ROOT, 'public', 'css', 'social.css'), 'utf8');
@@ -75,6 +76,50 @@ for (const scope of ['room', 'direct']) {
 check(context.window.createMessageTextFileById('room', 'inexistente') === null,
   'não cria anexo se a mensagem original não está disponível');
 
+const longText = '  prompt:\r\n\t preserve tabs, indentation and blank lines\r\n\r\n' + 'á'.repeat(13000) + '\n trailing spaces  ';
+const classificationCases = [
+  ['```javascript\nconst answer = 42;\n```\n' + ' '.repeat(12001), 'code', 'js'],
+  ['```java\npublic class Demo {}\n```\n' + ' '.repeat(12001), 'code', 'java'],
+  ['<!doctype html>\n<html>\n</html>\n' + ' '.repeat(12001), 'code', 'html'],
+  ['.card {\n  color: green;\n}\n' + ' '.repeat(12001), 'code', 'css'],
+  ['SELECT id FROM users WHERE active = true;\n' + ' '.repeat(12001), 'code', 'sql'],
+  ['Você é um assistente. Sua tarefa é preservar a saída solicitada.\n' + ' contexto'.repeat(1500), 'prompt', 'txt'],
+  ['Texto comum com parágrafos.\n\n' + 'mais texto '.repeat(1200), 'text', 'txt']
+];
+for (const [source, kind, extension] of classificationCases) {
+  const detected = context.window.classifyLongMessage(source);
+  check(detected.isLong && detected.kind === kind && detected.extension === extension,
+    'detecta conteúdo ' + kind + ' como .' + extension);
+}
+check(!context.window.classifyLongMessage('á'.repeat(12000)).isLong && context.window.classifyLongMessage('á'.repeat(12001)).isLong,
+  'ativa o envio como anexo só acima de 12.000 caracteres Unicode');
+const longFile = context.window.createLongMessageFile(longText);
+check(longFile.file && await longFile.file.text() === longText,
+  'arquivo longo preserva exatamente espaços, tabs, CRLF, parágrafos e caracteres Unicode');
+const fencedSource = '```javascript\r\n  const answer = 42;\r\n\treturn answer;\r\n```\r\n' + ' '.repeat(12020);
+const fencedFile = context.window.createLongMessageFile(fencedSource);
+check(fencedFile.extension === 'js' && await fencedFile.file.text() === '  const answer = 42;\r\n\treturn answer;',
+  'código cercado vira arquivo .js sem marcadores Markdown e preserva recuo, tab e CRLF do código');
+check(context.window.createLongMessageFile('mensagem curta') === null,
+  'mensagens curtas seguem como mensagem normal, sem conversão para arquivo');
+
+let pasteHandler;
+const pasteDocument = { addEventListener(type, handler) { if (type === 'paste') pasteHandler = handler; } };
+const pasteWindow = {};
+const pasteFeature = commonSource.match(/window\.enablePaste = function \(onFiles\) \{[\s\S]*?\n  \};/);
+check(!!pasteFeature, 'localiza o handler existente de colagem de arquivos');
+if (pasteFeature) vm.runInNewContext(pasteFeature[0], { window: pasteWindow, document: pasteDocument, File, URL, Date });
+let pastedFilesHandled = false;
+if (pasteWindow.enablePaste) pasteWindow.enablePaste(() => { pastedFilesHandled = true; });
+let pastePrevented = false;
+pasteHandler({
+  target: { closest: selector => selector.includes('messageInput') ? {} : null },
+  clipboardData: { getData: type => type === 'text/plain' ? longText : '', files: [] },
+  preventDefault() { pastePrevented = true; }
+});
+check(!pastePrevented && !pastedFilesHandled,
+  'colagem de texto nos compositores permanece nativa para preservar estrutura e cursor');
+
 check(dashboard.includes('class="message-export-trigger message-action-button"') && dashboard.includes('window.downloadMessageTextById(') && dashboard.includes('data-export-scope="room"'),
   'chat da sala oferece a ação de salvar TXT');
 check(dashboard.includes('class="message-send-text-trigger message-action-button"') && dashboard.includes('data-send-text-scope="room"') && dashboard.includes('sendFiles([file], { chatOnly: true })'),
@@ -83,10 +128,19 @@ check(directChat.includes('class="message-export-trigger message-action-button"'
   'conversa direta oferece a ação de salvar TXT');
 check(directChat.includes('class="message-send-text-trigger message-action-button"') && directChat.includes('data-send-text-scope="direct"') && directChat.includes('window.uploadToDm(friendId, [file]'),
   'conversa direta oferece enviar o TXT como anexo pelo fluxo de upload da DM');
+check(dashboard.includes('textarea id="messageInput"') && directChat.includes('textarea id="directMessageInput"') &&
+  !dashboard.includes('maxlength="1000"') && !directChat.includes('maxlength="1000"') &&
+  dashboard.includes('Enter envia · Shift+Enter quebra linha') && directChat.includes('Enter envia · Shift+Enter quebra linha'),
+  'os dois compositores aceitam texto multilinha sem maxlength e mantêm atalhos explícitos');
+check(dashboard.includes('window.createLongMessageFile(content)') && directChat.includes('window.createLongMessageFile(content)') &&
+  exporterSource.includes('LONG_MESSAGE_THRESHOLD = 12000'),
+  'ambos os chats encaminham automaticamente textos longos pela classificação/anexo');
+check(/white-space:\s*pre-wrap/.test(styles) && /\.chat-compose textarea[\s\S]*?white-space:\s*pre-wrap/.test(styles),
+  'mensagem recebida e compositor exibem as quebras de linha originais');
 check(/\.msg-actions[\s\S]*?flex-wrap:\s*wrap/.test(styles) && /@media \(hover:\s*none\), \(max-width:\s*640px\)[\s\S]*?min-height:\s*42px/.test(styles),
   'controles permanecem alcançáveis em telas pequenas e toque');
-check(dashboard.includes('/js/message-export.js?v=20261027b') && dashboard.includes('/js/personal.js?v=20261027b') && dashboard.includes('/css/social.css?v=20261027b') &&
-  serviceWorker.includes("'/js/message-export.js?v=20261027b'") && serviceWorker.includes("'/js/personal.js?v=20261027b'") && serviceWorker.includes("'/css/social.css?v=20261027b'"),
+check(dashboard.includes('/js/common.js?v=20261027a') && dashboard.includes('/js/message-export.js?v=20261027c') && dashboard.includes('/js/personal.js?v=20261027c') && dashboard.includes('/css/social.css?v=20261027c') && dashboard.includes('/css/mobile-scroll-fix.css?v=20261027a') &&
+  serviceWorker.includes("'/js/common.js?v=20261027a'") && serviceWorker.includes("'/js/message-export.js?v=20261027c'") && serviceWorker.includes("'/js/personal.js?v=20261027c'") && serviceWorker.includes("'/css/social.css?v=20261027c'") && serviceWorker.includes("'/css/mobile-scroll-fix.css?v=20261027a'"),
   'service worker pré-carrega os assets novos com versões atualizadas');
 
 const inlineScripts = [...dashboard.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]

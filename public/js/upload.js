@@ -199,6 +199,7 @@
             size: file.size,
             mime: file.type,
             chatOnly: !!options.chatOnly,
+            replyToId: options.replyToId || null,
             ownerId: String(document.body.dataset.userId || '')
           };
           try {
