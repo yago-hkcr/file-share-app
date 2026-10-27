@@ -166,9 +166,18 @@
     const files = Array.from(event.target.files || []); event.target.value = '';
     if (!files.length || !activeFriend) return;
     try {
-      const result = await window.uploadToDm(activeFriend.id, files, text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); });
+      const targetId = activeFriend.id;
+      const replyToId = dmReply && dmReply.id;
+      const result = await window.uploadToDm(targetId, files, text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); }, {
+        onFileSuccess: async (uploaded, file) => {
+          for (const entry of (uploaded.files || [])) {
+            const token = '[[file:' + entry.id + '|' + (entry.name || file.name) + '|' + (entry.mime || file.type || '') + ']]';
+            await post('/api/dm/' + encodeURIComponent(targetId) + '/messages', { content: token, reply_to_id: replyToId });
+          }
+        }
+      });
       const warn = window.skippedMessage ? window.skippedMessage(result) : '';
-      if (result.sent) { for (const f of (result.files || [])) { const token = '[[file:' + f.id + '|' + (f.name || 'arquivo') + '|' + (f.mime || '') + ']]'; await post('/api/dm/' + encodeURIComponent(activeFriend.id) + '/messages', { content: token, reply_to_id: dmReply && dmReply.id }); } }
+      if (result.failed && result.failed.length) toast(result.failed.length + (result.failed.length === 1 ? ' arquivo falhou. Veja a fila de envios para tentar novamente.' : ' arquivos falharam. Veja a fila de envios para tentar novamente.'), 'error');
       if (warn) toast(warn, 'error');
       await Promise.all([loadDmMessages(), loadDmFriends()]);
     } catch (e) { toast(e.message, 'error'); }
@@ -188,13 +197,17 @@
       const longMessage = window.createLongMessageFile(content);
       if (longMessage) {
         toast(window.describeLongMessage(content), 'info');
-        const result = await window.uploadToDm(targetId, [longMessage.file], text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); });
+          const result = await window.uploadToDm(targetId, [longMessage.file], text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); }, {
+            onFileSuccess: async uploaded => {
+              for (const entry of (uploaded.files || [])) {
+                const token = '[[file:' + entry.id + '|' + (entry.name || longMessage.file.name) + '|' + (entry.mime || longMessage.file.type || '') + ']]';
+                await post('/api/dm/' + encodeURIComponent(targetId) + '/messages', { content: token, reply_to_id: replyToId });
+              }
+            }
+          });
         const warn = window.skippedMessage ? window.skippedMessage(result) : '';
         if (!result.sent) { if (warn) toast(warn, 'error'); return; }
-        for (const uploaded of (result.files || [])) {
-          const token = '[[file:' + uploaded.id + '|' + (uploaded.name || 'arquivo') + '|' + (uploaded.mime || '') + ']]';
-          await post('/api/dm/' + encodeURIComponent(targetId) + '/messages', { content: token, reply_to_id: replyToId });
-        }
+          if (result.failed && result.failed.length) toast(result.failed.length + ' arquivo falhou. Veja a fila de envios para tentar novamente.', 'error');
         if (input.value === content) { input.value = ''; resizeDirectComposer(); }
         if ((dmReply && dmReply.id || null) === (replyToId || null)) clearDmReply();
         await Promise.all([loadDmMessages(), loadDmFriends()]);
@@ -291,12 +304,12 @@
     });
   }
 
-  const defaults = { theme: 'system', compact_mode: false, reduced_motion: false, refresh_seconds: 2, browser_notifications: false };
+  const defaults = { theme: 'dark', compact_mode: false, reduced_motion: false, refresh_seconds: 2, browser_notifications: false };
   window.fileSharePreferences = { ...defaults };
   let preferencesReady = false, queuedTheme = null;
   let themeSaveQueue = Promise.resolve();
   window.addEventListener('fileshare:theme-change', event => {
-    const theme = ['system', 'light', 'dark'].includes(event.detail && event.detail.theme) ? event.detail.theme : 'system';
+    const theme = ['system', 'light', 'dark'].includes(event.detail && event.detail.theme) ? event.detail.theme : 'dark';
     if (!preferencesReady) { queuedTheme = theme; return; }
     window.fileSharePreferences.theme = theme;
     themeSaveQueue = themeSaveQueue.catch(() => {}).then(() => post('/api/preferences', window.fileSharePreferences, 'PUT')).catch(() => {});
@@ -318,7 +331,8 @@
   }
   async function loadPreferences() {
     try {
-      const prefs = await api('/api/preferences'); if (!prefs.has_preferences) prefs.theme = defaults.theme;
+      const prefs = await api('/api/preferences');
+      if (!prefs.has_preferences) prefs.theme = document.documentElement.getAttribute('data-theme-preference') || defaults.theme;
       if (queuedTheme) { prefs.theme = queuedTheme; }
       applyPreferences(prefs); preferencesReady = true;
       if (queuedTheme) { window.fileSharePreferences.theme = queuedTheme; themeSaveQueue = themeSaveQueue.catch(() => {}).then(() => post('/api/preferences', window.fileSharePreferences, 'PUT')).catch(() => {}); queuedTheme = null; }

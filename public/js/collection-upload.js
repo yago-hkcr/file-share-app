@@ -2,6 +2,7 @@
   const root = document.getElementById('collectionPublicRoot');
   const token = window.location.pathname.split('/').filter(Boolean).pop() || '';
   const base = '/api/coletas/enviar/' + encodeURIComponent(token);
+  const failedRetries = new Map();
   const COLLECTION_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
   const UPLOAD_STALE_MS = 90 * 1000;
   const UPLOAD_STALL_TIMEOUT_MS = 90 * 1000;
@@ -103,7 +104,7 @@
     return file.status === 'uploading' && Number.isFinite(timestamp) && Date.now() - timestamp < UPLOAD_STALE_MS;
   }
   function selectedFiles(itemId) { return pendingFiles.map((entry, index) => ({ ...entry, index })).filter(entry => entry.itemId === itemId); }
-  function itemFileCount(itemId) { return readyUploads(itemId).length + selectedFiles(itemId).length; }
+    const saved = readyUploads(itemId).length + selectedFiles(itemId).length;
   function requestedQuantity(item) { return Math.max(1, Number(item.quantity) || 1); }
   function missingRequired() {
     return collection.items.filter(item => Number(item.required) && itemFileCount(item.id) < requestedQuantity(item));
@@ -153,6 +154,7 @@
       '<div class="collection-deadline"><i class="fas fa-clock"></i><span>Prazo <strong>' + esc(dateLabel(collection.expires_at)) + '</strong></span><span class="collection-deadline-separator"></span><span>Limite <strong>' + sizeLabel(collection.max_upload_bytes) + '</strong> por arquivo</span></div>' +
       '<div class="collection-request-list">' + collection.items.map(itemMarkup).join('') + '</div>' +
       (reviewing ? reviewMarkup() : '') +
+      (pendingFiles.length ? '<div class="collection-selected-list collection-retry-list">' + pendingFiles.map((entry, index) => '<div class="collection-preview-card"><span class="collection-file-preview-info"><strong>' + esc(entry.file.name) + '</strong><small>' + esc(failedRetries.get(entry.file)?.message || 'Pronto para enviar') + '</small></span>' + (failedRetries.has(entry.file) ? '<button type="button" data-retry-collection="' + index + '"><i class="fas fa-rotate-right"></i> Tentar novamente</button>' : '') + '</div>').join('') + '</div>' : '') +
       '<div class="collection-upload-progress" id="collectionUploadProgress" aria-live="polite"></div>' +
       '<div class="collection-public-actions">' +
         (reviewing ? '<button class="btn btn-outline" type="button" data-back><i class="fas fa-arrow-left"></i> Voltar</button><button class="btn btn-primary" type="button" data-confirm ' + (requiredMissing.length || busy ? 'disabled' : '') + '><i class="fas fa-lock"></i> Confirmar envio</button>' : '<button class="btn btn-primary" type="button" data-review ' + (busy ? 'disabled' : '') + '><i class="fas fa-eye"></i> Revisar seleção ' + (savedCount ? '(' + savedCount + ' pronto' + (savedCount === 1 ? '' : 's') + ')' : '') + '</button>') +
@@ -177,10 +179,17 @@
   async function uploadOne(entry, onProgress) {
     if (!collection.blob_enabled) {
       const form = new FormData(); form.append('file', entry.file, entry.file.name); form.append('item_id', entry.itemId);
-      const response = await fetch(base + '/upload', { method: 'POST', body: form, credentials: 'same-origin', cache: 'no-store' });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || 'Não foi possível enviar ' + entry.file.name + '.');
-      return data;
+      return await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest(); xhr.open('POST', base + '/upload');
+        xhr.upload.onprogress = event => { if (event.lengthComputable) onProgress(Math.round(event.loaded / event.total * 100)); };
+        xhr.onload = () => {
+          const data = (() => { try { return JSON.parse(xhr.responseText || '{}'); } catch (_) { return {}; } })();
+          if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+          else reject(new Error(data.error || 'Não foi possível enviar ' + entry.file.name + '.'));
+        };
+        xhr.onerror = () => reject(new Error('Falha de rede durante o envio.'));
+        xhr.send(form);
+      });
     }
     const reserved = await api(base + '/reservar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       item_id: entry.itemId, name: entry.file.name, size: entry.file.size, mime: entry.file.type
@@ -270,15 +279,39 @@
     busy = true; render();
     try {
       const queue = pendingFiles.slice();
+      let failed = 0;
       for (let index = 0; index < queue.length; index++) {
         const entry = queue[index];
-        const progress = document.getElementById('collectionUploadProgress');
-        const update = percent => { if (progress) progress.textContent = 'Enviando ' + entry.file.name + (percent == null ? '…' : ' · ' + percent + '%'); };
-        update(0);
-        await uploadOne(entry, update);
-        const queuedIndex = pendingFiles.findIndex(item => item.file === entry.file && item.itemId === entry.itemId);
-        if (queuedIndex >= 0) pendingFiles.splice(queuedIndex, 1);
-        URL.revokeObjectURL(entry.previewUrl);
+        const item = collection.items.find(candidate => candidate.id === entry.itemId);
+        const result = await window.FileShareUploadQueue.run(
+          entry.file,
+          'Coleta: ' + (item ? item.label : 'Arquivo'),
+          percent => {
+            const progress = document.getElementById('collectionUploadProgress');
+            if (progress) progress.textContent = 'Enviando (' + (index + 1) + '/' + queue.length + ') ' + entry.file.name + ' · ' + percent + '%';
+          },
+          percent => uploadOne(entry, percent),
+          { id: entry.queueId, onSuccess: async () => {
+            const queuedIndex = pendingFiles.findIndex(candidate => candidate.file === entry.file && candidate.itemId === entry.itemId);
+            if (queuedIndex >= 0) pendingFiles.splice(queuedIndex, 1);
+            failedRetries.delete(entry.file);
+            URL.revokeObjectURL(entry.previewUrl);
+            collectionSignature = '';
+            try { await loadState(); } catch (_) {}
+          } }
+        );
+        entry.queueId = result.id;
+        if (!result.ok) { failedRetries.set(entry.file, result.error || new Error('Falha no envio.')); failed++; }
+        else failedRetries.delete(entry.file);
+      }
+      if (failed) {
+        busy = false;
+        reviewing = false;
+        collectionSignature = '';
+        try { await loadState(); } catch (_) {}
+        render();
+        showMessage(failed + (failed === 1 ? ' arquivo falhou. Tente novamente pela fila de envios e depois revise a seleção.' : ' arquivos falharam. Tente novamente pela fila de envios e depois revise a seleção.'));
+        return;
       }
       const progress = document.getElementById('collectionUploadProgress'); if (progress) progress.textContent = 'Confirmando o envio…';
       stopAccessHeartbeat();
@@ -349,6 +382,29 @@
     event.preventDefault(); zone.classList.remove('is-dragging'); addFiles(zone.dataset.dropItem, event.dataTransfer.files);
   });
   root.addEventListener('click', async event => {
+    const retryCollection = event.target.closest('[data-retry-collection]');
+    if (retryCollection) {
+      const entry = pendingFiles[Number(retryCollection.dataset.retryCollection)];
+      if (!entry || busy) return;
+      const item = collection.items.find(candidate => candidate.id === entry.itemId);
+      const result = await window.FileShareUploadQueue.run(entry.file, 'Coleta: ' + (item ? item.label : 'Arquivo'), percent => {
+        const progress = document.getElementById('collectionUploadProgress');
+        if (progress) progress.textContent = 'Reenviando ' + entry.file.name + ' · ' + percent + '%';
+      }, percent => uploadOne(entry, percent), { id: entry.queueId, onSuccess: async () => {
+        const queuedIndex = pendingFiles.findIndex(candidate => candidate.file === entry.file && candidate.itemId === entry.itemId);
+        if (queuedIndex >= 0) pendingFiles.splice(queuedIndex, 1);
+        failedRetries.delete(entry.file);
+        URL.revokeObjectURL(entry.previewUrl);
+        collectionSignature = '';
+        try { await loadState(); } catch (_) {}
+        render();
+      } });
+      entry.queueId = result.id;
+      if (!result.ok) { failedRetries.set(entry.file, result.error || new Error('Falha no envio.')); showMessage(result.error.message); }
+      else { failedRetries.delete(entry.file); showMessage('Arquivo enviado. Revise a seleção para concluir o envio.', true); }
+      render();
+      return;
+    }
     if (event.target.closest('[data-retry-access]')) {
       collectionSignature = '';
       root.innerHTML = '<div class="collection-complete"><i class="fas fa-spinner fa-spin"></i><h1>Verificando acesso</h1><p>Aguarde enquanto verificamos se o link está disponível.</p></div>';
@@ -364,7 +420,7 @@
       return;
     }
     const removeSelected = event.target.closest('[data-remove-selected]');
-    if (removeSelected) { const [removed] = pendingFiles.splice(Number(removeSelected.dataset.removeSelected), 1); if (removed) URL.revokeObjectURL(removed.previewUrl); render(); return; }
+    if (removeSelected) { const [removed] = pendingFiles.splice(Number(removeSelected.dataset.removeSelected), 1); if (removed) { failedRetries.delete(removed.file); URL.revokeObjectURL(removed.previewUrl); } render(); return; }
     const removeUpload = event.target.closest('[data-remove-upload]');
     if (removeUpload) {
       removeUpload.disabled = true;

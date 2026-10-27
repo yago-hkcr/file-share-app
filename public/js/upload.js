@@ -45,16 +45,30 @@
     return { status: response.status, ok: response.ok, data };
   }
 
-  async function legacyUpload(roomId, files) {
+  function postFormWithProgress(url, form, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      xhr.upload.onprogress = event => { if (event.lengthComputable && onProgress) onProgress(Math.round(event.loaded / event.total * 100)); };
+      xhr.onload = () => {
+        const data = (() => { try { return JSON.parse(xhr.responseText || '{}'); } catch (_) { return {}; } })();
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error(data.error || 'Erro ao enviar arquivos (' + xhr.status + ')'));
+      };
+      xhr.onerror = () => reject(new Error('Falha de rede durante o envio'));
+      xhr.send(form);
+    });
+  }
+
+  async function legacyUpload(roomId, files, onProgress) {
     const max = limitBytes || 4 * 1024 * 1024;
     const inserted = [];
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       if (file.size > max) throw new Error('Limite de ' + sizeLabel(max) + ' por arquivo neste ambiente.');
       const form = new FormData();
       form.append('files', file);
-      const response = await fetch('/api/rooms/' + roomId + '/files', { method: 'POST', body: form });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || 'Erro ao enviar arquivos');
+      const data = await postFormWithProgress('/api/rooms/' + roomId + '/files', form, onProgress && (percent => onProgress(i, percent)));
       if (Array.isArray(data)) inserted.push(...data);
       else if (data && data.id) inserted.push(data);
     }
@@ -120,7 +134,7 @@
   const _uploadInner = async function (roomId, fileList, onStatus, options) {
     options = options || {};
     let all = Array.from(fileList); // copia já: o <input> pode ser limpo logo depois
-    all = await window.confirmUpload(all);
+    if (!options.skipConfirm) all = await window.confirmUpload(all);
     if (!all) return { sent: 0, skipped: [], cancelled: true, files: [] };
     const say = onStatus || function () {};
     await limitReady;
@@ -136,6 +150,11 @@
       const file = files[i];
       const label = '(' + (i + 1) + '/' + files.length + ') ' + file.name;
       say('Enviando ' + label + '...');
+      const reportProgress = percent => {
+        const value = Math.max(0, Math.min(100, Number(percent) || 0));
+        say('Enviando ' + label + ' ' + value + '%');
+        if (typeof options.onProgress === 'function') options.onProgress(value);
+      };
       let pathname;
       let uploadUrl;
       let uploadCompleted = false;
@@ -152,7 +171,7 @@
             handleUploadUrl: '/api/rooms/' + roomId + '/upload-token',
             clientPayload: JSON.stringify({ size: file.size }),
             multipart: true,
-            onUploadProgress: event => say('Enviando ' + label + ' ' + Math.round(event.percentage) + '%')
+            onUploadProgress: event => reportProgress(event.percentage)
           });
           pathname = blob.pathname;
           uploadCompleted = true;
@@ -163,7 +182,7 @@
         const prep = await postJson('/api/rooms/' + roomId + '/upload-url', { name: file.name, size: file.size, type: file.type });
         if (prep.status === 501) {
           const rest = files.slice(i);
-          const inserted = await legacyUpload(roomId, rest);
+          const inserted = await legacyUpload(roomId, rest, (index, percent) => { if (index === 0) reportProgress(percent); });
           (inserted || []).forEach(item => uploaded.push({ id: item.id, name: item.original_name || item.name, size: item.size || 0, mime: item.mime_type || file.type || 'application/octet-stream' }));
           sent += rest.length;
           return { sent, skipped, files: uploaded };
@@ -174,7 +193,7 @@
         if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponivel).');
         uploadUrl = prep.data.presignedUrl;
         pathname = prep.data.pathname;
-        await putWithProgress(uploadUrl, file, percent => say('Enviando ' + label + ' ' + percent + '%'));
+        await putWithProgress(uploadUrl, file, reportProgress);
         uploadCompleted = true;
       }
       const done = await postJson('/api/rooms/' + roomId + '/files/register', {
@@ -185,7 +204,7 @@
       sent++;
       } catch (error) {
         const msg = String(error && error.message ? error.message : error);
-        const isNetwork = error.name === 'TypeError' || /failed to fetch|network|offline|failed to execute/i.test(msg);
+        const isNetwork = error.name === 'TypeError' || /rede|conexão|conexao|failed to fetch|network|offline|failed to execute/i.test(msg);
         if (isNetwork && ((bgKind === 'presigned' && uploadUrl && pathname) || (bgKind === 'multipart' && uploadCompleted && pathname))) {
           say('Sem conexão — arquivo enfileirado para confirmar quando voltar online.');
           const item = {
@@ -203,8 +222,8 @@
             ownerId: String(document.body.dataset.userId || '')
           };
           try {
-            await window.enqueueBackgroundUpload(item);
-            uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true });
+            const queueId = await window.enqueueBackgroundUpload(item);
+            uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
             sent++;
             continue;
           } catch (enqueueError) {
@@ -283,7 +302,7 @@
 
   // Alguns navegadores não implementam Background Sync. Neles, retoma a fila
   // quando a rede volta ou quando o painel é aberto novamente.
-  async function resumeQueuedUploads() {
+  async function resumeQueuedUploads(throwOnError) {
     if (!navigator.onLine || !navigator.serviceWorker) return;
     try {
       const registration = await navigator.serviceWorker.ready;
@@ -291,6 +310,7 @@
       else (navigator.serviceWorker.controller || registration.active)?.postMessage({ type: 'fs-process-uploads' });
     } catch (error) {
       console.warn('[Upload] Não foi possível retomar a fila offline:', error);
+      if (throwOnError) throw error;
     }
   }
   window.addEventListener('online', resumeQueuedUploads);
@@ -299,6 +319,7 @@
   if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', event => {
     if (!event.data) return;
     if (event.data.type === 'fs-upload-done') {
+      if (window.FileShareUploadQueue) window.FileShareUploadQueue.completeBackground(event.data.id);
       const message = 'Um upload em segundo plano foi concluído.';
       if (typeof window.toast === 'function') window.toast(message, 'success');
       else if (typeof window.showToast === 'function') window.showToast(message, 'success');
@@ -307,19 +328,22 @@
       const message = 'Um upload pendente precisa de atenção. Entre na conta que iniciou o envio e tente novamente.';
       if (typeof window.toast === 'function') window.toast(message, 'error');
       else if (typeof window.showToast === 'function') window.showToast(message, 'error');
+      if (window.FileShareUploadQueue) window.FileShareUploadQueue.failBackground(event.data.id, () => resumeQueuedUploads(true));
     }
   });
 
-  window.uploadToRoom = async function (roomId, fileList, onStatus, options) {
+  async function uploadToRoomDirect(roomId, fileList, onStatus, options) {
     window.__fsBusy++;
     try { return await _uploadInner(roomId, fileList, onStatus, options); }
     finally { window.__fsBusy = Math.max(0, window.__fsBusy - 1); }
-  };
-  window.uploadToDm = async function (friendId, fileList, onStatus) {
+  }
+
+  async function uploadToDmDirect(friendId, fileList, onStatus, options) {
+    options = options || {};
     window.__fsBusy++;
     try {
       let all = Array.from(fileList);
-      all = await window.confirmUpload(all);
+      if (!options.skipConfirm) all = await window.confirmUpload(all);
       if (!all) return { sent: 0, skipped: [], cancelled: true, files: [] };
       const say = onStatus || function () {};
       await limitReady;
@@ -335,10 +359,15 @@
         const file = files[i];
         const label = '(' + (i + 1) + '/' + files.length + ') ' + file.name;
         say('Enviando ' + label + '...');
+        const reportProgress = percent => {
+          const value = Math.max(0, Math.min(100, Number(percent) || 0));
+          say('Enviando ' + label + ' ' + value + '%');
+          if (typeof options.onProgress === 'function') options.onProgress(value);
+        };
         const prep = await postJson('/api/dm/' + friendId + '/upload-url', { name: file.name, size: file.size, type: file.type });
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
         if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponível).');
-        await putWithProgress(prep.data.presignedUrl, file, percent => say('Enviando ' + label + ' ' + percent + '%'));
+        await putWithProgress(prep.data.presignedUrl, file, reportProgress);
         const done = await postJson('/api/dm/' + friendId + '/files/register', { pathname: prep.data.pathname, name: file.name, size: file.size, mime: file.type });
         if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
         uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: file.type || 'application/octet-stream' });
@@ -346,5 +375,58 @@
       }
       return { sent, skipped, files: uploaded };
     } finally { window.__fsBusy = Math.max(0, window.__fsBusy - 1); }
+  }
+
+  async function uploadWithQueue(fileList, destination, onStatus, options, operation) {
+    options = options || {};
+    let files = Array.from(fileList || []);
+    if (!options.skipConfirm) files = await window.confirmUpload(files);
+    if (!files) return { sent: 0, skipped: [], failed: [], cancelled: true, files: [] };
+    await limitReady;
+    const eligible = [], skipped = [];
+    for (const file of files) {
+      if (!file.size) skipped.push({ name: file.name, reason: 'vazio' });
+      else if (limitBytes && file.size > limitBytes) skipped.push({ name: file.name, reason: 'grande demais' });
+      else eligible.push(file);
+    }
+    const say = typeof onStatus === 'function' ? onStatus : function () {};
+    const uploaded = [], failed = [];
+    let sent = 0;
+    for (let index = 0; index < eligible.length; index++) {
+      const file = eligible[index];
+      const taskOperation = async progress => {
+        const result = await operation(file, index, eligible.length, progress);
+        if (!result || result.cancelled || !result.sent || !Array.isArray(result.files) || !result.files.length) {
+          throw new Error((result && window.skippedMessage(result)) || 'O servidor não confirmou o envio deste arquivo.');
+        }
+        const pending = result.files.find(item => item.pending);
+        return pending ? { ...result, backgroundPending: true, backgroundId: pending.queueId, backgroundRetry: () => resumeQueuedUploads() } : result;
+      };
+      const progress = await window.FileShareUploadQueue.run(file, destination, taskOperation, {
+        onSuccess: value => options.onFileSuccess ? options.onFileSuccess(value, file, index) : undefined
+      });
+      if (!progress.ok) { failed.push({ name: file.name, error: progress.error && progress.error.message || 'Falha no envio.' }); continue; }
+      uploaded.push(...progress.value.files);
+      sent += progress.value.sent;
+    }
+    return { sent, skipped, failed, files: uploaded };
+  }
+
+  window.uploadToRoom = function (roomId, fileList, onStatus, options) {
+    options = options || {};
+    if (options.skipQueue || !window.FileShareUploadQueue) return uploadToRoomDirect(roomId, fileList, onStatus, options);
+    const operation = (file, index, total, progress) => uploadToRoomDirect(roomId, [file], text => {
+      if (typeof onStatus === 'function') onStatus(text);
+    }, { ...options, skipConfirm: true, onProgress: progress });
+    return uploadWithQueue(fileList, 'Sala', onStatus, options, operation);
+  };
+
+  window.uploadToDm = function (friendId, fileList, onStatus, options) {
+    options = options || {};
+    if (options.skipQueue || !window.FileShareUploadQueue) return uploadToDmDirect(friendId, fileList, onStatus, options);
+    const operation = (file, index, total, progress) => uploadToDmDirect(friendId, [file], text => {
+      if (typeof onStatus === 'function') onStatus(text);
+    }, { ...options, skipConfirm: true, onProgress: progress });
+    return uploadWithQueue(fileList, 'Conversa direta', onStatus, options, operation);
   };
 })();

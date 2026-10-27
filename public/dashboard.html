@@ -16,9 +16,10 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014o">
   <link rel="stylesheet" href="/css/style.css?v=20261014c"><link rel="stylesheet" href="/css/onboarding.css?v=20261014c">
   <link rel="stylesheet" href="/css/social.css?v=20261027c">
+  <link rel="stylesheet" href="/css/upload-queue.css?v=20261027a">
   <link rel="stylesheet" href="/css/collections.css?v=20261014c">
   <link rel="stylesheet" href="/css/library.css?v=20261026a">
-  <script src="/js/common.js?v=20261027a"></script><script src="/js/message-export.js?v=20261027c"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261014o" defer></script>
+  <script src="/js/common.js?v=20261027b"></script><script src="/js/message-export.js?v=20261027c"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261014o" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
     .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
@@ -280,7 +281,8 @@
   </div>
   <div id="toastContainer" class="toast-container"></div><div id="imageTextModal" class="modal image-text-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="imageTextModalTitle"><div class="modal-overlay" id="imageTextOverlay"></div><div class="modal-content"><div class="modal-header"><h3 id="imageTextModalTitle"><i class="fas fa-copy"></i> Copiar texto da imagem</h3><button class="modal-close" type="button" id="imageTextClose" aria-label="Fechar">&times;</button></div><div class="modal-body"><p class="image-text-hint">Selecione com o mouse ou toque exatamente a parte que deseja copiar.</p><textarea id="imageTextSelection" class="image-text-selection" spellcheck="false" aria-label="Texto reconhecido da imagem"></textarea></div><div class="modal-footer image-text-actions"><button class="btn btn-outline" type="button" id="imageTextAll">Selecionar tudo</button><button class="btn btn-primary" type="button" id="imageTextCopy"><i class="fas fa-copy"></i> Copiar seleção</button></div></div></div>
 
-  <script src="/js/upload.js?v=20261014o"></script>
+  <script src="/js/upload-queue.js?v=20261027a"></script>
+  <script src="/js/upload.js?v=20261027a"></script>
   <script>
     const MAX_UPLOAD = 4 * 1024 * 1024; // limite de requisição da Vercel (~4,5 MB)
     let currentRoom = null, me = null, roomReplyTo = null;
@@ -531,8 +533,24 @@
       const status = document.getElementById('uploadStatus'), bar = document.getElementById('uploadBar'), fill = document.getElementById('uploadBarFill');
       bar.style.display = 'block'; fill.style.width = '0%';
       try {
-        const result = await uploadToRoom(targetRoomId, files, text => { status.textContent = text; const m = text.match(/(\d+)%$/); if (m) fill.style.width = m[1] + '%'; }, { chatOnly });
+        const result = await uploadToRoom(targetRoomId, files, text => { status.textContent = text; const m = text.match(/(\d+)%$/); if (m) fill.style.width = m[1] + '%'; }, {
+          chatOnly,
+          replyToId: options.replyToId || (roomReplyTo && roomReplyTo.id),
+          onFileSuccess: async uploaded => {
+            if (!chatOnly) return;
+            for (const file of (uploaded.files || [])) {
+              if (file.pending) continue;
+              const token = '[[file:' + file.id + '|' + (file.name || 'arquivo') + '|' + (file.mime || '') + ']]';
+              await api('/api/rooms/' + encodeURIComponent(targetRoomId) + '/messages', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ content: token, reply_to_id: options.replyToId || (roomReplyTo && roomReplyTo.id) || null })
+              });
+            }
+          }
+        });
         const warn = skippedMessage(result);
+        if (result.failed && result.failed.length) toast(result.failed.length + (result.failed.length === 1 ? ' arquivo falhou. Veja a fila de envios para tentar novamente.' : ' arquivos falharam. Veja a fila de envios para tentar novamente.'), 'error');
         if (result.sent) toast(result.sent === 1 ? 'Arquivo enviado' : result.sent + ' arquivos enviados');
         if (warn) toast(warn, 'error');
         status.textContent = result.sent ? 'Envio concluído' : '';
@@ -540,18 +558,6 @@
         if (currentRoom === targetRoomId) loadFiles();
         loadRooms();
         if (chatOnly && result.files && result.files.length) {
-          for (const f of result.files) {
-            if (f.pending) continue; // o Service Worker publicará a referência quando concluir o envio
-            const token = '[[file:' + f.id + '|' + (f.name || 'arquivo') + '|' + (f.mime || '') + ']]';
-            try {
-              await api('/api/rooms/' + encodeURIComponent(targetRoomId) + '/messages', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ content: token, reply_to_id: options.replyToId || null })
-              });
-            } catch (e) { }
-          }
           if (currentRoom === targetRoomId) { lastChatSig = ''; await loadMessages(true); }
         }
         return result.sent > 0;
@@ -704,11 +710,11 @@
     });
   </script>
   <script src="/js/social.js?v=20261014o"></script>
-  <script src="/js/personal.js?v=20261027c"></script>
+  <script src="/js/personal.js?v=20261027d"></script>
   <script src="/js/cursor.js?v=20261014o"></script>
   <script src="/js/preview.js?v=20261014o"></script>
   <script src="/js/collections.js?v=20261014o"></script>
-  <script src="/js/library.js?v=20261026a"></script>
+  <script src="/js/library.js?v=20261027a"></script>
   <script src="/js/dashboard-shell.js?v=20261014o"></script>
   <script src="/js/announce.js?v=20261014o"></script>
 <script src="/js/cyber.js?v=20261014o"></script>
