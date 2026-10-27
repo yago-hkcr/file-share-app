@@ -15,10 +15,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014o">
   <link rel="stylesheet" href="/css/style.css?v=20261014c"><link rel="stylesheet" href="/css/onboarding.css?v=20261014c">
-  <link rel="stylesheet" href="/css/social.css?v=20261026a">
+  <link rel="stylesheet" href="/css/social.css?v=20261027b">
   <link rel="stylesheet" href="/css/collections.css?v=20261014c">
   <link rel="stylesheet" href="/css/library.css?v=20261026a">
-  <script src="/js/common.js?v=20261014c"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261014o" defer></script>
+  <script src="/js/common.js?v=20261014c"></script><script src="/js/message-export.js?v=20261027b"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261014o" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
     .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
@@ -491,8 +491,9 @@
         const animateNew = !first && m.id && !chatSeenIds.has(m.id); if (m.id) chatSeenIds.add(m.id);
         const quote = m.reply_to_id ? `<button class="reply-quote" type="button" data-jump-id="${esc(m.reply_to_id)}"><b>${esc(m.reply_username || 'Mensagem respondida')}</b><span>${esc(m.reply_content || 'Mensagem indisponível')}</span></button>` : '';
         const messageAvatar = m.avatar_image ? `<img src="${esc(m.avatar_image)}" alt="">` : esc(m.username[0].toUpperCase());
-        return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || 'var(--primary,var(--cy))')}">${messageAvatar}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}${quote}<div class="msg-text">${chatAttachmentHtml(m.content) || linkify(m.content)}</div><button class="msg-copy-trigger" type="button" data-copy-text="${esc(m.content)}" aria-label="Copiar mensagem" title="Copiar mensagem"><i class="fas fa-copy" aria-hidden="true"></i><span>Copiar</span></button><button class="msg-reply-trigger" type="button" data-reply-id="${esc(m.id)}" data-reply-name="${esc(m.username)}" data-reply-text="${esc(m.content)}" aria-label="Responder ${esc(m.username)}"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></div></div>`;
+        return `<div data-message-id="${esc(m.id)}" class="msg ${mine ? 'me' : ''} ${cont ? 'cont' : ''} ${animateNew ? 'msg-enter' : ''}"><span class="msg-avatar ${m.role === 'admin' ? 'is-admin' : ''}" style="background:${esc(m.avatar_color || 'var(--primary,var(--cy))')}">${messageAvatar}</span><div class="msg-bubble">${cont ? '' : `<div class="msg-meta ${m.role === 'admin' ? 'is-admin' : ''}"><b>${mine ? 'você' : esc(m.username)}</b>${admBadge(m.role)}<time>${chatTime(m.created_at)}</time></div>`}${quote}<div class="msg-text">${chatAttachmentHtml(m.content) || linkify(m.content)}</div><div class="msg-actions"><button class="msg-copy-trigger message-action-button" type="button" data-copy-text="${esc(m.content)}" aria-label="Copiar mensagem" title="Copiar mensagem"><i class="fas fa-copy" aria-hidden="true"></i><span>Copiar</span></button><button class="message-export-trigger message-action-button" type="button" data-export-scope="room" data-export-id="${esc(m.id)}" aria-label="Baixar mensagem como TXT" title="Baixar a mensagem original como arquivo .txt"><i class="fas fa-file-arrow-down" aria-hidden="true"></i><span>Salvar TXT</span></button><button class="message-send-text-trigger message-action-button" type="button" data-send-text-scope="room" data-send-text-id="${esc(m.id)}" aria-label="Enviar mensagem como TXT" title="Enviar o texto original como anexo .txt"><i class="fas fa-paper-plane" aria-hidden="true"></i><span>Enviar TXT</span></button><button class="msg-reply-trigger message-action-button" type="button" data-reply-id="${esc(m.id)}" data-reply-name="${esc(m.username)}" data-reply-text="${esc(m.content)}" aria-label="Responder ${esc(m.username)}"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></div></div></div>`;
       }).join('') : '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
+      window.setMessageTextExportBatch('room', messages);
       if (first || forceBottom || atBottom) scroller.scrollTop = scroller.scrollHeight;
     }
     function setRoomReply(id, name, content) {
@@ -505,6 +506,15 @@
     function cancelRoomReply() { roomReplyTo = null; const preview = document.getElementById('roomReplyPreview'); if (preview) preview.hidden = true; }
     window.cancelRoomReply = cancelRoomReply;
     document.getElementById('chatList').addEventListener('click', event => {
+      const sendText = event.target.closest('[data-send-text-id]');
+      if (sendText) {
+        const file = window.createMessageTextFileById(sendText.dataset.sendTextScope, sendText.dataset.sendTextId);
+        if (file) sendFiles([file], { chatOnly: true });
+        else toast('Não foi possível recuperar o texto original desta mensagem.', 'error');
+        return;
+      }
+      const exportText = event.target.closest('[data-export-id]');
+      if (exportText) { window.downloadMessageTextById(exportText.dataset.exportScope, exportText.dataset.exportId); return; }
       const copy = event.target.closest('[data-copy-text]');
       if (copy) { copyMessageText(copy.dataset.copyText || '', copy); return; }
       const quote = event.target.closest('[data-jump-id]');
@@ -676,7 +686,7 @@
     });
   </script>
   <script src="/js/social.js?v=20261014o"></script>
-  <script src="/js/personal.js?v=20261014o"></script>
+  <script src="/js/personal.js?v=20261027b"></script>
   <script src="/js/cursor.js?v=20261014o"></script>
   <script src="/js/preview.js?v=20261014o"></script>
   <script src="/js/collections.js?v=20261014o"></script>
@@ -686,7 +696,7 @@
 <script src="/js/cyber.js?v=20261014o"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js?v=20261014o').then(reg => {
+    navigator.serviceWorker.register('/sw.js?v=20261027a').then(reg => {
       console.log('[SW] Registrado:', reg.scope);
     }).catch(err => console.warn('[SW] Falha ao registrar:', err));
   }

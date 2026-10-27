@@ -86,8 +86,9 @@
     host.innerHTML = messages.length ? messages.map(message => {
       const mine = me && message.user_id === me.id;
       const reply = message.reply_to_id ? '<button class="reply-quote" type="button" data-jump-id="' + escHtml(message.reply_to_id) + '"><b>' + escHtml(message.reply_username || 'Mensagem respondida') + '</b><span>' + escHtml(message.reply_content || 'Mensagem indisponível') + '</span></button>' : '';
-      return '<article class="direct-message ' + (mine ? 'mine' : '') + '" data-message-id="' + escHtml(message.id) + '"><div class="direct-bubble">' + reply + '<div class="direct-message-text">' + (chatAttachmentHtml(message.content) || linkify(message.content)) + '</div><footer><button type="button" class="direct-copy-trigger" data-copy-text="' + escHtml(message.content) + '" aria-label="Copiar mensagem" title="Copiar mensagem"><i class="fas fa-copy"></i><span>Copiar</span></button><time>' + escHtml(humanTime(message.created_at)) + '</time><button type="button" data-reply-id="' + escHtml(message.id) + '" data-reply-name="' + escHtml(message.username) + '" data-reply-text="' + escHtml(message.content) + '" aria-label="Responder ' + escHtml(message.username) + '"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></footer></div></article>';
+      return '<article class="direct-message ' + (mine ? 'mine' : '') + '" data-message-id="' + escHtml(message.id) + '"><div class="direct-bubble">' + reply + '<div class="direct-message-text">' + (chatAttachmentHtml(message.content) || linkify(message.content)) + '</div><footer><button type="button" class="direct-copy-trigger message-action-button" data-copy-text="' + escHtml(message.content) + '" aria-label="Copiar mensagem" title="Copiar mensagem"><i class="fas fa-copy" aria-hidden="true"></i><span>Copiar</span></button><button type="button" class="message-export-trigger message-action-button" data-export-scope="direct" data-export-id="' + escHtml(message.id) + '" aria-label="Baixar mensagem como TXT" title="Baixar a mensagem original como arquivo .txt"><i class="fas fa-file-arrow-down" aria-hidden="true"></i><span>Salvar TXT</span></button><button type="button" class="message-send-text-trigger message-action-button" data-send-text-scope="direct" data-send-text-id="' + escHtml(message.id) + '" aria-label="Enviar mensagem como TXT" title="Enviar o texto original como anexo .txt"><i class="fas fa-paper-plane" aria-hidden="true"></i><span>Enviar TXT</span></button><time>' + escHtml(humanTime(message.created_at)) + '</time><button type="button" class="message-action-button" data-reply-id="' + escHtml(message.id) + '" data-reply-name="' + escHtml(message.username) + '" data-reply-text="' + escHtml(message.content) + '" aria-label="Responder ' + escHtml(message.username) + '"><i class="fas fa-reply" aria-hidden="true"></i><span>Responder</span></button></footer></div></article>';
     }).join('') : '<div class="chat-empty"><i class="fas fa-comment-dots"></i><span>Esta conversa está começando. Envie a primeira mensagem.</span></div>';
+    window.setMessageTextExportBatch('direct', messages);
     if (first || initialDm || wasAtBottom) host.scrollTop = host.scrollHeight;
     initialDm = false;
   }
@@ -104,6 +105,34 @@
   }
   dm.querySelector('#directFriendList').addEventListener('click', event => { const row = event.target.closest('[data-user-id]'); if (row) selectFriend(row.dataset.userId); });
   dm.querySelector('#directMessageList').addEventListener('click', event => {
+    const sendText = event.target.closest('[data-send-text-id]');
+    if (sendText) {
+      const file = window.createMessageTextFileById(sendText.dataset.sendTextScope, sendText.dataset.sendTextId);
+      if (!file) { toast('Não foi possível recuperar o texto original desta mensagem.', 'error'); return; }
+      if (!activeFriend) return;
+      const friendId = activeFriend.id;
+      const replyToId = dmReply && dmReply.id;
+      (async () => {
+        try {
+          const result = await window.uploadToDm(friendId, [file], text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); });
+          const warn = window.skippedMessage ? window.skippedMessage(result) : '';
+          if (result.sent) {
+            for (const uploaded of (result.files || [])) {
+              const token = '[[file:' + uploaded.id + '|' + (uploaded.name || 'arquivo') + '|' + (uploaded.mime || '') + ']]';
+              await post('/api/dm/' + encodeURIComponent(friendId) + '/messages', { content: token, reply_to_id: replyToId });
+            }
+          }
+          if (warn) toast(warn, 'error');
+          await Promise.all([loadDmMessages(), loadDmFriends()]);
+        } catch (error) { toast(error.message, 'error'); }
+      })();
+      return;
+    }
+    const exportText = event.target.closest('[data-export-id]');
+    if (exportText) {
+      window.downloadMessageTextById(exportText.dataset.exportScope, exportText.dataset.exportId);
+      return;
+    }
     const copy = event.target.closest('[data-copy-text]');
     if (copy) {
       const text = copy.dataset.copyText || '';
