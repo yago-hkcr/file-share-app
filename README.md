@@ -17,15 +17,17 @@ npm run local:start     # banco local em data/local
 
 Abra `http://localhost:3000`.
 
-Alternativa com banco Neon: crie um `.env.local` com `DATABASE_URL` e execute
+Alternativa com banco PostgreSQL (por exemplo, Supabase): crie um `.env.local` com `DATABASE_URL` e execute
 `npm install` uma vez e depois `node server.js` (le `DATABASE_URL` do `.env.local`).
 
 Configure `ADMIN_PASSWORD` e `SESSION_SECRET` no ambiente antes da inicialização. `ADMIN_PASSWORD` cria a conta administrativa `admin` apenas se ainda não houver uma conta; instalações existentes mantêm a senha cadastrada. `SESSION_SECRET` protege os cookies de sessão e deve permanecer estável entre reinicializações.
 
-## Deploy (Vercel + Neon)
+## Deploy (Vercel + Supabase)
 
-Todos os dados (contas, salas, mensagens, arquivos) ficam no Postgres do Neon, acessado via `DATABASE_URL`
-(integracao Neon da Vercel). As tabelas sao criadas automaticamente no primeiro acesso.
+Todos os dados (contas, salas, mensagens, arquivos) ficam no PostgreSQL do Supabase, acessado via `DATABASE_URL`
+(use a connection string do pooler do Supabase). Defina tambem `SUPABASE_CA_CERT_B64` com o certificado raiz
+em PEM codificado em Base64, baixado em **Database Settings → SSL Configuration** no painel Supabase; a conexão exige validação TLS
+do certificado e do hostname. As tabelas sao criadas automaticamente no primeiro acesso.
 Como a Vercel nao tem disco persistente, os arquivos sao gravados no proprio Postgres; a Vercel limita o
 corpo de uma requisicao a ~4,5 MB, entao o limite de envio e de 4 MB por vez. Para arquivos maiores,
 use Vercel Blob com upload direto do navegador.
