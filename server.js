@@ -3,7 +3,7 @@ const cookieSession = require('cookie-session');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
-const { neon } = require('@neondatabase/serverless');
+const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -108,7 +108,8 @@ function cleanUrl(value) {
   let url = String(value).trim().replace(/^(["'])(.*)\1$/, '$2');
   try {
     const u = new URL(url);
-    u.searchParams.delete('channel_binding'); // o driver HTTP não usa
+    u.searchParams.delete('channel_binding'); // o pooler Supabase negocia o channel binding sem esse parâmetro
+    u.searchParams.delete('sslmode'); // as opções TLS são aplicadas diretamente ao Pool do node-postgres
     return u.toString();
   } catch (e) {
     return url;
@@ -117,9 +118,24 @@ function cleanUrl(value) {
 
 const DATABASE_URL = cleanUrl(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 if (!LOCAL_MODE && !DATABASE_URL) {
-  console.error('❌ DATABASE_URL não definida. Configure a integração Neon na Vercel (ou o .env.local).');
+  console.error('❌ DATABASE_URL não definida. Configure a conexão PostgreSQL (Supabase) na Vercel (ou o .env.local).');
 }
-const sql = !LOCAL_MODE && DATABASE_URL ? neon(DATABASE_URL) : null;
+const SUPABASE_CA_CERT = process.env.SUPABASE_CA_CERT_B64
+  ? Buffer.from(process.env.SUPABASE_CA_CERT_B64, 'base64').toString('utf8')
+  : String(process.env.SUPABASE_CA_CERT || '').replace(/\\n/g, '\n');
+if (!LOCAL_MODE && DATABASE_URL && !SUPABASE_CA_CERT) {
+  throw new Error('Defina SUPABASE_CA_CERT com o certificado raiz oficial do Supabase antes de iniciar.');
+}
+const sql = !LOCAL_MODE && DATABASE_URL ? new Pool({
+  connectionString: DATABASE_URL,
+  max: Number(process.env.PG_POOL_MAX || 3),
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+  ssl: {
+    rejectUnauthorized: true,
+    ca: SUPABASE_CA_CERT
+  }
+}) : null;
 let localDatabasePromise = null;
 
 async function localDatabase() {
@@ -167,7 +183,7 @@ async function stopLocalLanServer() {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers de banco. Na Vercel usam Neon; no modo de sala usam Postgres local persistente.
+// Helpers de banco. Na Vercel usam PostgreSQL (Supabase); no modo de sala usam Postgres local persistente.
 // ---------------------------------------------------------------------------
 async function q(text, params = []) {
   if (LOCAL_MODE) {
@@ -176,7 +192,8 @@ async function q(text, params = []) {
     return result.rows;
   }
   if (!sql) throw new Error('Banco de dados não configurado (DATABASE_URL ausente)');
-  return sql.query(text, params);
+  const result = await sql.query(text, params);
+  return result.rows;
 }
 async function one(text, params = []) {
   const rows = await q(text, params);
