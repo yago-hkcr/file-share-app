@@ -389,6 +389,11 @@ async function copyCollectionUploadToLibrary(upload, libraryItemId) {
   }
   const row = await one("SELECT encode(data, 'base64') AS data FROM file_collection_upload_blobs WHERE upload_id = $1", [upload.id]);
   if (!row || !row.data) throw new Error('Um dos arquivos da coleta não está disponível.');
+  if (!isBlobPath(upload.stored_name)) {
+    await q('INSERT INTO personal_library_blobs (item_id, data) VALUES ($1, decode($2, \'hex\')) ON CONFLICT (item_id) DO UPDATE SET data = decode($2, \'hex\')',
+      [libraryItemId, Buffer.from(row.data, 'base64').toString('hex')]);
+    return libraryItemId;
+  }
   return writeLibraryBlob(libraryItemId, Buffer.from(row.data, 'base64'), upload.mime_type);
 }
 
@@ -2693,7 +2698,8 @@ app.get('/api/coletas/enviar/:token', publicCollectionAccess, wrap(async (req, r
     multi_use_link: !!Number(recipient.multi_use_link),
     exclusive_access: !!Number(recipient.exclusive_access),
     expires_at: recipient.expires_at, items, uploads: uploads.map(file => ({ ...file, size: num(file.size) })),
-    blob_enabled: blobEnabled(), max_upload_bytes: blobEnabled() ? MAX_BLOB_UPLOAD_BYTES : MAX_FILE_BYTES });
+    blob_enabled: blobEnabled(), max_upload_bytes: blobEnabled() ? MAX_BLOB_UPLOAD_BYTES : MAX_FILE_BYTES,
+    server_upload_max_bytes: MAX_FILE_BYTES });
 }));
 
 app.post('/api/coletas/enviar/:token/reservar', publicCollectionAccess, wrap(async (req, res) => {
@@ -2750,6 +2756,9 @@ app.post('/api/coletas/enviar/:token/reservar', publicCollectionAccess, wrap(asy
     } catch (error) {
       await q('DELETE FROM file_collection_uploads WHERE id = $1', [id]);
       await q("UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'uploading' AND token_hash = $2", [recipient.id, hashToken(req.params.token)]);
+      if (/store has been suspended/i.test(String(error && error.message || ''))) {
+        return res.status(503).json({ error: 'O armazenamento de arquivos está suspenso. Arquivos de até 4 MB ainda podem ser enviados; para arquivos maiores, o organizador precisa reativar o armazenamento.' });
+      }
       throw error;
     }
   }
