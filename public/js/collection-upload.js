@@ -286,11 +286,11 @@
         const result = await window.FileShareUploadQueue.run(
           entry.file,
           'Coleta: ' + (item ? item.label : 'Arquivo'),
-          percent => {
+          onProgress => uploadOne(entry, percent => {
             const progress = document.getElementById('collectionUploadProgress');
             if (progress) progress.textContent = 'Enviando (' + (index + 1) + '/' + queue.length + ') ' + entry.file.name + ' · ' + percent + '%';
-          },
-          percent => uploadOne(entry, percent),
+            onProgress(percent);
+          }),
           { id: entry.queueId, onSuccess: async () => {
             const queuedIndex = pendingFiles.findIndex(candidate => candidate.file === entry.file && candidate.itemId === entry.itemId);
             if (queuedIndex >= 0) pendingFiles.splice(queuedIndex, 1);
@@ -387,10 +387,11 @@
       const entry = pendingFiles[Number(retryCollection.dataset.retryCollection)];
       if (!entry || busy) return;
       const item = collection.items.find(candidate => candidate.id === entry.itemId);
-      const result = await window.FileShareUploadQueue.run(entry.file, 'Coleta: ' + (item ? item.label : 'Arquivo'), percent => {
+      const result = await window.FileShareUploadQueue.run(entry.file, 'Coleta: ' + (item ? item.label : 'Arquivo'), onProgress => uploadOne(entry, percent => {
         const progress = document.getElementById('collectionUploadProgress');
         if (progress) progress.textContent = 'Reenviando ' + entry.file.name + ' · ' + percent + '%';
-      }, percent => uploadOne(entry, percent), { id: entry.queueId, onSuccess: async () => {
+        onProgress(percent);
+      }), { id: entry.queueId, onSuccess: async () => {
         const queuedIndex = pendingFiles.findIndex(candidate => candidate.file === entry.file && candidate.itemId === entry.itemId);
         if (queuedIndex >= 0) pendingFiles.splice(queuedIndex, 1);
         failedRetries.delete(entry.file);
