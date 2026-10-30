@@ -188,6 +188,9 @@ try {
   await command('Runtime.enable');
   await command('Page.enable');
   await command('Network.enable');
+  await command('Page.addScriptToEvaluateOnNewDocument', {
+    source: `(()=>{const nativeFetch=window.fetch.bind(window);window.fetch=async(...args)=>{const response=await nativeFetch(...args);const url=typeof args[0]==='string'?args[0]:args[0]?.url||'';if(url.includes('/api/coletas/enviar/')&&!/\\/(heartbeat|upload|upload-token|upload-heartbeat|reservar|registrar|finalizar|cancel)$/.test(url)){const data=await response.clone().json().catch(()=>null);if(data&&Array.isArray(data.items)){data.blob_enabled=true;data.server_upload_max_bytes=4*1024*1024;const headers=new Headers(response.headers);headers.delete('content-length');return new Response(JSON.stringify(data),{status:response.status,statusText:response.statusText,headers})}}return response}})();`
+  });
   await command('Page.navigate', { url: `${BASE}/enviar/${token}` });
   await waitFor(`!!document.querySelector('[data-sender-name-form]')`, 'formulário público da coleta');
   await evaluate(`(()=>{const form=document.querySelector('[data-sender-name-form]');form.querySelector('#collectionSenderName').value='Teste automatizado Edge';form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));return true})()`);
@@ -217,6 +220,7 @@ try {
   }
 
   check(apiResponses.some(item => item.url.endsWith('/upload') && item.status === 201), 'upload multipart respondeu HTTP 201');
+  check(!apiResponses.some(item => item.url.endsWith('/reservar')), 'arquivo abaixo do limite usa o fallback Postgres sem chamar o Blob suspenso');
   check(apiResponses.some(item => item.url.endsWith('/finalizar') && item.status === 200), 'finalização respondeu HTTP 200');
   check(javascriptErrors.length === 0, javascriptErrors.length ? `sem exceções JavaScript: ${javascriptErrors.join(' | ')}` : 'nenhuma exceção JavaScript no Edge');
 

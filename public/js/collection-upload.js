@@ -151,7 +151,7 @@
       (collection.multi_use_link || collection.single_link ? '<p class="collection-public-intro">Olá, ' + esc(senderName) + '. Prepare os arquivos solicitados abaixo.</p>' : '<p class="collection-public-intro">Olá, ' + esc(collection.participant_name) + '. Prepare os arquivos solicitados abaixo.</p>') +
       (collection.exclusive_access ? '<p class="collection-exclusive-notice"><i class="fas fa-user-lock" aria-hidden="true"></i> Acesso exclusivo: enquanto você estiver usando este link, outras pessoas não poderão entrar.</p>' : '') +
       (collection.instructions ? '<section class="collection-request-instructions" aria-label="Instruções de quem pediu"><div><i class="fas fa-circle-info" aria-hidden="true"></i><strong>Instruções de quem pediu</strong></div><p>' + esc(collection.instructions) + '</p></section>' : '') +
-      '<div class="collection-deadline"><i class="fas fa-clock"></i><span>Prazo <strong>' + esc(dateLabel(collection.expires_at)) + '</strong></span><span class="collection-deadline-separator"></span><span>Limite <strong>' + sizeLabel(collection.max_upload_bytes) + '</strong> por arquivo</span></div>' +
+      '<div class="collection-deadline"><i class="fas fa-clock"></i><span>Prazo <strong>' + esc(dateLabel(collection.expires_at)) + '</strong></span><span class="collection-deadline-separator"></span><span>Limite <strong>' + sizeLabel(collection.max_upload_bytes) + '</strong> por arquivo</span>' + (collection.blob_enabled && Number(collection.server_upload_max_bytes) ? '<small class="collection-upload-fallback-note">Se o armazenamento estiver indisponível, arquivos de até ' + esc(sizeLabel(collection.server_upload_max_bytes)) + ' ainda poderão ser enviados.</small>' : '') + '</div>' +
       '<div class="collection-request-list">' + collection.items.map(itemMarkup).join('') + '</div>' +
       (reviewing ? reviewMarkup() : '') +
       (pendingFiles.length ? '<div class="collection-selected-list collection-retry-list">' + pendingFiles.map((entry, index) => '<div class="collection-preview-card"><span class="collection-file-preview-info"><strong>' + esc(entry.file.name) + '</strong><small>' + esc(failedRetries.get(entry.file)?.message || 'Pronto para enviar') + '</small></span>' + (failedRetries.has(entry.file) ? '<button type="button" data-retry-collection="' + index + '"><i class="fas fa-rotate-right"></i> Tentar novamente</button>' : '') + '</div>').join('') + '</div>' : '') +
@@ -177,7 +177,9 @@
     });
   }
   async function uploadOne(entry, onProgress) {
-    if (!collection.blob_enabled) {
+    const serverUploadLimit = Number(collection.server_upload_max_bytes) || 0;
+    const useServerUpload = !collection.blob_enabled || (serverUploadLimit > 0 && entry.file.size <= serverUploadLimit);
+    if (useServerUpload) {
       const form = new FormData(); form.append('file', entry.file, entry.file.name); form.append('item_id', entry.itemId);
       return await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest(); xhr.open('POST', base + '/upload');

@@ -145,6 +145,55 @@ try {
   const zip = Buffer.from(await response.arrayBuffer());
   check(response.ok && zip[0] === 0x50 && zip[1] === 0x4b,
     'download do arquivo recebido como ZIP válido');
+
+  response = await request('/api/library/spaces', {
+    method: 'POST', body: JSON.stringify({ name: 'Acervo da coleta de teste' })
+  });
+  const space = response.ok ? await response.json() : null;
+  check(response.status === 201 && Boolean(space?.id), 'criação do espaço de Acervo para validar armazenamento Postgres');
+  response = await request(`/api/library/spaces/${encodeURIComponent(space?.id || '')}/shelves`, {
+    method: 'POST', body: JSON.stringify({ name: 'Arquivos recebidos' })
+  });
+  const bookcase = response.ok ? await response.json() : null;
+  check(response.status === 201 && Boolean(bookcase?.id), 'criação da prateleira de teste');
+
+  response = await request('/api/coletas', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: 'Arquivos ao Acervo via Postgres', destination_type: 'library',
+      library_space_id: space.id, library_bookcase_id: bookcase.id,
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      items: [{ label: 'Arquivo do Acervo', quantity: 1, required: true }],
+      participants: [], single_link: true
+    })
+  });
+  const libraryCollection = response.ok ? await response.json() : null;
+  const libraryToken = libraryCollection?.recipients?.[0]?.token;
+  check(response.status === 201 && Boolean(libraryToken), 'criação de coleta com destino direto ao Acervo');
+  if (!libraryToken) throw new Error('Não foi possível criar coleta de teste para o Acervo.');
+  const libraryPublicBase = `/api/coletas/enviar/${encodeURIComponent(libraryToken)}`;
+  response = await request(libraryPublicBase);
+  const libraryPublicState = response.ok ? await response.json() : null;
+  const libraryForm = new FormData();
+  libraryForm.set('item_id', libraryPublicState.items[0].id);
+  libraryForm.set('file', new Blob(['arquivo persistido em Postgres\n'], { type: 'text/plain' }), 'arquivo-acervo.txt');
+  response = await request(`${libraryPublicBase}/upload`, { method: 'POST', body: libraryForm });
+  const libraryUpload = response.ok ? await response.json() : null;
+  check(response.status === 201 && Boolean(libraryUpload?.id), 'upload de arquivo para coleta com destino ao Acervo');
+  response = await request(`${libraryPublicBase}/finalizar`, {
+    method: 'POST', body: JSON.stringify({ participant_name: 'Participante do Acervo' })
+  });
+  check(response.ok, 'finalização e promoção do upload Postgres para o Acervo');
+  response = await request('/api/library');
+  const library = response.ok ? await response.json() : null;
+  const libraryFile = library?.items?.find(file => file.original_name === 'arquivo-acervo.txt');
+  check(Boolean(libraryFile), 'arquivo da coleta aparece no Acervo após finalização');
+  if (libraryFile) {
+    response = await request(`/download/library/${encodeURIComponent(libraryFile.id)}`);
+    const downloaded = Buffer.from(await response.arrayBuffer());
+    check(response.ok && downloaded.includes(Buffer.from('arquivo persistido em Postgres')),
+      'download do arquivo promovido ao Acervo contém os bytes originais');
+  }
 } catch (error) {
   console.error('Erro no teste end-to-end de Coletas:', error && error.message || error);
   failures++;
