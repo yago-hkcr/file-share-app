@@ -190,7 +190,14 @@
         : '<i class="fas fa-folder"></i> ' + esc(collection.room_name || 'Sala');
       const senderNames = [...new Set((multiUse ? submissions.map(submission => submission.sender_name) : completedRecipients.map(recipient => recipient.participant_name)).filter(Boolean))];
       const senderLabel = senderNames.slice(0, 3).join(', ') + (senderNames.length > 3 ? ' +' + (senderNames.length - 3) : '');
-      const tray = completed ? '<div class="collection-download-tray"><div class="collection-download-senders"><strong>Enviado por</strong><span title="' + esc(senderNames.join(', ')) + '">' + esc(senderLabel) + '</span></div><button class="btn btn-sm btn-green btn-download" type="button" data-download="' + esc(collection.id) + '"><i class="fas fa-file-zipper"></i> Baixar tudo · ZIP</button></div>' : '';
+      const largeFiles = Number(collection.has_large_uploads) > 0;
+      const largeFileLinks = (collection.large_uploads || []).map(file => {
+        const size = Number(file.size);
+        const sizeLabel = size >= 1024 ** 3 ? (size / 1024 ** 3).toFixed(2) + ' GiB' : (size / 1024 ** 2).toFixed(1) + ' MiB';
+        const href = '/api/coletas/' + encodeURIComponent(collection.id) + '/arquivos/' + encodeURIComponent(file.id) + '/download';
+        return '<a class="collection-large-file" href="' + esc(href) + '" download><i class="fas fa-download"></i><span><strong>' + esc(file.original_name) + '</strong><small>' + esc(file.participant_name) + ' · ' + esc(sizeLabel) + '</small></span></a>';
+      }).join('');
+      const tray = completed ? '<div class="collection-download-tray"><div class="collection-download-senders"><strong>Enviado por</strong><span title="' + esc(senderNames.join(', ')) + '">' + esc(senderLabel) + '</span>' + (largeFiles ? '<small>Arquivos acima do limite seguro do ZIP devem ser baixados individualmente.</small>' : '') + '</div>' + (largeFiles ? '' : '<button class="btn btn-sm btn-green btn-download" type="button" data-download="' + esc(collection.id) + '"><i class="fas fa-file-zipper"></i> Baixar tudo · ZIP</button>') + '</div>' + (largeFiles ? '<div class="collection-large-files"><strong>Downloads individuais</strong>' + largeFileLinks + '</div>' : '') : '';
       const lifecycleAvailable = collection.expires_at > new Date().toISOString().slice(0, 19).replace('T', ' ');
       const lifecycleActions = lifecycleAvailable && collection.status === 'active'
         ? '<button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="suspend" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-pause"></i> Suspender coleta</button><button class="btn btn-sm btn-outline btn-danger" type="button" data-collection-status="close" data-collection-id="' + esc(collection.id) + '"><i class="fas fa-stop"></i> Encerrar coleta</button>'

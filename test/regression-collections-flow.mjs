@@ -146,6 +146,14 @@ try {
   check(response.ok && zip[0] === 0x50 && zip[1] === 0x4b,
     'download do arquivo recebido como ZIP válido');
 
+  response = await request(`/api/coletas/${encodeURIComponent(collection.id)}/arquivos/${encodeURIComponent(upload.id)}/download`);
+  const individualDownload = Buffer.from(await response.arrayBuffer());
+  check(response.ok && individualDownload.toString() === 'arquivo recebido pela coleta\n' &&
+    response.headers.get('content-disposition')?.includes('comprovante.txt'),
+    'download individual autenticado entrega o arquivo original com nome correto');
+  response = await request(`/api/coletas/${encodeURIComponent(collection.id)}/arquivos/arquivo-alheio/download`);
+  check(response.status === 404, 'download individual não expõe arquivos que não pertencem à coleta');
+
   response = await request('/api/library/spaces', {
     method: 'POST', body: JSON.stringify({ name: 'Acervo da coleta de teste' })
   });
@@ -194,6 +202,10 @@ try {
     check(response.ok && downloaded.includes(Buffer.from('arquivo persistido em Postgres')),
       'download do arquivo promovido ao Acervo contém os bytes originais');
   }
+  response = await request(`/api/coletas/${encodeURIComponent(libraryCollection.id)}/arquivos/${encodeURIComponent(libraryUpload.id)}/download`);
+  const collectionLibraryDownload = Buffer.from(await response.arrayBuffer());
+  check(response.ok && collectionLibraryDownload.toString() === 'arquivo persistido em Postgres\n',
+    'download individual de coleta funciona após a cópia independente para o Acervo');
 } catch (error) {
   console.error('Erro no teste end-to-end de Coletas:', error && error.message || error);
   failures++;

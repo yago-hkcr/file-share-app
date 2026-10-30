@@ -290,7 +290,7 @@ const LIBRARY_BLOB_PREFIX = 'library/';
 const isLibraryBlobPath = name => typeof name === 'string' && name.startsWith(LIBRARY_BLOB_PREFIX);
 // Acima deste tamanho, download/preview é redirecionado direto ao Blob (a CDN entrega o
 // arquivo), em vez de passar por dentro da função serverless. É o que permite baixar
-// arquivos de até 50 GB sem estourar o maxDuration da função.
+// arquivos de até 10 GiB sem estourar o maxDuration da função.
 const BLOB_REDIRECT_MIN_BYTES = 100 * 1024 * 1024;
 
 // Gera uma URL (GET) temporária para um blob privado via CDN.
@@ -935,7 +935,7 @@ const MAX_COLLECTION_NAME_BYTES = 255;
 const COLLECTION_ACCESS_COOKIE = 'fs_collection_access';
 const COLLECTION_ACCESS_LEASE_MS = 2 * 60 * 1000;
 const COLLECTION_SESSION_COOKIE_MS = 30 * 24 * 60 * 60 * 1000;
-const COLLECTION_UPLOAD_STALE_MS = 90 * 1000;
+const COLLECTION_UPLOAD_STALE_MS = 15 * 60 * 1000;
 const makeCollectionToken = () => crypto.randomBytes(32).toString('base64url');
 const cleanCollectionFileName = value => String(value || 'arquivo').replace(/[\u0000-\u001f\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_COLLECTION_NAME_BYTES) || 'arquivo';
 const collectionLeaseUntil = () => new Date(Date.now() + COLLECTION_ACCESS_LEASE_MS).toISOString().slice(0, 19).replace('T', ' ');
@@ -1281,6 +1281,10 @@ async function streamCollectionZip(res, rows, title) {
   res.end();
   await once(res, 'finish');
 }
+
+// ZIPs are assembled inside the Vercel Function (30 s limit). Keep the raw
+// payload within the same safe bound as the Postgres multipart fallback.
+const MAX_COLLECTION_ZIP_BYTES = MAX_FILE_BYTES;
 
 
 async function generateSlug(name) {
@@ -2181,7 +2185,9 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
 // 3) /files/register: o servidor confere o envio e grava o arquivo no banco
 // ---------------------------------------------------------------------------
 const MAX_DIRECT_BYTES = 100 * 1024 * 1024;
-const MAX_BLOB_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024;
+// Limite de produto: 10 GiB por arquivo. Arquivos grandes usam multipart direto
+// no Blob; nunca passam pelo corpo/armazenamento em memória da Vercel Function.
+const MAX_BLOB_UPLOAD_BYTES = 10 * 1024 ** 3;
 const BLOB_PATH_RE = /^rooms\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
 const DM_BLOB_PATH_RE = /^dm\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
 const COLLECTION_BLOB_PATH_RE = /^collections\/([0-9a-f-]{36})\/([0-9a-f-]{36})-[A-Za-z0-9._-]{1,80}$/;
@@ -2194,9 +2200,9 @@ app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala antes de enviar arquivos' });
 
   const name = String((req.body && req.body.name) || '').trim();
-  const size = Number(req.body && req.body.size) || 0;
+  const size = Number(req.body && req.body.size);
   if (!name) return res.status(400).json({ error: 'Nome do arquivo obrigatório' });
-  if (size <= 0) return res.status(400).json({ error: 'Arquivo vazio' });
+  if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio' });
   if (size > MAX_DIRECT_BYTES) return res.status(413).json({ error: `Arquivo grande demais (máximo ${Math.round(MAX_DIRECT_BYTES / 1024 / 1024)} MB)` });
 
   const fileId = uuidv4();
@@ -2282,7 +2288,7 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
     return res.json({ id: existing.id, original_name: existing.original_name, size: num(existing.size), chat_only: num(existing.chat_only) });
   }
 
-  let size = Number(req.body.size) || 0;
+  let size = Number(req.body.size);
   try {
     const { head } = await blobSdk();
     const info = await head(pathname);
@@ -2293,7 +2299,7 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
     console.error('head do Blob falhou:', e && e.message);
     return res.status(502).json({ error: 'Não foi possível validar o arquivo no armazenamento' });
   }
-  if (size > MAX_BLOB_UPLOAD_BYTES) {
+  if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_BLOB_UPLOAD_BYTES) {
     await deleteBlobs([pathname]);
     return res.status(413).json({ error: 'Arquivo grande demais' });
   }
@@ -2307,16 +2313,16 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
 }));
 
 // Upload direto ao Acervo (sem passar por sala): mesmo fluxo das salas, mas gravando em
-// personal_library_items. Assim o Acervo também aceita arquivos de até 50 GB.
+// personal_library_items. Assim o Acervo também aceita arquivos de até 10 GiB.
 app.post('/api/library/upload-url', asMember, wrap(async (req, res) => {
   if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
   const location = await resolvePersonalLibraryLocation(req.user.id, req.body || {});
   if (!location) return res.status(400).json({ error: 'Escolha uma prateleira de um espaço seu.' });
 
   const name = String((req.body && req.body.name) || '').trim();
-  const size = Number(req.body && req.body.size) || 0;
+  const size = Number(req.body && req.body.size);
   if (!name) return res.status(400).json({ error: 'Nome do arquivo obrigatório' });
-  if (size <= 0) return res.status(400).json({ error: 'Arquivo vazio' });
+  if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio' });
   if (size > MAX_DIRECT_BYTES) return res.status(413).json({ error: `Arquivo grande demais (máximo ${Math.round(MAX_DIRECT_BYTES / 1024 / 1024)} MB)` });
 
   const itemId = uuidv4();
@@ -2377,7 +2383,7 @@ app.post('/api/library/files/register', asMember, wrap(async (req, res) => {
   const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
   const favorite = (req.body && (req.body.is_favorite === true || req.body.is_favorite === 1 || req.body.is_favorite === '1')) ? 1 : 0;
 
-  let size = Number(req.body.size) || 0;
+  let size = Number(req.body.size);
   try {
     const { head } = await blobSdk();
     const info = await head(pathname);
@@ -2388,7 +2394,7 @@ app.post('/api/library/files/register', asMember, wrap(async (req, res) => {
     console.error('head do Blob (Acervo) falhou:', e && e.message);
     return res.status(502).json({ error: 'Não foi possível validar o arquivo no armazenamento' });
   }
-  if (size > MAX_BLOB_UPLOAD_BYTES) {
+  if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_BLOB_UPLOAD_BYTES) {
     await deleteBlobs([pathname]);
     return res.status(413).json({ error: 'Arquivo grande demais' });
   }
@@ -2472,6 +2478,17 @@ app.get('/api/coletas', asMember, wrap(async (req, res) => {
         (SELECT COUNT(*) FROM file_collection_uploads u WHERE u.submission_id = s.id AND u.status = 'ready') AS upload_count
       FROM file_collection_submissions s WHERE s.collection_id = $1 ORDER BY s.submitted_at, s.id`, [collection.id]);
     collection.submissions = collection.submissions.map(submission => ({ ...submission, upload_count: num(submission.upload_count) }));
+    collection.has_large_uploads = num((await one(`SELECT COUNT(*) AS count FROM file_collection_uploads
+      WHERE collection_id = $1 AND status = 'ready' AND size > $2
+        AND (submission_id IS NOT NULL OR recipient_id IN (SELECT id FROM file_collection_recipients WHERE collection_id = $1 AND status = 'submitted'))`,
+    [collection.id, MAX_COLLECTION_ZIP_BYTES])).count);
+    collection.large_uploads = collection.has_large_uploads ? await q(`SELECT u.id, u.original_name, u.size,
+        COALESCE(s.sender_name, r.participant_name, 'Participante') AS participant_name
+      FROM file_collection_uploads u JOIN file_collection_recipients r ON r.id = u.recipient_id
+      LEFT JOIN file_collection_submissions s ON s.id = u.submission_id
+      WHERE u.collection_id = $1 AND u.status = 'ready' AND u.size > $2
+        AND (u.submission_id IS NOT NULL OR r.status = 'submitted')
+      ORDER BY COALESCE(s.sender_name, r.participant_name), u.uploaded_at, u.id`, [collection.id, MAX_COLLECTION_ZIP_BYTES]) : [];
   }
   res.json(collections);
 }));
@@ -2706,10 +2723,10 @@ app.post('/api/coletas/enviar/:token/reservar', publicCollectionAccess, wrap(asy
   if (!blobEnabled()) return res.status(501).json({ error: 'O envio direto não está disponível neste ambiente.' });
   const recipient = req.collectionRecipient, body = req.body || {};
   const itemId = String(body.item_id || ''), originalName = cleanCollectionFileName(body.name);
-  const size = Number(body.size) || 0, mime = String(body.mime || '').slice(0, 100) || 'application/octet-stream';
+  const size = Number(body.size), mime = String(body.mime || '').slice(0, 100) || 'application/octet-stream';
   const item = await one('SELECT id, quantity FROM file_collection_items WHERE id = $1 AND collection_id = $2', [itemId, recipient.collection_id]);
   if (!item) return res.status(400).json({ error: 'Item da coleta inválido.' });
-  if (size <= 0) return res.status(400).json({ error: 'O arquivo está vazio.' });
+  if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio.' });
   if (size > MAX_BLOB_UPLOAD_BYTES) return res.status(413).json({ error: 'Arquivo maior que o limite permitido.' });
   const id = uuidv4();
   const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
@@ -3089,7 +3106,7 @@ app.post('/api/coletas/enviar/:token/finalizar', publicCollectionAccess, wrap(as
 app.get('/api/coletas/:id/zip', asMember, wrap(async (req, res) => {
   const collection = await requireCollectionOwner(req.params.id, req.user.id);
   if (!collection) return res.status(404).json({ error: 'Coleta não encontrada.' });
-    const rows = await q(`SELECT u.id, u.stored_name, u.library_item_id, li.stored_name AS library_stored_name, u.original_name, u.size, u.uploaded_at,
+  const rows = await q(`SELECT u.id, u.stored_name, u.library_item_id, li.stored_name AS library_stored_name, u.original_name, u.size, u.uploaded_at,
       CASE WHEN fc.multi_use_link = 1 THEN LOWER(TRIM(COALESCE(s.sender_name, r.participant_name))) ELSE COALESCE(s.id, r.id) END AS recipient_id,
       COALESCE(s.sender_name, r.participant_name) AS participant_name
     FROM file_collection_uploads u JOIN file_collection_recipients r ON r.id = u.recipient_id
@@ -3098,6 +3115,9 @@ app.get('/api/coletas/:id/zip', asMember, wrap(async (req, res) => {
     LEFT JOIN personal_library_items li ON li.id = u.library_item_id
     WHERE u.collection_id = $1 AND u.status = 'ready' AND (u.submission_id IS NOT NULL OR r.status = 'submitted')
     ORDER BY COALESCE(s.sender_name, r.participant_name), u.uploaded_at, u.id`, [collection.id]);
+  if (rows.some(row => num(row.size) > MAX_COLLECTION_ZIP_BYTES)) {
+    return res.status(413).json({ error: 'Esta coleta contém arquivos grandes demais para montar um ZIP na função serverless. Baixe-os individualmente no Acervo ou na sala de destino.' });
+  }
   const safeTitle = cleanCollectionFileName(collection.title).replace(/\.[^.]+$/, '').slice(0, 80) || 'coleta';
   const ascii = safeTitle.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_') + '.zip';
   res.status(200);
@@ -3118,13 +3138,16 @@ app.get('/api/coletas/:id/participantes/:recipientId/zip', asMember, wrap(async 
       SELECT 1 FROM file_collection_submissions s WHERE s.recipient_id = file_collection_recipients.id
     ))`, [req.params.recipientId, collection.id]);
   if (!recipient) return res.status(404).json({ error: 'Envio concluído não encontrado.' });
-    const rows = await q(`SELECT u.id, u.stored_name, u.library_item_id, li.stored_name AS library_stored_name, u.original_name, u.size, u.uploaded_at,
+  const rows = await q(`SELECT u.id, u.stored_name, u.library_item_id, li.stored_name AS library_stored_name, u.original_name, u.size, u.uploaded_at,
       COALESCE(s.id, r.id) AS recipient_id, COALESCE(s.sender_name, r.participant_name) AS participant_name
     FROM file_collection_uploads u JOIN file_collection_recipients r ON r.id = u.recipient_id
     LEFT JOIN file_collection_submissions s ON s.id = u.submission_id
     LEFT JOIN personal_library_items li ON li.id = u.library_item_id
     WHERE u.collection_id = $1 AND r.id = $2 AND u.status = 'ready' AND (u.submission_id IS NOT NULL OR r.status = 'submitted')
     ORDER BY u.uploaded_at, u.id`, [collection.id, recipient.id]);
+  if (rows.some(row => num(row.size) > MAX_COLLECTION_ZIP_BYTES)) {
+    return res.status(413).json({ error: 'Este envio contém arquivos grandes demais para montar um ZIP na função serverless. Baixe-os individualmente no Acervo ou na sala de destino.' });
+  }
   const safeName = cleanCollectionFileName(recipient.participant_name).replace(/\.[^.]+$/, '').slice(0, 80) || 'participante';
   const safeTitle = cleanCollectionFileName(collection.title).replace(/\.[^.]+$/, '').slice(0, 60) || 'coleta';
   const fileName = `${safeTitle} - ${safeName}`;
@@ -3137,6 +3160,56 @@ app.get('/api/coletas/:id/participantes/:recipientId/zip', asMember, wrap(async 
     if (res.headersSent) return res.destroy(error);
     res.status(error.status || 500).json({ error: error.message || 'Não foi possível montar o ZIP.' });
   }
+}));
+
+// Download individual autenticado: arquivos grandes não passam pela geração de ZIP.
+app.get('/api/coletas/:id/arquivos/:uploadId/download', asMember, wrap(async (req, res) => {
+  const collection = await requireCollectionOwner(req.params.id, req.user.id);
+  if (!collection) return res.status(404).send('Coleta não encontrada.');
+  const file = await one(`SELECT u.id, u.stored_name, u.library_item_id, li.stored_name AS library_stored_name,
+      u.original_name, u.size, u.mime_type
+    FROM file_collection_uploads u JOIN file_collection_recipients r ON r.id = u.recipient_id
+    LEFT JOIN personal_library_items li ON li.id = u.library_item_id AND li.user_id = $2
+    WHERE u.id = $1 AND u.collection_id = $3 AND u.status = 'ready'
+      AND (u.submission_id IS NOT NULL OR r.status = 'submitted')`, [req.params.uploadId, req.user.id, collection.id]);
+  if (!file) return res.status(404).send('Arquivo concluído não encontrado.');
+
+  const ascii = String(file.original_name || 'arquivo').replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  res.set({
+    'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.original_name || 'arquivo')}`,
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  res.type(file.mime_type || 'application/octet-stream');
+
+  const blobPath = file.library_stored_name || file.stored_name;
+  if (isBlobPath(blobPath)) {
+    // A Function só pode preparar o redirect; não transmita bytes de um Blob
+    // para depois tentar responder com um status caso a leitura falhe.
+    if (num(file.size) > MAX_COLLECTION_ZIP_BYTES) {
+      try { return res.redirect(302, await presignBlobDownloadUrl(blobPath, true)); }
+      catch (error) { console.error('presign download de coleta:', error && error.message); return res.status(502).send('Não foi possível preparar o download.'); }
+    }
+    if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) {
+      try { return res.redirect(302, await presignBlobDownloadUrl(blobPath, true)); }
+      catch (error) { console.error('presign download de coleta:', error && error.message); return res.status(502).send('Não foi possível preparar o download.'); }
+    }
+    try {
+      const ok = await pipeBlobToResponse(res, blobPath, file.size);
+      if (!ok) return res.status(404).send('Arquivo não encontrado.');
+      return;
+    } catch (error) {
+      console.error('download individual de coleta:', error && error.message);
+      return res.status(503).send('Não foi possível ler o arquivo agora. Tente novamente.');
+    }
+  }
+
+  const libraryBytes = file.library_item_id
+    ? await one("SELECT encode(data, 'base64') AS data FROM personal_library_blobs WHERE item_id = $1", [file.library_item_id])
+    : null;
+  const storedBytes = libraryBytes || await one("SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1", [file.id]);
+  if (!storedBytes) return res.status(404).send('Arquivo não encontrado.');
+  res.send(Buffer.from(storedBytes.data, 'base64'));
 }));
 
 app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
@@ -3532,9 +3605,9 @@ app.post('/api/dm/:id/upload-url', asMember, wrap(async (req, res) => {
   if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
   const friend = await directFriend(req, res); if (!friend) return;
   const name = String((req.body && req.body.name) || '').trim();
-  const size = Number(req.body && req.body.size) || 0;
+  const size = Number(req.body && req.body.size);
   if (!name) return res.status(400).json({ error: 'Nome do arquivo obrigatório' });
-  if (size <= 0) return res.status(400).json({ error: 'Arquivo vazio' });
+  if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio' });
   if (size > MAX_DIRECT_BYTES) return res.status(413).json({ error: `Arquivo grande demais (máximo ${Math.round(MAX_DIRECT_BYTES / 1024 / 1024)} MB)` });
 
   const fileId = uuidv4();
@@ -3547,6 +3620,42 @@ app.post('/api/dm/:id/upload-url', asMember, wrap(async (req, res) => {
   res.json({ pathname, presignedUrl: signed.presignedUrl, validUntil, maxBytes: MAX_DIRECT_BYTES });
 }));
 
+// Upload multipart de mensagens diretas: valida sessão, amizade e prefixo do
+// remetente antes de emitir qualquer URL assinada ao Blob.
+app.post('/api/dm/:id/upload-token', asMember, wrap(async (req, res) => {
+  if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
+  const friend = await directFriend(req, res); if (!friend) return;
+  const action = req.body && req.body.type;
+  if (action === 'blob.generate-presigned-url') {
+    const payload = req.body && req.body.payload || {};
+    const pathname = String(payload.pathname || '');
+    const match = DM_BLOB_PATH_RE.exec(pathname);
+    if (!match || match[1] !== req.user.id) return res.status(400).json({ error: 'Caminho de arquivo inválido' });
+  } else if (action !== 'blob.upload-completed') {
+    return res.status(400).json({ error: 'Ação de upload inválida' });
+  }
+
+  try {
+    const { handleUploadPresigned } = await blobClientSdk();
+    const { issueSignedToken } = await blobSdk();
+    const result = await handleUploadPresigned({
+      request: req,
+      body: req.body,
+      getSignedToken: async pathname => {
+        const match = DM_BLOB_PATH_RE.exec(pathname);
+        if (!match || match[1] !== req.user.id) throw new Error('Caminho de arquivo inválido');
+        const validUntil = Date.now() + 24 * 60 * 60 * 1000;
+        const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, validUntil });
+        return { token, urlOptions: { maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil } };
+      }
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Blob multipart (mensagem direta):', error && error.message);
+    res.status(400).json({ error: 'Não foi possível preparar ou concluir o upload multipart' });
+  }
+}));
+
 app.post('/api/dm/:id/files/register', asMember, wrap(async (req, res) => {
   const friend = await directFriend(req, res); if (!friend) return;
   const pathname = String((req.body && req.body.pathname) || '');
@@ -3554,7 +3663,7 @@ app.post('/api/dm/:id/files/register', asMember, wrap(async (req, res) => {
   if (!m || m[1] !== req.user.id) return res.status(400).json({ error: 'Caminho de arquivo inválido' });
   if (await one('SELECT id FROM files WHERE stored_name = $1', [pathname])) return res.status(400).json({ error: 'Arquivo já registrado' });
 
-  let size = Number(req.body.size) || 0;
+  let size = Number(req.body.size);
   try {
     const { head } = await blobSdk();
     const info = await head(pathname);
@@ -3565,7 +3674,7 @@ app.post('/api/dm/:id/files/register', asMember, wrap(async (req, res) => {
     console.error('head do Blob falhou:', e && e.message);
     return res.status(502).json({ error: 'Não foi possível validar o arquivo no armazenamento' });
   }
-  if (size > MAX_BLOB_UPLOAD_BYTES) {
+  if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_BLOB_UPLOAD_BYTES) {
     await deleteBlobs([pathname]);
     return res.status(413).json({ error: 'Arquivo grande demais' });
   }

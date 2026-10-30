@@ -4,8 +4,8 @@
   const base = '/api/coletas/enviar/' + encodeURIComponent(token);
   const failedRetries = new Map();
   const COLLECTION_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
-  const UPLOAD_STALE_MS = 90 * 1000;
-  const UPLOAD_STALL_TIMEOUT_MS = 90 * 1000;
+  const UPLOAD_STALE_MS = 15 * 60 * 1000;
+  const UPLOAD_STALL_TIMEOUT_MS = 10 * 60 * 1000;
   const senderDraftKey = 'fs_collection_sender:' + token;
   const initialSenderDraft = (() => {
     try {
@@ -242,7 +242,7 @@
       if (saved) return { success: true, id: reserved.id, recovered: true };
       const cancelled = await api(base + '/uploads/' + encodeURIComponent(reserved.id) + '/cancel', { method: 'POST' }).catch(() => null);
       if (cancelled && cancelled.ready) return { success: true, id: reserved.id, recovered: true };
-      if (stalled) error.message = 'O envio ficou sem progresso e foi cancelado. Remova o arquivo e tente novamente.';
+      if (stalled) error.message = 'O envio ficou 10 minutos sem progresso e foi cancelado. Verifique sua conexão e tente novamente.';
       throw error;
     } finally {
       clearInterval(heartbeatTimer);

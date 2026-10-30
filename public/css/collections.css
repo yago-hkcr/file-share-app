@@ -288,6 +288,16 @@ html[data-theme="dark"] .dashboard-tabs { background: rgba(0,0,0,.92); }
 .collection-download-tray > strong { flex:none; font-size:12px; }
 .collection-download-actions { display:flex; flex-wrap:wrap; gap:7px; justify-content:flex-end; }
 .collection-download-actions .btn { min-height:36px; }
+.collection-download-senders small { color:#4ade80; font-size:11px; line-height:1.45; }
+.collection-large-files { display:grid; gap:7px; margin:-10px 10px 18px; padding:10px 13px; border:1px solid rgba(34,197,94,.18); border-radius:0 0 13px 13px; background:rgba(0,0,0,.62); }
+.collection-large-files > strong { color:#86efac; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+.collection-large-file { display:flex; align-items:center; gap:10px; min-width:0; padding:9px 10px; border:1px solid rgba(34,197,94,.14); border-radius:9px; color:#86efac; background:rgba(34,197,94,.07); text-decoration:none; }
+.collection-large-file:hover { border-color:rgba(34,197,94,.4); background:rgba(34,197,94,.13); }
+.collection-large-file > i { flex:none; color:#4ade80; }
+.collection-large-file span { display:grid; min-width:0; gap:3px; }
+.collection-large-file strong,.collection-large-file small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.collection-large-file strong { color:inherit; font-size:12px; }
+.collection-large-file small { color:#4ade80; font-size:10px; }
 
 @keyframes collectionCardIn { from { opacity:0; transform:translateY(10px) scale(.99); } to { opacity:1; transform:translateY(0) scale(1); } }
 @keyframes collectionGlow { 0%,100% { opacity:.48; transform:translate3d(0,0,0) scale(1); } 50% { opacity:.78; transform:translate3d(1.4%, -1%, 0) scale(1.04); } }
@@ -534,6 +544,13 @@ html:not([data-theme="dark"]) #collectionsPanel .collection-participant-chip but
 html:not([data-theme="dark"]) #collectionsPanel .collection-download-tray { color:#3f3f3f; border-color:#efd6d9; background:#ffffff; }
 html:not([data-theme="dark"]) #collectionsPanel .collection-download-senders strong { color:#6d6d6d; }
 html:not([data-theme="dark"]) #collectionsPanel .collection-download-senders span { color:#262626; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-download-senders small { color:#8a2638; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-large-files { border-color:#efd6d9; background:#fff; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-large-files > strong { color:#8a2638; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-large-file { color:#7a1420; border-color:#efd6d9; background:#fff5f6; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-large-file:hover { border-color:#e22c3b; background:#fdeef0; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-large-file > i { color:#e22c3b; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-large-file small { color:#8a2638; }
 html:not([data-theme="dark"]) #collectionsPanel .collection-friend-picker { border-color:#f3c9ce; background:#fff; box-shadow:0 14px 30px rgba(122, 20, 32,.12); }
 html:not([data-theme="dark"]) #collectionsPanel .collection-friend-option { color:#262626; border-color:#efd6d9; background:#ffffff; }
 html:not([data-theme="dark"]) #collectionsPanel .collection-friend-option:hover:not(:disabled) { border-color:#e22c3b; background:#fdeef0; }
