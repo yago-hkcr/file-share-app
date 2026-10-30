@@ -104,7 +104,7 @@
     return file.status === 'uploading' && Number.isFinite(timestamp) && Date.now() - timestamp < UPLOAD_STALE_MS;
   }
   function selectedFiles(itemId) { return pendingFiles.map((entry, index) => ({ ...entry, index })).filter(entry => entry.itemId === itemId); }
-    const saved = readyUploads(itemId).length + selectedFiles(itemId).length;
+  function itemFileCount(itemId) { return readyUploads(itemId).length + selectedFiles(itemId).length; }
   function requestedQuantity(item) { return Math.max(1, Number(item.quantity) || 1); }
   function missingRequired() {
     return collection.items.filter(item => Number(item.required) && itemFileCount(item.id) < requestedQuantity(item));
