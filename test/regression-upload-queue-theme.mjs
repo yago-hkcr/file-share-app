@@ -32,11 +32,13 @@ check(collectionUpload.includes('FileShareUploadQueue.run') && collectionUpload.
   'Coletas integram a fila e oferecem retry do item que falhou');
 check(library.includes('FileShareUploadQueue.run') && library.includes('putWithProgress'),
   'envios diretos à Biblioteca exibem progresso individual');
-check(dashboard.includes('/js/upload-queue.js?v=20261027a') && dashboard.includes('/css/upload-queue.css?v=20261027a'),
-  'dashboard carrega os assets da fila');
+check(dashboard.includes('/js/upload-queue.js?v=20261027a') && dashboard.includes('/css/upload-queue.css?v=20261027a') &&
+  dashboard.includes('/js/upload.js?v=20261030c') && dashboard.includes('/css/collections.css?v=20261030d'),
+  'dashboard carrega os assets atualizados de upload, fila e Coletas');
 check(sw.includes("'/js/upload-queue.js?v=20261027a'") && sw.includes("'/css/upload-queue.css?v=20261027a'") &&
-  sw.includes("'/js/collection-upload.js?v=20261030b'"),
-  'Service Worker inclui os assets atualizados da fila e das Coletas');
+  sw.includes("'/js/upload.js?v=20261030c'") && sw.includes("'/css/collections.css?v=20261030d'") &&
+  sw.includes("'/js/collection-upload.js?v=20261030c'") && sw.includes("'/js/collections.js?v=20261030c'"),
+  'Service Worker inclui os assets atualizados de upload, fila e Coletas');
 check(common.includes("const normalizeTheme = theme => ['system', 'light', 'dark'].includes(theme) ? theme : 'dark'"),
   'tema escuro é o padrão inicial e escolhas locais salvas continuam válidas');
 check(personal.includes("const defaults = { theme: 'dark'") && personal.includes("!prefs.has_preferences") &&

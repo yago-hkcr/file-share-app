@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="/css/style.css?v=20261014c"><link rel="stylesheet" href="/css/onboarding.css?v=20261014c">
   <link rel="stylesheet" href="/css/social.css?v=20261027c">
   <link rel="stylesheet" href="/css/upload-queue.css?v=20261027a">
-  <link rel="stylesheet" href="/css/collections.css?v=20261014c">
+  <link rel="stylesheet" href="/css/collections.css?v=20261030d">
   <link rel="stylesheet" href="/css/library.css?v=20261026a">
   <script src="/js/common.js?v=20261027b"></script><script src="/js/message-export.js?v=20261027c"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script><script src="/js/onboarding.js?v=20261014o" defer></script>
   <style>
@@ -282,7 +282,7 @@
   <div id="toastContainer" class="toast-container"></div><div id="imageTextModal" class="modal image-text-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="imageTextModalTitle"><div class="modal-overlay" id="imageTextOverlay"></div><div class="modal-content"><div class="modal-header"><h3 id="imageTextModalTitle"><i class="fas fa-copy"></i> Copiar texto da imagem</h3><button class="modal-close" type="button" id="imageTextClose" aria-label="Fechar">&times;</button></div><div class="modal-body"><p class="image-text-hint">Selecione com o mouse ou toque exatamente a parte que deseja copiar.</p><textarea id="imageTextSelection" class="image-text-selection" spellcheck="false" aria-label="Texto reconhecido da imagem"></textarea></div><div class="modal-footer image-text-actions"><button class="btn btn-outline" type="button" id="imageTextAll">Selecionar tudo</button><button class="btn btn-primary" type="button" id="imageTextCopy"><i class="fas fa-copy"></i> Copiar seleção</button></div></div></div>
 
   <script src="/js/upload-queue.js?v=20261027a"></script>
-  <script src="/js/upload.js?v=20261027a"></script>
+  <script src="/js/upload.js?v=20261030c"></script>
   <script>
     const MAX_UPLOAD = 4 * 1024 * 1024; // limite de requisição da Vercel (~4,5 MB)
     let currentRoom = null, me = null, roomReplyTo = null;
@@ -713,14 +713,14 @@
   <script src="/js/personal.js?v=20261027d"></script>
   <script src="/js/cursor.js?v=20261014o"></script>
   <script src="/js/preview.js?v=20261014o"></script>
-  <script src="/js/collections.js?v=20261014o"></script>
+  <script src="/js/collections.js?v=20261030c"></script>
   <script src="/js/library.js?v=20261027a"></script>
   <script src="/js/dashboard-shell.js?v=20261014o"></script>
   <script src="/js/announce.js?v=20261014o"></script>
 <script src="/js/cyber.js?v=20261014o"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js?v=20261027a').then(reg => {
+    navigator.serviceWorker.register('/sw.js?v=20261030c').then(reg => {
       console.log('[SW] Registrado:', reg.scope);
     }).catch(err => console.warn('[SW] Falha ao registrar:', err));
   }

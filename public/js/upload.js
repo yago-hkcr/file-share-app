@@ -1,9 +1,10 @@
 // Envio de arquivos para uma sala.
-// Arquivos até 100 MB usam URL assinada; acima disso, upload multipart direto ao Blob (limite 50 GB).
+// Arquivos até 100 MB usam URL assinada; acima disso, upload multipart direto ao Blob (limite 10 GiB).
 // Reserva (servidor sem Blob, ex.: rodando local sem `vercel env pull`): envio pelo servidor.
 // O limite por arquivo vem do servidor (/api/me → max_upload_bytes), então o aviso nunca fica desatualizado.
 (function () {
   let limitBytes = null;
+  let currentUserId = '';
   const sizeLabel = b => {
     const gb = b / (1024 ** 3);
     if (gb >= 1) return (Number.isInteger(gb) ? gb : gb.toFixed(1)) + ' GB';
@@ -16,7 +17,7 @@
 
   const limitReady = fetch('/api/me')
     .then(r => r.json())
-    .then(u => { if (u && u.max_upload_bytes) limitBytes = Number(u.max_upload_bytes); window.fillLimitNotes(); })
+    .then(u => { if (u && u.max_upload_bytes) limitBytes = Number(u.max_upload_bytes); if (u && u.id) currentUserId = String(u.id); window.fillLimitNotes(); })
     .catch(() => {});
 
   function putWithProgress(url, file, onProgress) {
@@ -364,11 +365,27 @@
           say('Enviando ' + label + ' ' + value + '%');
           if (typeof options.onProgress === 'function') options.onProgress(value);
         };
-        const prep = await postJson('/api/dm/' + friendId + '/upload-url', { name: file.name, size: file.size, type: file.type });
-        if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
-        if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponível).');
-        await putWithProgress(prep.data.presignedUrl, file, reportProgress);
-        const done = await postJson('/api/dm/' + friendId + '/files/register', { pathname: prep.data.pathname, name: file.name, size: file.size, mime: file.type });
+        let pathname;
+        if (file.size > 100 * 1024 * 1024) {
+          if (!currentUserId) throw new Error('Não foi possível identificar sua conta para preparar o upload. Atualize a página e tente novamente.');
+          const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
+          const objectPath = 'dm/' + currentUserId + '/' + crypto.randomUUID() + '-' + safe;
+          const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
+          const blob = await uploadPresigned(objectPath, file, {
+            access: 'private',
+            handleUploadUrl: '/api/dm/' + friendId + '/upload-token',
+            multipart: true,
+            onUploadProgress: event => reportProgress(event.percentage)
+          });
+          pathname = blob.pathname;
+        } else {
+          const prep = await postJson('/api/dm/' + friendId + '/upload-url', { name: file.name, size: file.size, type: file.type });
+          if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
+          if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponível).');
+          await putWithProgress(prep.data.presignedUrl, file, reportProgress);
+          pathname = prep.data.pathname;
+        }
+        const done = await postJson('/api/dm/' + friendId + '/files/register', { pathname, name: file.name, size: file.size, mime: file.type });
         if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
         uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: file.type || 'application/octet-stream' });
         sent++;
