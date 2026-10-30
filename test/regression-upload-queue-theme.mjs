@@ -35,7 +35,7 @@ check(library.includes('FileShareUploadQueue.run') && library.includes('putWithP
 check(dashboard.includes('/js/upload-queue.js?v=20261027a') && dashboard.includes('/css/upload-queue.css?v=20261027a'),
   'dashboard carrega os assets da fila');
 check(sw.includes("'/js/upload-queue.js?v=20261027a'") && sw.includes("'/css/upload-queue.css?v=20261027a'") &&
-  sw.includes("'/js/collection-upload.js?v=20261027a'"),
+  sw.includes("'/js/collection-upload.js?v=20261030a'"),
   'Service Worker inclui os assets atualizados da fila e das Coletas');
 check(common.includes("const normalizeTheme = theme => ['system', 'light', 'dark'].includes(theme) ? theme : 'dark'"),
   'tema escuro é o padrão inicial e escolhas locais salvas continuam válidas');
