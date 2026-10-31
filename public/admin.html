@@ -229,6 +229,7 @@
     }
 
     function formatDriveBytes(value) {
+      if (value == null || value === '') return '—';
       const bytes = Number(value);
       if (!Number.isFinite(bytes) || bytes < 0) return 'Não informado';
       if (bytes === 0) return '0 B';
@@ -254,7 +255,7 @@
       refresh.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Atualizando…';
       driveStatusRequest = (async () => {
         try {
-          const response = await fetch('/api/admin/google-drive/accounts', { cache: 'no-store' });
+          const response = await fetch('/api/admin/google-drive/status', { cache: 'no-store' });
           if (response.status === 401) { window.location.href = '/'; return; }
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error('Não foi possível consultar as contas do Drive.');
@@ -264,12 +265,21 @@
             renderGoogleDriveAccounts(data.accounts, data.total);
             renderGoogleDriveTotalQuota(data.total);
             connectNew.hidden = false;
-            setGoogleDriveNoticeState({ connected: true, failed: !data.verified });
+            const verificationFailed = Boolean(data.verification_failed || data.accounts.some(account => account.verificationFailed));
+            setGoogleDriveNoticeState({ connected: true, failed: verificationFailed });
             message.textContent = data.accounts.length + ' conta(s) do Google Drive conectada(s). Novos anexos usam a conta com mais espaço livre.';
-            if (!data.verified) {
+            if (verificationFailed) {
               verificationError.hidden = false;
               document.getElementById('googleDriveVerificationMessage').textContent = 'Algumas contas não puderam ser verificadas no momento. A autorização continua salva.';
             }
+          } else if (data.connected && data.configured) {
+            accountsList.innerHTML = '';
+            totalPanel.hidden = true;
+            connectNew.hidden = false;
+            setGoogleDriveNoticeState({ connected: false, failed: true });
+            document.getElementById('googleDriveStatus').textContent = 'Contas desconectadas para novos uploads';
+            badge.className = 'storage-status-badge is-warning';
+            message.textContent = 'As contas armazenadas continuam disponíveis para os arquivos existentes. Conecte novamente para enviar novos arquivos.';
           } else {
             accountsList.innerHTML = '';
             totalPanel.hidden = true;

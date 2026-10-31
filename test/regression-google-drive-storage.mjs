@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { createGoogleDriveStorage, driveFileIdFromRef, driveFileRef, isDriveFileRef } = require('../lib/google-drive-storage.js');
+const { createGoogleDriveStorage, driveAccountIdFromRef, driveFileIdFromRef, driveFileRef, isDriveFileRef } = require('../lib/google-drive-storage.js');
 
 let now = 1000;
 let uploadCalls = 0;
@@ -84,6 +84,10 @@ const unauthorizedUrl = 'https://evil.example/session';
 await assert.rejects(() => storage.uploadChunkFromServer(unauthorizedUrl, 8, 0, Buffer.from('x')), /sessão de upload.*inválida/i);
 assert.equal(driveFileRef('drive_file_123456'), 'gdrive:drive_file_123456');
 assert.equal(driveFileIdFromRef('gdrive:drive_file_123456'), 'drive_file_123456');
+assert.equal(driveFileRef('drive_file_123456', 'account_123'), 'gdrive:account_123:drive_file_123456');
+assert.equal(driveFileIdFromRef('gdrive:account_123:drive_file_123456'), 'drive_file_123456');
+assert.equal(driveAccountIdFromRef('gdrive:account_123:drive_file_123456'), 'account_123');
+assert.equal(driveAccountIdFromRef('gdrive:drive_file_123456'), '', 'referências antigas continuam sem ID de conta');
 assert.equal(isDriveFileRef('gdrive:drive_file_123456'), true);
 assert.equal(isDriveFileRef('rooms/legacy'), false);
 

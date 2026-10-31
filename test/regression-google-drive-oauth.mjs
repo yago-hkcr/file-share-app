@@ -79,7 +79,10 @@ assert.ok(server.includes("...(IS_VERCEL ? { domain: '.arquive.online' } : {})")
 assert.ok(server.includes("GOOGLE_DRIVE_REDIRECT_URI = process.env.GOOGLE_DRIVE_REDIRECT_URI || 'https://arquive.online/api/google-drive/oauth/callback'"),
   'callback OAuth usa o domínio canônico configurado para produção');
 assert.ok(server.includes('crypto.timingSafeEqual(expectedBytes, receivedBytes)'));
-assert.ok(server.includes("setSetting('google_drive_refresh_token_enc', encryptedToken)"));
+assert.ok(server.includes('INSERT INTO google_drive_accounts'));
+assert.ok(server.includes('ON CONFLICT (provider_account_id) DO UPDATE SET'));
+assert.ok(server.includes('is_active = 1'), 'conectar uma conta reativa só a identidade autorizada');
+assert.ok(!server.includes("setSetting('google_drive_refresh_token_enc', encryptedToken)"), 'tokens são persistidos na tabela multi-conta, não substituídos em settings');
 assert.ok(server.includes('res.cookie(GOOGLE_DRIVE_RETURN_COOKIE, returnOrigin'),
   'a origem que iniciou o OAuth é preservada junto ao state sem compartilhar o cookie de sessão');
 assert.ok(server.includes('returnOriginCookie') && server.includes('/admin?drive_connected=1#storage'),

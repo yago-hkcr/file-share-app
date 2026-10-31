@@ -48,9 +48,14 @@ const storage = {
     deleted.push(fileId);
   }
 };
+const resolveFileId = value => value.startsWith('gdrive:')
+  ? value.slice(7).includes(':') ? value.slice(7).split(':').slice(1).join(':') : value.slice(7)
+  : value;
 const queue = createGoogleDriveDeletionQueue({
   query,
   getStorage: async () => storage,
+  getAccountId: value => value.startsWith('gdrive:') && value.slice(7).includes(':') ? value.slice(7).split(':')[0] : '',
+  getFileId: resolveFileId,
   now: () => currentTime,
   logger: { error() {} }
 });
@@ -78,12 +83,20 @@ assert.deepEqual(await queue.retryPending(), { deleted: 1, pending: 0 });
 assert.deepEqual(deleted, ['drive_file_123456']);
 assert.equal(queueRows.size, 0, 'remove da fila apenas após confirmação do Drive');
 
+const accountAwareRef = 'gdrive:account_123:drive_file_account_123';
+assert.deepEqual(await queue.enqueueAndDelete([accountAwareRef]), { deleted: 1, pending: 0 });
+assert.equal(deleted.at(-1), 'drive_file_account_123');
+const legacyRef = 'gdrive:drive_file_legacy_123';
+assert.deepEqual(await queue.enqueueAndDelete([legacyRef]), { deleted: 1, pending: 0 });
+assert.equal(deleted.at(-1), 'drive_file_legacy_123');
+
 const enqueuesBeforeEmpty = operations.filter(([type]) => type === 'enqueue').length;
 assert.deepEqual(await queue.enqueueAndDelete([]), { deleted: 0, pending: 0 });
 assert.equal(operations.filter(([type]) => type === 'enqueue').length, enqueuesBeforeEmpty);
 
 const deleteHelper = server.slice(server.indexOf('async function deleteBlobs'), server.indexOf('let cachedGoogleDriveStorage'));
-assert.match(deleteHelper, /filter\(isDriveFileRef\).*driveFileIdFromRef/);
+assert.match(deleteHelper, /filter\(isDriveFileRef\)/);
+assert.match(server, /getFileId: storedName => isDriveFileRef\(storedName\)[\s\S]{0,100}driveFileIdFromRef\(storedName\)/);
 assert.match(deleteHelper, /await googleDriveDeletionQueue\(\)\.enqueueAndDelete\(driveFiles\)/);
 const libraryCleanup = server.slice(server.indexOf('async function deleteLibraryBlobs'), server.indexOf('// Preenche o snapshot'));
 assert.match(libraryCleanup, /items\.map\(i => i\.stored_name\)\.filter\(isDriveFileRef\)/);
