@@ -1858,6 +1858,7 @@ app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) =>
     httpOnly: true,
     secure: IS_VERCEL,
     sameSite: 'lax',
+    ...(IS_VERCEL ? { domain: '.arquive.online' } : {}),
     path: '/api/google-drive/oauth/callback',
     maxAge: 10 * 60 * 1000
   });
@@ -1870,10 +1871,16 @@ app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) =>
   }));
 }));
 
-app.get('/api/google-drive/oauth/callback', asAdmin, wrap(async (req, res) => {
+// A sessão do admin pode ser host-only (www ou domínio raiz). O endpoint de início
+// já exige admin e emite um cookie de state curto, HttpOnly e restrito a .arquive.online.
+// No callback, esse state amarra o retorno OAuth ao navegador que iniciou a autorização.
+app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {
   const expectedState = readCookie(req, GOOGLE_DRIVE_STATE_COOKIE);
   const receivedState = String(req.query.state || '');
-  res.clearCookie(GOOGLE_DRIVE_STATE_COOKIE, { path: '/api/google-drive/oauth/callback' });
+  res.clearCookie(GOOGLE_DRIVE_STATE_COOKIE, {
+    path: '/api/google-drive/oauth/callback',
+    ...(IS_VERCEL ? { domain: '.arquive.online' } : {})
+  });
   const expectedBytes = Buffer.from(expectedState);
   const receivedBytes = Buffer.from(receivedState);
   if (!expectedState || expectedBytes.length !== receivedBytes.length || !crypto.timingSafeEqual(expectedBytes, receivedBytes)) {

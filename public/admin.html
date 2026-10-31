@@ -49,6 +49,7 @@
       <button class="nav-item" onclick="showTab('users')"><i class="fas fa-users"></i> Usuários <span class="nav-badge" id="pendingBadge" style="display:none;"></span></button>
       <button class="nav-item" onclick="showTab('rooms')"><i class="fas fa-door-open"></i> Salas</button>
       <button class="nav-item" onclick="showTab('create-room')"><i class="fas fa-plus-circle"></i> Nova Sala</button>
+      <button class="nav-item" onclick="showTab('storage')"><i class="fab fa-google-drive"></i> Armazenamento</button>
     </nav>
 
     <main class="main-content">
@@ -95,6 +96,19 @@
             </div>
             <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Criar Sala</button>
           </form>
+        </div>
+      </div>
+
+      <!-- Shared storage integration -->
+      <div id="tab-storage" class="tab-content">
+        <h2><i class="fas fa-cloud"></i> Armazenamento compartilhado</h2>
+        <div class="card" style="max-width:720px;">
+          <h3><i class="fab fa-google-drive"></i> Google Drive</h3>
+          <p class="text-muted">Os anexos enviados nas salas e conversas diretas serão armazenados na conta compartilhada do Arquive Online quando o Drive estiver conectado. Arquivos existentes não são movidos.</p>
+          <p id="googleDriveStatus" role="status" aria-live="polite">Verificando conexão com o Google Drive…</p>
+          <div id="googleDriveNotConfigured" class="text-muted" hidden>As credenciais OAuth do Google Drive não estão configuradas neste ambiente.</div>
+          <a id="googleDriveConnect" class="btn btn-green" href="https://arquive.online/api/admin/google-drive/oauth/start" hidden><i class="fab fa-google-drive"></i> Conectar conta compartilhada</a>
+          <button id="googleDriveRefresh" class="btn btn-outline" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Atualizar status</button>
         </div>
       </div>
     </main>
@@ -163,11 +177,41 @@
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.getElementById('tab-'+name).classList.add('active');
-      const tabIndex = ['stats', 'users', 'rooms', 'create-room'].indexOf(name);
+      const tabIndex = ['stats', 'users', 'rooms', 'create-room', 'storage'].indexOf(name);
       if (tabIndex >= 0) document.querySelectorAll('.nav-item')[tabIndex].classList.add('active');
       if (name==='users') loadUsers();
       if (name==='rooms') loadRooms();
       if (name==='stats') loadStats();
+      if (name==='storage') loadGoogleDriveStatus();
+    }
+
+    async function loadGoogleDriveStatus() {
+      const status = document.getElementById('googleDriveStatus');
+      const connect = document.getElementById('googleDriveConnect');
+      const notConfigured = document.getElementById('googleDriveNotConfigured');
+      status.textContent = 'Verificando conexão com o Google Drive…';
+      connect.hidden = true;
+      notConfigured.hidden = true;
+      try {
+        const response = await fetch('/api/admin/google-drive/status', { cache: 'no-store' });
+        if (response.status === 401 || response.status === 403) { window.location.href = '/'; return; }
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Não foi possível consultar o Google Drive.');
+        // Inicia no mesmo host em que o admin autenticou; o cookie temporário de
+        // state usa domínio compartilhado para o callback canônico sem www.
+        connect.href = location.origin + '/api/admin/google-drive/oauth/start';
+        if (!data.configured) {
+          status.textContent = 'Integração indisponível neste ambiente.';
+          notConfigured.hidden = false;
+        } else if (data.connected) {
+          status.textContent = 'Conectado. Novos anexos de salas e conversas diretas serão enviados ao Google Drive compartilhado.';
+        } else {
+          status.textContent = 'Ainda não conectado. Autorize a conta compartilhada para habilitar o armazenamento no Drive.';
+          connect.hidden = false;
+        }
+      } catch (error) {
+        status.textContent = error.message || 'Não foi possível consultar o Google Drive.';
+      }
     }
 
     // Stats

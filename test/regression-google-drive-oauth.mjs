@@ -71,7 +71,13 @@ await assert.rejects(() => exchangeAuthorizationCode({
   return true;
 });
 assert.ok(server.includes("app.get('/api/admin/google-drive/oauth/start', asAdmin"));
-assert.ok(server.includes("app.get('/api/google-drive/oauth/callback', asAdmin"));
+assert.ok(server.includes("app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {"));
+assert.ok(server.includes("app.get('/api/admin/google-drive/oauth/start', asAdmin"),
+  'somente administradores podem iniciar o OAuth');
+assert.ok(server.includes("...(IS_VERCEL ? { domain: '.arquive.online' } : {})"),
+  'cookie temporário de state atravessa www e domínio raiz sem compartilhar o cookie de sessão');
+assert.ok(server.includes("GOOGLE_DRIVE_REDIRECT_URI = process.env.GOOGLE_DRIVE_REDIRECT_URI || 'https://arquive.online/api/google-drive/oauth/callback'"),
+  'callback OAuth usa o domínio canônico configurado para produção');
 assert.ok(server.includes('crypto.timingSafeEqual(expectedBytes, receivedBytes)'));
 assert.ok(server.includes("setSetting('google_drive_refresh_token_enc', encryptedToken)"));
 assert.ok(readme.includes('https://arquive.online/api/google-drive/oauth/callback'));
