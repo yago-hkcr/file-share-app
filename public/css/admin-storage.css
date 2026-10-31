@@ -33,3 +33,20 @@ html[data-theme="dark"] .slide-panel-content{background:#050806;color:#e8f5ec}ht
 @media(max-width:650px){.storage-heading{align-items:stretch;flex-direction:column;gap:15px}.storage-refresh{width:100%;justify-content:center}.storage-provider-top{align-items:flex-start;flex-direction:column}.storage-status-badge{white-space:normal}.storage-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.storage-account{align-items:flex-start;flex-wrap:wrap}.storage-account-check{width:100%;margin-left:58px}.storage-extra{justify-content:flex-start}.storage-auto-update{flex-basis:100%}}
 @media(max-width:380px){.storage-metrics{grid-template-columns:1fr}.storage-account-check{margin-left:0}.storage-provider{padding:18px}}
 @media(prefers-reduced-motion:reduce){.storage-progress-bar{transition:none}}
+.storage-account-card{border:1px solid var(--storage-line);border-radius:10px;background:var(--storage-panel);margin:0 0 12px;overflow:hidden;display:flex;flex-direction:column}
+.storage-account-card-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--storage-line)}
+.storage-account-card-avatar{display:grid;width:36px;height:36px;place-items:center;border-radius:50%;background:rgba(34,197,94,.12);color:#15803d;font-size:16px;flex:0 0 36px}
+.storage-account-card-info{flex:1;min-width:0;margin:0 12px}
+.storage-account-card-name{font-weight:600;color:var(--storage-ink);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.storage-account-card-email{color:var(--storage-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.storage-account-card-status{font-size:11px;font-weight:600;white-space:nowrap}
+.storage-account-card-remove{color:#b42318;background:transparent;border:none;cursor:pointer;padding:6px;font-size:14px;border-radius:6px}
+.storage-account-card-remove:hover{background:rgba(180,35,24,.1)}
+.storage-account-card-quota{padding:10px 14px;display:grid;gap:6px}
+.storage-account-card-quota-row{display:flex;align-items:center;justify-content:space-between;font-size:12px}
+.storage-account-card-quota-row span{color:var(--storage-muted)}
+.storage-account-card-quota-row strong{color:var(--storage-ink);font-weight:600}
+.storage-account-card-progress{height:6px;background:rgba(100,116,139,.12);border-radius:3px;overflow:hidden}
+.storage-account-card-progress-bar{height:100%;background:linear-gradient(90deg,#16a34a,#4ade80);width:calc(var(--percent,0) * 1%);transition:width .35s ease}
+html[data-theme="dark"] .storage-account-card-remove:hover{background:rgba(248,113,113,.15)}
+@media(max-width:650px){.storage-account-card-header{flex-direction:column;align-items:flex-start;gap:8px}.storage-account-card-remove{align-self:flex-start}}

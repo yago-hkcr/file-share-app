@@ -128,29 +128,65 @@ async function deleteBlobs(pathnames) {
   if (driveFiles.length) await googleDriveDeletionQueue().enqueueAndDelete(driveFiles);
 }
 
-let cachedGoogleDriveStorage = null;
-let cachedGoogleDriveStorageKey = '';
-async function googleDriveStorage() {
-  const encryptedToken = await getSetting('google_drive_refresh_token_enc', '');
-  if (!encryptedToken) throw new Error('Google Drive não está conectado.');
-  const clientId = String(process.env.GOOGLE_DRIVE_CLIENT_ID || '').trim();
-  const clientSecret = String(process.env.GOOGLE_DRIVE_CLIENT_SECRET || '');
-  const cacheKey = `${encryptedToken}:${clientId}:${clientSecret}`;
-  if (cachedGoogleDriveStorage && cachedGoogleDriveStorageKey === cacheKey) return cachedGoogleDriveStorage;
-  cachedGoogleDriveStorageKey = cacheKey;
-  cachedGoogleDriveStorage = createGoogleDriveStorage({
-    clientId,
-    clientSecret,
-    getRefreshToken: async () => decryptRefreshToken(encryptedToken, sessionSecret())
-  });
-  return cachedGoogleDriveStorage;
+const googleDriveStorageCache = new Map();
+async function getGoogleDriveStorage(accountId) {
+  if (accountId) {
+    const cached = googleDriveStorageCache.get(accountId);
+    if (cached) return cached;
+    const row = await one('SELECT id, refresh_token_enc FROM google_drive_accounts WHERE id = $1 AND is_active = 1', [accountId]);
+    if (!row) throw new Error('Conta do Google Drive não encontrada ou inativa.');
+    const storage = createGoogleDriveStorage({
+      clientId: String(process.env.GOOGLE_DRIVE_CLIENT_ID || '').trim(),
+      clientSecret: String(process.env.GOOGLE_DRIVE_CLIENT_SECRET || ''),
+      getRefreshToken: async () => decryptRefreshToken(row.refresh_token_enc, sessionSecret())
+    });
+    googleDriveStorageCache.set(accountId, storage);
+    return storage;
+  }
+  // Sem accountId: retorna a melhor conta (mais espaço livre disponível)
+  const accounts = await getGoogleDriveAccounts();
+  if (!accounts.length) throw new Error('Nenhuma conta do Google Drive conectada.');
+  let best = null;
+  let bestFree = -1;
+  for (const acc of accounts) {
+    const free = Number.isFinite(acc.quota_limit_bytes) && Number.isFinite(acc.quota_used_bytes)
+      ? Math.max(0, acc.quota_limit_bytes - acc.quota_used_bytes)
+      : -1;
+    if (free > bestFree) { bestFree = free; best = acc; }
+  }
+  if (!best) throw new Error('Nenhuma conta do Google Drive conectada.');
+  return getGoogleDriveStorage(best.id);
+}
+async function getGoogleDriveAccounts() {
+  const rows = await q('SELECT id, provider_account_id, account_name, account_email, account_photo_url, connected_at, last_verified_at, quota_limit_bytes, quota_used_bytes, quota_drive_used_bytes, quota_trash_used_bytes, is_active FROM google_drive_accounts WHERE is_active = 1 ORDER BY connected_at ASC');
+  return rows.map(r => ({
+    id: r.id,
+    providerAccountId: r.provider_account_id,
+    accountName: r.account_name,
+    accountEmail: r.account_email,
+    accountPhotoUrl: r.account_photo_url,
+    connectedAt: r.connected_at,
+    lastVerifiedAt: r.last_verified_at,
+    quotaLimitBytes: r.quota_limit_bytes == null ? null : Number(r.quota_limit_bytes),
+    quotaUsedBytes: r.quota_used_bytes == null ? null : Number(r.quota_used_bytes),
+    quotaDriveUsedBytes: r.quota_drive_used_bytes == null ? null : Number(r.quota_drive_used_bytes),
+    quotaTrashUsedBytes: r.quota_trash_used_bytes == null ? null : Number(r.quota_trash_used_bytes),
+    isActive: Boolean(r.is_active)
+  }));
+}
+async function googleDriveConnected() {
+  const row = await one('SELECT COUNT(*) AS count FROM google_drive_accounts WHERE is_active = 1');
+  return Number(row && row.count) > 0;
+}
+function clearGoogleDriveStorageCache() {
+  googleDriveStorageCache.clear();
 }
 
 let cachedGoogleDriveDeletionQueue = null;
 let lastGoogleDriveDeletionRetry = 0;
 function googleDriveDeletionQueue() {
   if (!cachedGoogleDriveDeletionQueue) {
-    cachedGoogleDriveDeletionQueue = createGoogleDriveDeletionQueue({ query: q, getStorage: googleDriveStorage });
+    cachedGoogleDriveDeletionQueue = createGoogleDriveDeletionQueue({ query: q, getStorage: () => getGoogleDriveStorage() });
   }
   return cachedGoogleDriveDeletionQueue;
 }
@@ -184,10 +220,6 @@ async function getDriveUploadSession(uploadId, userId) {
 
 function validateDriveFileId(value) {
   return typeof value === 'string' && /^[A-Za-z0-9_-]{10,200}$/.test(value);
-}
-
-async function googleDriveConnected() {
-  return Boolean(await getSetting('google_drive_refresh_token_enc', ''));
 }
 
 async function uploadBufferToDrive({ name, mimeType, buffer, uploadId }) {
@@ -833,6 +865,22 @@ await q('ALTER TABLE files ADD COLUMN IF NOT EXISTS chat_only INTEGER DEFAULT 0'
   )`);
   await q('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log (created_at)');
   await q('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
+  await q(`CREATE TABLE IF NOT EXISTS google_drive_accounts (
+    id TEXT PRIMARY KEY,
+    provider_account_id TEXT NOT NULL UNIQUE,
+    account_name TEXT,
+    account_email TEXT,
+    account_photo_url TEXT,
+    refresh_token_enc TEXT NOT NULL,
+    connected_at TEXT NOT NULL,
+    last_verified_at TEXT,
+    quota_limit_bytes BIGINT,
+    quota_used_bytes BIGINT,
+    quota_drive_used_bytes BIGINT,
+    quota_trash_used_bytes BIGINT,
+    is_active INTEGER DEFAULT 1
+  )`);
+  await q('CREATE INDEX IF NOT EXISTS idx_google_drive_accounts_active ON google_drive_accounts (is_active)');
   await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen INTEGER DEFAULT 0');
   const onboardingMigration = await one("SELECT value FROM settings WHERE key = 'onboarding_migration_v1'");
   if (!onboardingMigration) {
@@ -1845,57 +1893,91 @@ app.get('/api/me', requireAuth, wrap(async (req, res) => {
 // O refresh token é cifrado antes de persistir no banco; nunca é enviado ao navegador.
 app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
   const configured = Boolean(process.env.GOOGLE_DRIVE_CLIENT_ID && process.env.GOOGLE_DRIVE_CLIENT_SECRET);
-  const connected = Boolean(await getSetting('google_drive_refresh_token_enc', ''));
+  const accounts = await getGoogleDriveAccounts();
+  const connected = accounts.length > 0;
   res.set('Cache-Control', 'no-store');
   if (!configured || !connected) {
-    return res.json({ configured, connected, verified: false, checked_at: null, account: null, storage_quota: null });
+    return res.json({ configured, connected, verified: false, checked_at: null, accounts: [], total: null });
   }
   try {
-    const about = await (await googleDriveStorage()).getAbout();
-    const user = about.user || {};
-    const quota = about.storageQuota || {};
+    const totalLimit = accounts.reduce((sum, a) => sum + (Number.isFinite(a.quotaLimitBytes) ? a.quotaLimitBytes : 0), 0);
+    const totalUsed = accounts.reduce((sum, a) => sum + (Number.isFinite(a.quotaUsedBytes) ? a.quotaUsedBytes : 0), 0);
+    const verifiedAccounts = accounts.filter(a => Boolean(a.lastVerifiedAt)).length;
     return res.json({
       configured,
       connected,
-      verified: true,
+      verified: verifiedAccounts > 0,
       checked_at: new Date().toISOString(),
-      account: {
-        name: typeof user.displayName === 'string' ? user.displayName : '',
-        email: typeof user.emailAddress === 'string' ? user.emailAddress : '',
-        photo_url: typeof user.photoLink === 'string' ? user.photoLink : ''
-      },
-      storage_quota: {
-        limit_bytes: quota.limit == null ? null : quota.limit,
-        used_bytes: quota.usage == null ? null : quota.usage,
-        drive_used_bytes: quota.usageInDrive == null ? null : quota.usageInDrive,
-        trash_used_bytes: quota.usageInDriveTrash == null ? null : quota.usageInDriveTrash
+      accounts: accounts.map(a => ({
+        id: a.id,
+        accountName: a.accountName,
+        accountEmail: a.accountEmail,
+        accountPhotoUrl: a.accountPhotoUrl,
+        connectedAt: a.connectedAt,
+        lastVerifiedAt: a.lastVerifiedAt,
+        quotaLimitBytes: a.quotaLimitBytes,
+        quotaUsedBytes: a.quotaUsedBytes,
+        quotaDriveUsedBytes: a.quotaDriveUsedBytes,
+        quotaTrashUsedBytes: a.quotaTrashUsedBytes,
+        freeBytes: Number.isFinite(a.quotaLimitBytes) && Number.isFinite(a.quotaUsedBytes) ? Math.max(0, a.quotaLimitBytes - a.quotaUsedBytes) : null
+      })),
+      total: {
+        limitBytes: totalLimit || null,
+        usedBytes: totalUsed || null,
+        freeBytes: Number.isFinite(totalLimit) && Number.isFinite(totalUsed) ? Math.max(0, totalLimit - totalUsed) : null
       }
     });
   } catch (error) {
     return res.json({ configured, connected, verified: false, checked_at: new Date().toISOString(),
-      verification_failed: true, account: null, storage_quota: null });
+      verification_failed: true, accounts: [], total: null });
   }
 }));
 
 app.delete('/api/admin/google-drive/connection', asAdmin, wrap(async (req, res) => {
-  const encryptedRefreshToken = await getSetting('google_drive_refresh_token_enc', '');
-  await setSetting('google_drive_refresh_token_enc', '');
-  await setSetting('google_drive_connected_at', '');
-  cachedGoogleDriveStorage = null;
-  cachedGoogleDriveStorageKey = '';
-  if (encryptedRefreshToken) {
+  const rows = await q('SELECT id, refresh_token_enc FROM google_drive_accounts WHERE is_active = 1');
+  for (const row of rows || []) {
     try {
-      const refreshToken = decryptRefreshToken(encryptedRefreshToken, sessionSecret());
+      const refreshToken = decryptRefreshToken(row.refresh_token_enc, sessionSecret());
       await fetch('https://oauth2.googleapis.com/revoke', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ token: refreshToken }),
         signal: AbortSignal.timeout(3000)
       });
-    } catch { /* A desconexão local já está persistida; revogação remota é best-effort. */ }
+    } catch { /* revogação remota é best-effort */ }
   }
+  await q('UPDATE google_drive_accounts SET is_active = 0');
+  clearGoogleDriveStorageCache();
   res.set('Cache-Control', 'no-store');
-  return res.json({ success: true, configured: Boolean(process.env.GOOGLE_DRIVE_CLIENT_ID && process.env.GOOGLE_DRIVE_CLIENT_SECRET), connected: false, verified: false });
+  return res.json({ success: true, connected: false });
+}));
+
+app.get('/api/admin/google-drive/accounts', asAdmin, wrap(async (req, res) => {
+  const accounts = await getGoogleDriveAccounts();
+  const totalLimit = accounts.reduce((sum, a) => sum + (Number.isFinite(a.quotaLimitBytes) ? a.quotaLimitBytes : 0), 0);
+  const totalUsed = accounts.reduce((sum, a) => sum + (Number.isFinite(a.quotaUsedBytes) ? a.quotaUsedBytes : 0), 0);
+  res.set('Cache-Control', 'no-store');
+  return res.json({ accounts, total: { limitBytes: totalLimit || null, usedBytes: totalUsed || null } });
+}));
+
+app.delete('/api/admin/google-drive/accounts/:id', asAdmin, wrap(async (req, res) => {
+  const accountId = String(req.params.id || '');
+  if (!/^[a-zA-Z0-9_-]{8,}$/.test(accountId)) return res.status(400).json({ error: 'ID de conta inválido.' });
+  const row = await one('SELECT refresh_token_enc FROM google_drive_accounts WHERE id = $1 AND is_active = 1', [accountId]);
+  if (!row) return res.status(404).json({ error: 'Conta não encontrada.' });
+  try {
+    const refreshToken = decryptRefreshToken(row.refresh_token_enc, sessionSecret());
+    await fetch('https://oauth2.googleapis.com/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: refreshToken }),
+      signal: AbortSignal.timeout(3000)
+    });
+  } catch { /* revogação remota é best-effort */ }
+  await q('UPDATE google_drive_accounts SET is_active = 0 WHERE id = $1', [accountId]);
+  clearGoogleDriveStorageCache();
+  res.set('Cache-Control', 'no-store');
+  return res.json({ success: true });
 }));
 
 app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) => {
@@ -1973,8 +2055,42 @@ app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {
       return res.status(403).send('O acesso ao Google Drive não foi concedido. Reconecte e aceite a permissão solicitada pelo FileShare.');
     }
     const encryptedToken = encryptRefreshToken(tokens.refresh_token, sessionSecret());
-    await setSetting('google_drive_refresh_token_enc', encryptedToken);
-    await setSetting('google_drive_connected_at', ts());
+    try {
+      const tempStorage = createGoogleDriveStorage({
+        clientId,
+        clientSecret,
+        getRefreshToken: async () => tokens.refresh_token
+      });
+      const about = await tempStorage.getAbout();
+      const user = about.user || {};
+      const quota = about.storageQuota || {};
+      const providerAccountId = String(user.emailAddress || user.displayName || crypto.randomBytes(16).toString('hex'));
+      await q(`INSERT INTO google_drive_accounts (id, provider_account_id, account_name, account_email, account_photo_url, refresh_token_enc, connected_at, is_active, quota_limit_bytes, quota_used_bytes, quota_drive_used_bytes, quota_trash_used_bytes)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8,$9,$10,$11)
+        ON CONFLICT (provider_account_id) DO UPDATE SET
+          refresh_token_enc = EXCLUDED.refresh_token_enc,
+          account_name = EXCLUDED.account_name,
+          account_email = EXCLUDED.account_email,
+          account_photo_url = EXCLUDED.account_photo_url,
+          connected_at = EXCLUDED.connected_at,
+          is_active = 1`,
+        [uuidv4(), providerAccountId, typeof user.displayName === 'string' ? user.displayName : '',
+         typeof user.emailAddress === 'string' ? user.emailAddress : '',
+         typeof user.photoLink === 'string' ? user.photoLink : '',
+         encryptedToken, ts(),
+         quota.limit == null ? null : String(quota.limit),
+         quota.usage == null ? null : String(quota.usage),
+         quota.usageInDrive == null ? null : String(quota.usageInDrive),
+         quota.usageInDriveTrash == null ? null : String(quota.usageInDriveTrash)]);
+    } catch (e) {
+      // Se falhar ao buscar dados da conta, ainda assim salva o token para reconectar depois
+      await q(`INSERT INTO google_drive_accounts (id, provider_account_id, account_name, account_email, account_photo_url, refresh_token_enc, connected_at, is_active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,1)
+        ON CONFLICT (provider_account_id) DO UPDATE SET
+          refresh_token_enc = EXCLUDED.refresh_token_enc`,
+        [uuidv4(), crypto.randomBytes(16).toString('hex'), '', '', '', encryptedToken, ts()]);
+    }
+    clearGoogleDriveStorageCache();
     res.set('Cache-Control', 'no-store');
     const safeReturnOrigin = IS_VERCEL
       ? (['https://arquive.online', 'https://www.arquive.online'].includes(returnOriginCookie) ? returnOriginCookie : 'https://arquive.online')

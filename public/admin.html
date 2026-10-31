@@ -104,33 +104,30 @@
       <div id="tab-storage" class="tab-content">
         <div class="storage-heading">
           <div><span class="storage-eyebrow">CENTRAL DE CONTROLE</span><h2><i class="fas fa-cloud"></i> Armazenamento</h2>
-            <p class="storage-subtitle">Acompanhe a conta compartilhada e o espaço disponível para novos anexos.</p></div>
+            <p class="storage-subtitle">Conecte contas do Google Drive para aumentar o armazenamento total disponível para anexos.</p></div>
           <button id="googleDriveRefresh" class="btn btn-outline storage-refresh" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Atualizar status</button>
+          <a id="googleDriveConnectNew" class="btn btn-green" href="#" onclick="connectNewGoogleDrive(event)" hidden><i class="fab fa-google-drive"></i> Conectar outra conta</a>
         </div>
         <section class="storage-provider" aria-labelledby="googleDriveTitle">
           <div class="storage-provider-top">
-            <div class="storage-brand"><span class="storage-brand-icon"><i class="fab fa-google-drive"></i></span><div><span class="storage-eyebrow">PROVEDOR CONECTADO</span><h3 id="googleDriveTitle">Google Drive</h3></div></div>
-            <span id="googleDriveBadge" class="storage-status-badge is-loading"><span class="storage-status-dot"></span><span id="googleDriveStatus" role="status" aria-live="polite">Verificando conexão…</span></span>
+            <div class="storage-brand"><span class="storage-brand-icon"><i class="fab fa-google-drive"></i></span><div><span class="storage-eyebrow">CONTAS DO GOOGLE DRIVE</span><h3 id="googleDriveTitle">Contas conectadas</h3></div></div>
+            <span id="googleDriveBadge" class="storage-status-badge is-loading"><span class="storage-status-dot"></span><span id="googleDriveStatus" role="status" aria-live="polite">Verificando conexões…</span></span>
           </div>
-          <p id="googleDriveMessage" class="storage-description">Os novos anexos enviados em salas e conversas diretas serão salvos nesta conta. Os arquivos existentes permanecem onde estão.</p>
+          <p id="googleDriveMessage" class="storage-description">Cada conta conectada contribui com seu próprio espaço. Os novos anexos são enviados para a conta com mais espaço livre disponível.</p>
           <div id="googleDriveNotConfigured" class="storage-notice" hidden><i class="fas fa-circle-info"></i><span>As credenciais de integração do Google Drive ainda não foram configuradas neste ambiente.</span></div>
-          <div id="googleDriveAccount" class="storage-account" hidden>
-            <div class="storage-avatar" id="googleDriveAvatar" aria-hidden="true"><i class="fas fa-user"></i></div>
-            <div class="storage-account-copy"><span class="storage-eyebrow">CONTA COMPARTILHADA</span><strong id="googleDriveAccountName">—</strong><span id="googleDriveAccountEmail">—</span></div>
-            <span id="googleDriveAccountCheck" class="storage-account-check"><i class="fas fa-shield-check"></i> Conta verificada</span>
-          </div>
-          <div id="googleDriveQuota" class="storage-quota" hidden>
-            <div class="storage-quota-heading"><div><span class="storage-eyebrow">ESPAÇO DA CONTA</span><h4>Uso do armazenamento</h4></div><span id="googleDriveQuotaPercent" class="storage-quota-percent">—</span></div>
-            <div class="storage-progress-track" role="progressbar" aria-label="Espaço de armazenamento usado" aria-valuemin="0" aria-valuemax="100"><span id="googleDriveQuotaBar" class="storage-progress-bar"></span></div>
+          <div id="googleDriveAccountsList"></div>
+          <div id="googleDriveTotalQuota" class="storage-quota" hidden>
+            <div class="storage-quota-heading"><div><span class="storage-eyebrow">ARMAZENAMENTO TOTAL COMBINADO</span><h4>Espaço total de todas as contas</h4></div><span id="googleDriveTotalQuotaPercent" class="storage-quota-percent">—</span></div>
+            <div class="storage-progress-track" role="progressbar" aria-label="Espaço total usado" aria-valuemin="0" aria-valuemax="100"><span id="googleDriveTotalQuotaBar" class="storage-progress-bar"></span></div>
             <div class="storage-metrics">
-              <div class="storage-metric"><span><i class="fas fa-hard-drive"></i> Conta utilizada</span><strong id="googleDriveQuotaUsed">—</strong></div>
-              <div class="storage-metric storage-metric-free"><span><i class="fas fa-circle-check"></i> Disponível</span><strong id="googleDriveQuotaFree">—</strong></div>
-              <div class="storage-metric"><span><i class="fas fa-database"></i> Capacidade total</span><strong id="googleDriveQuotaLimit">—</strong></div>
+              <div class="storage-metric"><span><i class="fas fa-hard-drive"></i> Total utilizado</span><strong id="googleDriveTotalQuotaUsed">—</strong></div>
+              <div class="storage-metric storage-metric-free"><span><i class="fas fa-circle-check"></i> Total disponível</span><strong id="googleDriveTotalQuotaFree">—</strong></div>
+              <div class="storage-metric"><span><i class="fas fa-database"></i> Capacidade total</span><strong id="googleDriveTotalQuotaLimit">—</strong></div>
             </div>
-            <div class="storage-extra"><span><i class="fas fa-cloud"></i> Em arquivos do Drive <strong id="googleDriveDriveUsed">—</strong></span><span><i class="fas fa-trash-can"></i> Na lixeira <strong id="googleDriveTrashUsed">—</strong></span><span><i class="fas fa-clock"></i> Atualizado <strong id="googleDriveCheckedAt">—</strong></span></div>
+            <div class="storage-extra"><span><i class="fas fa-users"></i> <strong id="googleDriveAccountCount">0</strong> conta(s) conectada(s)</span></div>
           </div>
           <div id="googleDriveVerificationError" class="storage-notice storage-notice-error" hidden><i class="fas fa-triangle-exclamation"></i><span id="googleDriveVerificationMessage"></span></div>
-          <div class="storage-actions"><a id="googleDriveConnect" class="btn btn-green" href="https://arquive.online/api/admin/google-drive/oauth/start" hidden><i class="fab fa-google-drive"></i> Conectar conta compartilhada</a><button id="googleDriveDisconnect" class="btn btn-outline storage-disconnect" type="button" onclick="disconnectGoogleDrive()" hidden><i class="fas fa-link-slash"></i> Desconectar conta</button><span id="googleDriveAutoUpdate" class="storage-auto-update" aria-live="polite"><i class="fas fa-rotate"></i> Atualização automática ativada</span></div>
+          <div class="storage-actions"><span id="googleDriveAutoUpdate" class="storage-auto-update" aria-live="polite"><i class="fas fa-rotate"></i> Atualização automática ativada</span></div>
         </div>
       </div>
     </main>
@@ -241,17 +238,15 @@
     }
 
     async function loadGoogleDriveStatus() {
-      const status = document.getElementById('googleDriveStatus');
-      const connect = document.getElementById('googleDriveConnect');
-      const notConfigured = document.getElementById('googleDriveNotConfigured');
       const badge = document.getElementById('googleDriveBadge');
       const refresh = document.getElementById('googleDriveRefresh');
-      const account = document.getElementById('googleDriveAccount');
-      const quotaPanel = document.getElementById('googleDriveQuota');
+      const notConfigured = document.getElementById('googleDriveNotConfigured');
+      const connectNew = document.getElementById('googleDriveConnectNew');
+      const accountsList = document.getElementById('googleDriveAccountsList');
+      const totalPanel = document.getElementById('googleDriveTotalQuota');
       const verificationError = document.getElementById('googleDriveVerificationError');
-      const disconnect = document.getElementById('googleDriveDisconnect');
       const message = document.getElementById('googleDriveMessage');
-      if (!lastDriveStatus) status.textContent = 'Conferindo conexão salva…';
+      if (!lastDriveStatus) document.getElementById('googleDriveStatus').textContent = 'Conferindo conexões salvas…';
       if (driveStatusRequest) return driveStatusRequest;
       const sequence = ++driveStatusSequence;
       driveStatusIsRefreshing = true;
@@ -259,41 +254,46 @@
       refresh.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Atualizando…';
       driveStatusRequest = (async () => {
         try {
-          const response = await fetch('/api/admin/google-drive/status', { cache: 'no-store' });
+          const response = await fetch('/api/admin/google-drive/accounts', { cache: 'no-store' });
           if (response.status === 401) { window.location.href = '/'; return; }
           const data = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error('Não foi possível consultar o estado da conexão.');
+          if (!response.ok) throw new Error('Não foi possível consultar as contas do Drive.');
           if (sequence !== driveStatusSequence) return;
-          if (data.connected) {
-            // Estado conectado é persistente: uma falha temporária de API/cota não
-            // apaga a conta nem volta a oferecer outra autorização OAuth.
-            lastDriveStatus = {
-              ...(lastDriveStatus || {}),
-              ...data,
-              connected: true,
-              account: data.account || lastDriveStatus?.account || {},
-              storage_quota: data.storage_quota || lastDriveStatus?.storage_quota || {}
-            };
-            renderGoogleDriveConnected(lastDriveStatus);
+          lastDriveStatus = { ...data, connected: Boolean(data.accounts && data.accounts.length) };
+          if (data.accounts && data.accounts.length) {
+            renderGoogleDriveAccounts(data.accounts, data.total);
+            renderGoogleDriveTotalQuota(data.total);
+            connectNew.hidden = false;
+            setGoogleDriveNoticeState({ connected: true, failed: !data.verified });
+            message.textContent = data.accounts.length + ' conta(s) do Google Drive conectada(s). Novos anexos usam a conta com mais espaço livre.';
+            if (!data.verified) {
+              verificationError.hidden = false;
+              document.getElementById('googleDriveVerificationMessage').textContent = 'Algumas contas não puderam ser verificadas no momento. A autorização continua salva.';
+            }
           } else {
-            lastDriveStatus = data;
-            renderGoogleDriveDisconnected(data);
+            accountsList.innerHTML = '';
+            totalPanel.hidden = true;
+            connectNew.hidden = !data.configured;
+            setGoogleDriveNoticeState({ configured: Boolean(data.configured), connected: false });
+            if (!data.configured) {
+              document.getElementById('googleDriveStatus').textContent = 'Integração indisponível';
+              badge.className = 'storage-status-badge is-warning';
+              message.textContent = 'A integração do Google Drive precisa ser configurada no servidor.';
+            } else {
+              document.getElementById('googleDriveStatus').textContent = 'Nenhuma conta conectada';
+              badge.className = 'storage-status-badge is-warning';
+              message.textContent = 'Conecte uma ou mais contas do Google Drive para aumentar o armazenamento disponível.';
+            }
           }
+          saveDriveStatusToStorage();
         } catch (error) {
           if (sequence !== driveStatusSequence) return;
-          if (lastDriveStatus?.connected) {
-            status.textContent = 'Conexão salva · atualização temporariamente indisponível';
-            badge.className = 'storage-status-badge is-connected is-stale';
-            message.textContent = 'A conta continua conectada. Os dados serão atualizados automaticamente quando o serviço responder.';
-            document.getElementById('googleDriveCheckedAt').textContent = 'Última verificação válida: ' + (lastDriveStatus.checked_at ? new Date(lastDriveStatus.checked_at).toLocaleString('pt-BR') : '—');
-          } else {
-            status.textContent = 'Não foi possível confirmar a conexão';
-            badge.className = 'storage-status-badge is-error';
-            message.textContent = 'O painel tentará verificar novamente automaticamente.';
-            notConfigured.hidden = true;
-            verificationError.hidden = false;
-            document.getElementById('googleDriveVerificationMessage').textContent = 'Serviço temporariamente indisponível; a conexão salva não será removida.';
-          }
+          document.getElementById('googleDriveStatus').textContent = 'Erro ao consultar contas';
+          badge.className = 'storage-status-badge is-error';
+          message.textContent = 'O painel tentará verificar novamente automaticamente.';
+          notConfigured.hidden = true;
+          verificationError.hidden = false;
+          document.getElementById('googleDriveVerificationMessage').textContent = 'Serviço temporariamente indisponível.';
         } finally {
           driveStatusRequest = null;
           if (sequence === driveStatusSequence) {
@@ -314,115 +314,110 @@
     }
 
     function renderGoogleDriveDisconnected(data = {}) {
-      const status = document.getElementById('googleDriveStatus');
       const badge = document.getElementById('googleDriveBadge');
       const message = document.getElementById('googleDriveMessage');
-      const account = document.getElementById('googleDriveAccount');
-      const quotaPanel = document.getElementById('googleDriveQuota');
-      document.getElementById('googleDriveConnect').hidden = true;
-      document.getElementById('googleDriveDisconnect').hidden = true;
-      account.hidden = true;
-      quotaPanel.hidden = true;
+      const accountsList = document.getElementById('googleDriveAccountsList');
+      const totalPanel = document.getElementById('googleDriveTotalQuota');
+      const connectNew = document.getElementById('googleDriveConnectNew');
+      accountsList.innerHTML = '';
+      totalPanel.hidden = true;
+      connectNew.hidden = true;
       setGoogleDriveNoticeState({ configured: Boolean(data.configured), connected: false });
       if (!data.configured) {
-        status.textContent = 'Integração indisponível';
+        document.getElementById('googleDriveStatus').textContent = 'Integração indisponível';
         badge.className = 'storage-status-badge is-warning';
         message.textContent = 'A integração do Google Drive precisa ser configurada no servidor.';
       } else {
-        status.textContent = 'Conta ainda não conectada';
+        document.getElementById('googleDriveStatus').textContent = 'Nenhuma conta conectada';
         badge.className = 'storage-status-badge is-warning';
-        message.textContent = 'Conecte a conta Google compartilhada uma vez. A conexão permanecerá salva até você desconectá-la.';
-        document.getElementById('googleDriveConnect').hidden = false;
-        document.getElementById('googleDriveConnect').href = location.origin + '/api/admin/google-drive/oauth/start';
+        message.textContent = 'Conecte uma ou mais contas do Google Drive para aumentar o armazenamento disponível.';
+        connectNew.hidden = false;
       }
       saveDriveStatusToStorage();
     }
 
-    function renderGoogleDriveConnected(data = {}) {
-      const status = document.getElementById('googleDriveStatus');
-      const badge = document.getElementById('googleDriveBadge');
-      const message = document.getElementById('googleDriveMessage');
-      const connect = document.getElementById('googleDriveConnect');
-      const account = document.getElementById('googleDriveAccount');
-      const quotaPanel = document.getElementById('googleDriveQuota');
-      const disconnect = document.getElementById('googleDriveDisconnect');
-      const driveAccount = data.account || lastDriveStatus?.account || {};
-      status.textContent = data.verified ? 'Conectado' : 'Conexão salva';
-      badge.className = data.verified ? 'storage-status-badge is-connected' : 'storage-status-badge is-connected is-stale';
-      message.textContent = data.verified
-        ? 'Conta compartilhada conectada. O estado e o armazenamento são atualizados automaticamente.'
-        : 'A autorização continua salva. A verificação do Drive será repetida automaticamente.';
-      connect.hidden = true;
-      connect.href = location.origin + '/api/admin/google-drive/oauth/start';
-      disconnect.hidden = false;
-      account.hidden = !driveAccount.name && !driveAccount.email && !lastDriveStatus?.account;
-      setGoogleDriveNoticeState({ connected: true, failed: !data.verified && Boolean(data.verification_failed) });
-      if (!data.verified && data.verification_failed) {
-        document.getElementById('googleDriveVerificationMessage').textContent = 'Não foi possível atualizar os dados do Drive agora. A autorização continua salva e o painel tentará novamente automaticamente.';
+    function renderGoogleDriveAccounts(accounts, total) {
+      const list = document.getElementById('googleDriveAccountsList');
+      list.replaceChildren();
+      for (const acc of accounts) {
+        const card = document.createElement('div');
+        card.className = 'storage-account-card';
+        const free = acc.freeBytes != null ? acc.freeBytes : null;
+        const used = acc.quotaUsedBytes != null ? acc.quotaUsedBytes : null;
+        const limit = acc.quotaLimitBytes != null ? acc.quotaLimitBytes : null;
+        const percent = used != null && limit != null && limit > 0 ? Math.min(100, used / limit * 100) : null;
+        card.innerHTML = '<div class="storage-account-card-header">' +
+          '<div class="storage-account-card-avatar"><i class="fas fa-user"></i></div>' +
+          '<div class="storage-account-card-info">' +
+          '<div class="storage-account-card-name">' + esc(acc.accountName || 'Conta sem nome') + '</div>' +
+          '<div class="storage-account-card-email">' + esc(acc.accountEmail || '—') + '</div>' +
+          '<div class="storage-account-card-status">' + (acc.lastVerifiedAt ? '<i class="fas fa-shield-check"></i> Verificada' : '<i class="fas fa-link"></i> Autorização salva') + '</div>' +
+          '</div>' +
+          '<button type="button" class="btn btn-sm btn-danger storage-account-card-remove" onclick="disconnectGoogleDriveAccount(\'' + esc(acc.id) + '\')" title="Remover conta"><i class="fas fa-trash-alt"></i></button>' +
+          '</div>' +
+          '<div class="storage-account-card-quota">' +
+          '<div class="storage-account-card-quota-row"><span>' + esc(acc.accountEmail || 'Conta') + '</span><strong>' + (percent != null ? percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% usado' : '—') + '</strong></div>' +
+          '<div class="storage-account-card-progress" style="--percent:' + (percent ?? 0) + '"><div class="storage-account-card-progress-bar"></div></div>' +
+          '<div class="storage-account-card-quota-row"><span>Utilizado</span><strong>' + formatDriveBytes(used) + '</strong></div>' +
+          '<div class="storage-account-card-quota-row"><span>Disponível</span><strong>' + (free != null ? formatDriveBytes(free) : '—') + '</strong></div>' +
+          '<div class="storage-account-card-quota-row"><span>Total</span><strong>' + formatDriveBytes(limit) + '</strong></div>' +
+          '</div>';
+        list.appendChild(card);
       }
-      document.getElementById('googleDriveAccountCheck').innerHTML = data.verified
-        ? '<i class="fas fa-shield-check"></i> Conta verificada'
-        : '<i class="fas fa-link"></i> Autorização salva';
+      document.getElementById('googleDriveStatus').textContent = accounts.length + ' conta(s) conectada(s)';
+      document.getElementById('googleDriveBadge').className = 'storage-status-badge is-connected';
+    }
 
-      document.getElementById('googleDriveAccountName').textContent = driveAccount.name || 'Conta Google compartilhada';
-      document.getElementById('googleDriveAccountEmail').textContent = driveAccount.email || 'E-mail não informado pelo Google';
-      const avatar = document.getElementById('googleDriveAvatar');
-      avatar.replaceChildren();
-      let photoUrl = null;
+    function renderGoogleDriveTotalQuota(total) {
+      const panel = document.getElementById('googleDriveTotalQuota');
+      if (!total) { panel.hidden = true; return; }
+      const limit = total.limitBytes != null ? Number(total.limitBytes) : null;
+      const used = total.usedBytes != null ? Number(total.usedBytes) : null;
+      const free = total.freeBytes != null ? Number(total.freeBytes) : null;
+      const percent = used != null && limit != null && limit > 0 ? Math.min(100, used / limit * 100) : null;
+      panel.hidden = false;
+      document.getElementById('googleDriveTotalQuotaUsed').textContent = formatDriveBytes(used);
+      document.getElementById('googleDriveTotalQuotaFree').textContent = free != null ? formatDriveBytes(free) : (limit != null ? 'Não informado' : '—');
+      document.getElementById('googleDriveTotalQuotaLimit').textContent = formatDriveBytes(limit);
+      document.getElementById('googleDriveTotalQuotaPercent').textContent = percent != null ? percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% usado' : '—';
+      document.getElementById('googleDriveAccountCount').textContent = total.accountCount != null ? total.accountCount : '0';
+      const bar = document.getElementById('googleDriveTotalQuotaBar');
+      bar.style.width = (percent ?? 0) + '%';
+      bar.classList.toggle('is-near-limit', percent != null && percent >= 85);
+      document.querySelector('#googleDriveTotalQuota .storage-progress-track').setAttribute('aria-valuenow', String(Math.round(percent ?? 0)));
+    }
+
+    async function connectNewGoogleDrive(event) {
+      if (event) event.preventDefault();
+      window.location.href = location.origin + '/api/admin/google-drive/oauth/start';
+    }
+
+    async function disconnectGoogleDriveAccount(accountId) {
+      if (!window.confirm('Remover esta conta do Google Drive? Novos anexos não usarão mais esta conta.')) return;
       try {
-        const candidate = new URL(driveAccount.photo_url);
-        if (candidate.protocol === 'https:') photoUrl = candidate.href;
-      } catch {}
-      if (photoUrl) {
-        const image = document.createElement('img');
-        image.src = photoUrl;
-        image.alt = '';
-        avatar.appendChild(image);
-      } else {
-        const icon = document.createElement('i');
-        icon.className = 'fas fa-user';
-        avatar.appendChild(icon);
+        const response = await fetch('/api/admin/google-drive/accounts/' + accountId, { method: 'DELETE', headers: { 'Accept': 'application/json' } });
+        if (response.status === 401) { window.location.href = '/'; return; }
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(data.error || 'Não foi possível remover a conta.');
+        showToast('Conta removida com sucesso.', 'info');
+        loadGoogleDriveStatus();
+      } catch (error) {
+        showToast(error.message || 'Não foi possível remover a conta.', 'error');
       }
-
-      const quota = data.storage_quota || lastDriveStatus?.storage_quota || {};
-      const used = quota.used_bytes == null ? null : Number(quota.used_bytes);
-      const limit = quota.limit_bytes == null ? null : Number(quota.limit_bytes);
-      const free = Number.isFinite(used) && used >= 0 && Number.isFinite(limit) && limit >= used ? limit - used : null;
-      const percent = Number.isFinite(used) && Number.isFinite(limit) && limit > 0 ? Math.min(100, used / limit * 100) : null;
-      document.getElementById('googleDriveQuotaUsed').textContent = formatDriveBytes(quota.used_bytes);
-      document.getElementById('googleDriveQuotaFree').textContent = free == null ? (limit == null ? 'Sem limite informado' : 'Não informado') : formatDriveBytes(free);
-      document.getElementById('googleDriveQuotaLimit').textContent = limit == null ? 'Sem limite informado' : formatDriveBytes(limit);
-      document.getElementById('googleDriveDriveUsed').textContent = formatDriveBytes(quota.drive_used_bytes);
-      document.getElementById('googleDriveTrashUsed').textContent = formatDriveBytes(quota.trash_used_bytes);
-      document.getElementById('googleDriveQuotaPercent').textContent = percent == null ? '—' : `${percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% usado`;
-      const progress = document.getElementById('googleDriveQuotaBar');
-      progress.style.width = `${percent ?? 0}%`;
-      progress.classList.toggle('is-near-limit', percent !== null && percent >= 85);
-      document.querySelector('.storage-progress-track').setAttribute('aria-valuenow', String(Math.round(percent ?? 0)));
-      if (data.checked_at) document.getElementById('googleDriveCheckedAt').textContent = new Date(data.checked_at).toLocaleString('pt-BR');
-      quotaPanel.hidden = false;
-      saveDriveStatusToStorage();
     }
 
     async function disconnectGoogleDrive() {
-      if (!window.confirm('Desconectar a conta Google Drive compartilhada? Novos anexos deixarão de ser enviados ao Drive.')) return;
-      const button = document.getElementById('googleDriveDisconnect');
-      button.disabled = true;
+      if (!window.confirm('Desconectar todas as contas do Google Drive? Novos anexos deixarão de ser enviados ao Drive.')) return;
       try {
         const response = await fetch('/api/admin/google-drive/connection', { method: 'DELETE', headers: { 'Accept': 'application/json' } });
-        const data = await response.json().catch(() => ({}));
         if (response.status === 401) { window.location.href = '/'; return; }
-        if (!response.ok || !data.success) throw new Error('Não foi possível desconectar a conta. Tente novamente.');
-        driveStatusIsRefreshing = false;
-        driveStatusSequence++;
-        driveStatusRequest = null;
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error('Não foi possível desconectar as contas.');
         lastDriveStatus = null;
         renderGoogleDriveDisconnected({ configured: data.configured, connected: false });
-        showToast('Conta Google Drive desconectada. Os arquivos já armazenados permanecem no Drive.', 'info');
+        showToast('Todas as contas do Google Drive foram desconectadas. Os arquivos já armazenados permanecem no Drive.', 'info');
       } catch (error) {
-        showToast(error.message || 'Não foi possível desconectar a conta.', 'error');
-      } finally {
-        button.disabled = false;
+        showToast(error.message || 'Não foi possível desconectar as contas.', 'error');
       }
     }
 
