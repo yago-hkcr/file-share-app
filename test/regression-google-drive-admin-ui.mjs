@@ -28,7 +28,7 @@ function createElement() {
   };
 }
 
-async function createHarness(payload, fetchError = null) {
+async function createHarness(payload, fetchError = null, cachedStatus = null) {
   const ids = [
     'googleDriveStatus', 'googleDriveConnect', 'googleDriveDisconnect', 'googleDriveNotConfigured', 'googleDriveBadge',
     'googleDriveRefresh', 'googleDriveConnectNew', 'googleDriveAccountsList', 'googleDriveTotalQuota',
@@ -67,7 +67,10 @@ async function createHarness(payload, fetchError = null) {
     document,
     location: { origin: 'https://arquive.online' },
     window: { location: { href: '' }, confirm: () => true },
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: {
+      getItem: () => cachedStatus ? JSON.stringify({ ...cachedStatus, saved_at: Date.now() }) : null,
+      setItem() {}
+    },
     URL,
     setInterval: () => 1,
     setTimeout: () => 1,
@@ -78,7 +81,7 @@ async function createHarness(payload, fetchError = null) {
       return { status: 200, ok: true, json: async () => payload };
     }
   };
-  vm.runInNewContext(`let driveStatusRequest = null, driveStatusSequence = 0, lastDriveStatus = null;\n${setupSource}\n${statusSource}\n${source}\nloadGoogleDriveStatus();`, context);
+  vm.runInNewContext(`let driveStatusRequest = null, driveStatusSequence = 0, lastDriveStatus = null;\n${setupSource}\n${statusSource}\n${source}\nconst saved = restoreDriveStatusFromStorage(); if (saved) { lastDriveStatus = saved; renderGoogleDriveStatus(saved); } loadGoogleDriveStatus();`, context);
   await new Promise(resolve => setImmediate(resolve));
   return { elements, progressTrack: storageTrack, context, requests, document, panelCloseButton };
 }
@@ -127,6 +130,25 @@ assert.equal(unavailable.elements.googleDriveMessage.textContent, 'O painel tent
 assert.equal(unavailable.elements.googleDriveNotConfigured.hidden, true);
 assert.equal(unavailable.elements.googleDriveConnectNew.hidden, true);
 assert.equal(unavailable.elements.googleDriveRefresh.disabled, false);
+
+const cachedStatus = {
+  configured: true, connected: true, verified: true,
+  accounts: [{ id: 'account_cached', accountName: 'Conta salva', accountEmail: 'saved@example.com', quotaUsedBytes: 200, quotaLimitBytes: 1000, freeBytes: 800 }],
+  total: { usedBytes: 200, limitBytes: 1000, freeBytes: 800, accountCount: 1 }
+};
+const cachedAfterRefreshFailure = await createHarness({}, new Error('falha interna simulada'), cachedStatus);
+assert.equal(cachedAfterRefreshFailure.elements.googleDriveStatus.textContent, '1 conta(s) conectada(s)', 'o estado salvo permanece visível quando a verificação automática falha');
+assert.equal(cachedAfterRefreshFailure.elements.googleDriveAccountsList.children.length, 1, 'a conta persistida é restaurada antes da resposta do servidor');
+assert.equal(cachedAfterRefreshFailure.elements.googleDriveAccountsList.children[0].innerHTML.includes('saved@example.com'), true);
+assert.equal(cachedAfterRefreshFailure.elements.googleDriveVerificationError.hidden, false, 'a interface informa que o status salvo ainda aguarda verificação');
+
+const cachedStatusLoadsAutomatically = await createHarness({
+  configured: true, connected: true, verified: true,
+  accounts: [{ id: 'account_server', accountName: 'Conta confirmada', accountEmail: 'server@example.com', quotaUsedBytes: 100, quotaLimitBytes: 1000, freeBytes: 900 }],
+  total: { usedBytes: 100, limitBytes: 1000, freeBytes: 900, accountCount: 1 }
+}, null, cachedStatus);
+assert.equal(cachedStatusLoadsAutomatically.requests.some(request => request.url === '/api/admin/google-drive/status'), true, 'o painel consulta o estado persistido no servidor ao iniciar, sem exigir clique');
+assert.equal(cachedStatusLoadsAutomatically.elements.googleDriveAccountsList.children[0].innerHTML.includes('server@example.com'), true, 'a resposta automática do servidor atualiza o cache exibido');
 
 const tokenUrl = new URL('https://www.googleapis.com/drive/v3/about?fields=user(displayName%2CemailAddress)');
 assert.equal(tokenUrl.hostname, 'www.googleapis.com');
