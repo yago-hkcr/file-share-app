@@ -23,7 +23,7 @@
   <script src="/js/gfx.js?v=20261014p"></script><script src="/js/fx.js?v=20261014a" defer></script>
   <link rel="stylesheet" href="/css/preview.css?v=20261014o">
   <link rel="stylesheet" href="/css/admin-select.css?v=20261014a">
-<link rel="stylesheet" href="/css/admin-storage.css?v=20261031a">
+<link rel="stylesheet" href="/css/admin-storage.css?v=20261031b">
 <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
 <link rel="stylesheet" href="/css/hacker-ui.css?v=20261014a">
 </head>
@@ -36,8 +36,8 @@
     </div>
     <div class="header-right">
       <a class="btn btn-sm btn-green" href="/dashboard" title="Abrir salas com chat"><i class="fas fa-comments"></i> Chat</a>
-      <button class="btn btn-sm btn-outline notif-btn" onclick="showNotifs()" id="notifBtn">
-        <i class="fas fa-bell"></i><span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+      <button class="btn btn-sm btn-outline notif-btn" onclick="showNotifs()" id="notifBtn" type="button" title="Notificações" aria-label="Notificações" aria-controls="notifPanel" aria-expanded="false">
+        <i class="fas fa-bell" aria-hidden="true"></i><span class="notif-badge" id="notifBadge" hidden>0</span>
       </button>
       <button class="btn btn-sm btn-outline" onclick="showPasswordModal()" title="Alterar senha" aria-label="Alterar senha"><i class="fas fa-key"></i><span class="btn-label">Senha</span></button>
       <button class="btn btn-sm btn-danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
@@ -105,7 +105,7 @@
         <div class="storage-heading">
           <div><span class="storage-eyebrow">CENTRAL DE CONTROLE</span><h2><i class="fas fa-cloud"></i> Armazenamento</h2>
             <p class="storage-subtitle">Acompanhe a conta compartilhada e o espaço disponível para novos anexos.</p></div>
-          <button id="googleDriveRefresh" class="btn btn-outline storage-refresh" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Verificar conexão</button>
+          <button id="googleDriveRefresh" class="btn btn-outline storage-refresh" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Atualizar status</button>
         </div>
         <section class="storage-provider" aria-labelledby="googleDriveTitle">
           <div class="storage-provider-top">
@@ -115,9 +115,9 @@
           <p id="googleDriveMessage" class="storage-description">Os novos anexos enviados em salas e conversas diretas serão salvos nesta conta. Os arquivos existentes permanecem onde estão.</p>
           <div id="googleDriveNotConfigured" class="storage-notice" hidden><i class="fas fa-circle-info"></i><span>As credenciais de integração do Google Drive ainda não foram configuradas neste ambiente.</span></div>
           <div id="googleDriveAccount" class="storage-account" hidden>
-            <div class="storage-avatar" id="googleDriveAvatar"><i class="fas fa-user"></i></div>
+            <div class="storage-avatar" id="googleDriveAvatar" aria-hidden="true"><i class="fas fa-user"></i></div>
             <div class="storage-account-copy"><span class="storage-eyebrow">CONTA COMPARTILHADA</span><strong id="googleDriveAccountName">—</strong><span id="googleDriveAccountEmail">—</span></div>
-            <span class="storage-account-check"><i class="fas fa-shield-check"></i> Conta verificada</span>
+            <span id="googleDriveAccountCheck" class="storage-account-check"><i class="fas fa-shield-check"></i> Conta verificada</span>
           </div>
           <div id="googleDriveQuota" class="storage-quota" hidden>
             <div class="storage-quota-heading"><div><span class="storage-eyebrow">ESPAÇO DA CONTA</span><h4>Uso do armazenamento</h4></div><span id="googleDriveQuotaPercent" class="storage-quota-percent">—</span></div>
@@ -130,19 +130,19 @@
             <div class="storage-extra"><span><i class="fas fa-cloud"></i> Em arquivos do Drive <strong id="googleDriveDriveUsed">—</strong></span><span><i class="fas fa-trash-can"></i> Na lixeira <strong id="googleDriveTrashUsed">—</strong></span><span><i class="fas fa-clock"></i> Atualizado <strong id="googleDriveCheckedAt">—</strong></span></div>
           </div>
           <div id="googleDriveVerificationError" class="storage-notice storage-notice-error" hidden><i class="fas fa-triangle-exclamation"></i><span id="googleDriveVerificationMessage"></span></div>
-          <div class="storage-actions"><a id="googleDriveConnect" class="btn btn-green" href="https://arquive.online/api/admin/google-drive/oauth/start" hidden><i class="fab fa-google-drive"></i> Conectar conta compartilhada</a></div>
+          <div class="storage-actions"><a id="googleDriveConnect" class="btn btn-green" href="https://arquive.online/api/admin/google-drive/oauth/start" hidden><i class="fab fa-google-drive"></i> Conectar conta compartilhada</a><button id="googleDriveDisconnect" class="btn btn-outline storage-disconnect" type="button" onclick="disconnectGoogleDrive()" hidden><i class="fas fa-link-slash"></i> Desconectar conta</button><span id="googleDriveAutoUpdate" class="storage-auto-update" aria-live="polite"><i class="fas fa-rotate"></i> Atualização automática ativada</span></div>
         </div>
       </div>
     </main>
   </div>
 
   <!-- Notifications Panel -->
-  <div id="notifPanel" class="slide-panel" style="display:none;">
+  <div id="notifPanel" class="slide-panel" hidden role="dialog" aria-modal="true" aria-labelledby="notifPanelTitle">
     <div class="slide-panel-overlay" onclick="hideNotifs()"></div>
     <div class="slide-panel-content">
-      <div class="slide-panel-header"><h3><i class="fas fa-bell"></i> Notificações</h3><button onclick="hideNotifs()">&times;</button></div>
+      <div class="slide-panel-header"><h3 id="notifPanelTitle"><i class="fas fa-bell"></i> Notificações</h3><button type="button" onclick="hideNotifs()" aria-label="Fechar notificações">&times;</button></div>
       <div id="notifList" class="slide-panel-body"></div>
-      <div class="slide-panel-footer"><button class="btn btn-sm btn-outline btn-full" onclick="markAllRead()">Marcar todas como lidas</button></div>
+      <div class="slide-panel-footer"><button id="markNotifsRead" class="btn btn-sm btn-outline btn-full" type="button" onclick="markAllRead()">Marcar todas como lidas</button></div>
     </div>
   </div>
 
@@ -179,6 +179,9 @@
   <script src="/js/upload.js?v=20261014a"></script>
   <script>
     let lastUsersSig = '', lastRoomsSig = '', lastNotifsSig = '', uploading = 0;
+    let driveStatusRequest = null, driveStatusSequence = 0, lastDriveStatus = null;
+    let driveStatusIsRefreshing = false;
+    let lastNotifs = [], notificationsRequest = null, driveRefreshTimer = null;
     function showToast(msg, type='success', ms) {
       const c = document.getElementById('toastContainer');
       const t = document.createElement('div');
@@ -204,7 +207,16 @@
       if (name==='users') loadUsers();
       if (name==='rooms') loadRooms();
       if (name==='stats') loadStats();
-      if (name==='storage') loadGoogleDriveStatus();
+      if (name==='storage') { loadGoogleDriveStatus(); startDriveAutoRefresh(); }
+    }
+
+    function formatDriveBytes(value) {
+      const bytes = Number(value);
+      if (!Number.isFinite(bytes) || bytes < 0) return 'Não informado';
+      if (bytes === 0) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+      const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+      return `${(bytes / (1024 ** index)).toLocaleString('pt-BR', { maximumFractionDigits: index > 1 ? 1 : 0 })} ${units[index]}`;
     }
 
     async function loadGoogleDriveStatus() {
@@ -216,103 +228,192 @@
       const account = document.getElementById('googleDriveAccount');
       const quotaPanel = document.getElementById('googleDriveQuota');
       const verificationError = document.getElementById('googleDriveVerificationError');
+      const disconnect = document.getElementById('googleDriveDisconnect');
       const message = document.getElementById('googleDriveMessage');
-      const fmtBytes = value => {
-        const bytes = Number(value);
-        if (!Number.isFinite(bytes) || bytes < 0) return 'Não informado';
-        if (bytes === 0) return '0 B';
-        const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-        const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-        return `${(bytes / (1024 ** index)).toLocaleString('pt-BR', { maximumFractionDigits: index > 1 ? 1 : 0 })} ${units[index]}`;
-      };
-      const clearQuota = () => { account.hidden = true; quotaPanel.hidden = true; };
-      status.textContent = 'Verificando…';
-      badge.className = 'storage-status-badge is-loading';
+      if (!lastDriveStatus) status.textContent = 'Conferindo conexão salva…';
+      if (driveStatusRequest) return driveStatusRequest;
+      const sequence = ++driveStatusSequence;
+      driveStatusIsRefreshing = true;
       refresh.disabled = true;
-      refresh.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando…';
-      connect.hidden = true;
-      notConfigured.hidden = true;
-      verificationError.hidden = true;
-      clearQuota();
-      try {
-        const response = await fetch('/api/admin/google-drive/status', { cache: 'no-store' });
-        if (response.status === 401 || response.status === 403) { window.location.href = '/'; return; }
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || 'Não foi possível consultar o Google Drive.');
-        // Inicia no mesmo host em que o admin autenticou; o cookie temporário de
-        // state usa domínio compartilhado para o callback canônico sem www.
-        connect.href = location.origin + '/api/admin/google-drive/oauth/start';
-        if (!data.configured) {
-          status.textContent = 'Não configurado';
-          badge.className = 'storage-status-badge is-warning';
-          message.textContent = 'Configure as credenciais OAuth para ativar o armazenamento compartilhado.';
-          notConfigured.hidden = false;
-        } else if (data.connected && data.verified) {
-          status.textContent = 'Conexão ativa';
-          badge.className = 'storage-status-badge is-connected';
-          message.textContent = 'Conexão confirmada com o Google. Os novos anexos de salas e conversas diretas serão salvos nesta conta.';
-          const driveAccount = data.account || {};
-          document.getElementById('googleDriveAccountName').textContent = driveAccount.name || 'Conta Google compartilhada';
-          document.getElementById('googleDriveAccountEmail').textContent = driveAccount.email || 'E-mail não informado pelo Google';
-          const avatar = document.getElementById('googleDriveAvatar');
-          avatar.replaceChildren();
-          let photoUrl = null;
-          try {
-            const candidate = new URL(driveAccount.photo_url);
-            if (candidate.protocol === 'https:') photoUrl = candidate.href;
-          } catch {}
-          if (photoUrl) {
-            const image = document.createElement('img');
-            image.src = photoUrl;
-            image.alt = '';
-            avatar.appendChild(image);
+      refresh.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Atualizando…';
+      driveStatusRequest = (async () => {
+        try {
+          const response = await fetch('/api/admin/google-drive/status', { cache: 'no-store' });
+          if (response.status === 401) { window.location.href = '/'; return; }
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error('Não foi possível consultar o estado da conexão.');
+          if (sequence !== driveStatusSequence) return;
+          if (data.connected) {
+            // Estado conectado é persistente: uma falha temporária de API/cota não
+            // apaga a conta nem volta a oferecer outra autorização OAuth.
+            lastDriveStatus = {
+              ...(lastDriveStatus || {}),
+              ...data,
+              connected: true,
+              account: data.account || lastDriveStatus?.account || {},
+              storage_quota: data.storage_quota || lastDriveStatus?.storage_quota || {}
+            };
+            renderGoogleDriveConnected(lastDriveStatus);
           } else {
-            const icon = document.createElement('i');
-            icon.className = 'fas fa-user';
-            avatar.appendChild(icon);
+            lastDriveStatus = data;
+            renderGoogleDriveDisconnected(data);
           }
-          account.hidden = false;
-          const quota = data.storage_quota || {};
-          const used = quota.used_bytes == null ? null : Number(quota.used_bytes);
-          const limit = quota.limit_bytes == null ? null : Number(quota.limit_bytes);
-          const free = Number.isFinite(used) && used >= 0 && Number.isFinite(limit) && limit >= used ? limit - used : null;
-          const percent = Number.isFinite(used) && Number.isFinite(limit) && limit > 0 ? Math.min(100, used / limit * 100) : null;
-          document.getElementById('googleDriveQuotaUsed').textContent = fmtBytes(quota.used_bytes);
-          document.getElementById('googleDriveQuotaFree').textContent = free == null ? (limit == null ? 'Sem limite informado' : 'Não informado') : fmtBytes(free);
-          document.getElementById('googleDriveQuotaLimit').textContent = limit == null ? 'Sem limite informado' : fmtBytes(limit);
-          document.getElementById('googleDriveDriveUsed').textContent = fmtBytes(quota.drive_used_bytes);
-          document.getElementById('googleDriveTrashUsed').textContent = fmtBytes(quota.trash_used_bytes);
-          document.getElementById('googleDriveQuotaPercent').textContent = percent == null ? '—' : `${percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% usado`;
-          const progress = document.getElementById('googleDriveQuotaBar');
-          progress.style.width = `${percent ?? 0}%`;
-          progress.classList.toggle('is-near-limit', percent !== null && percent >= 85);
-          document.querySelector('.storage-progress-track').setAttribute('aria-valuenow', String(Math.round(percent ?? 0)));
-          document.getElementById('googleDriveCheckedAt').textContent = data.checked_at ? new Date(data.checked_at).toLocaleString('pt-BR') : 'Agora';
-          quotaPanel.hidden = false;
-        } else {
-          status.textContent = data.connected ? 'Verificação necessária' : 'Ainda não conectado';
-          badge.className = 'storage-status-badge is-warning';
-          message.textContent = data.connected ? 'A credencial está salva, mas não foi possível confirmar o acesso ao Google Drive.' : 'Conecte a conta Google compartilhada para começar a armazenar novos anexos no Drive.';
-          if (data.verification_failed) {
-            document.getElementById('googleDriveVerificationMessage').textContent = 'Não foi possível confirmar o acesso ao Google Drive. Tente novamente ou reconecte a conta compartilhada.';
+        } catch (error) {
+          if (sequence !== driveStatusSequence) return;
+          if (lastDriveStatus?.connected) {
+            status.textContent = 'Conexão salva · atualização temporariamente indisponível';
+            badge.className = 'storage-status-badge is-connected is-stale';
+            message.textContent = 'A conta continua conectada. Os dados serão atualizados automaticamente quando o serviço responder.';
+            document.getElementById('googleDriveCheckedAt').textContent = 'Última verificação válida: ' + (lastDriveStatus.checked_at ? new Date(lastDriveStatus.checked_at).toLocaleString('pt-BR') : '—');
+          } else {
+            status.textContent = 'Não foi possível confirmar a conexão';
+            badge.className = 'storage-status-badge is-error';
+            message.textContent = 'O painel tentará verificar novamente automaticamente.';
+            notConfigured.hidden = true;
             verificationError.hidden = false;
+            document.getElementById('googleDriveVerificationMessage').textContent = 'Serviço temporariamente indisponível; a conexão salva não será removida.';
           }
-          connect.hidden = false;
+        } finally {
+          driveStatusRequest = null;
+          if (sequence === driveStatusSequence) {
+            driveStatusIsRefreshing = false;
+            refresh.disabled = false;
+            refresh.innerHTML = '<i class="fas fa-rotate"></i> Atualizar status';
+          }
         }
-      } catch (error) {
-        status.textContent = error.message || 'Erro ao verificar a conexão.';
-        badge.className = 'storage-status-badge is-error';
-        message.textContent = 'Não foi possível consultar o estado do armazenamento. Tente novamente.';
-      } finally {
-        refresh.disabled = false;
-        refresh.innerHTML = '<i class="fas fa-rotate"></i> Verificar conexão';
+      })();
+      return driveStatusRequest;
+    }
+
+    function setGoogleDriveNoticeState({ configured = false, connected = false, failed = false } = {}) {
+      const notConfigured = document.getElementById('googleDriveNotConfigured');
+      const verificationError = document.getElementById('googleDriveVerificationError');
+      notConfigured.hidden = configured || connected || failed;
+      verificationError.hidden = !failed;
+    }
+
+    function renderGoogleDriveDisconnected(data = {}) {
+      const status = document.getElementById('googleDriveStatus');
+      const badge = document.getElementById('googleDriveBadge');
+      const message = document.getElementById('googleDriveMessage');
+      const account = document.getElementById('googleDriveAccount');
+      const quotaPanel = document.getElementById('googleDriveQuota');
+      document.getElementById('googleDriveConnect').hidden = true;
+      document.getElementById('googleDriveDisconnect').hidden = true;
+      account.hidden = true;
+      quotaPanel.hidden = true;
+      setGoogleDriveNoticeState({ configured: Boolean(data.configured), connected: false });
+      if (!data.configured) {
+        status.textContent = 'Integração indisponível';
+        badge.className = 'storage-status-badge is-warning';
+        message.textContent = 'A integração do Google Drive precisa ser configurada no servidor.';
+      } else {
+        status.textContent = 'Conta ainda não conectada';
+        badge.className = 'storage-status-badge is-warning';
+        message.textContent = 'Conecte a conta Google compartilhada uma vez. A conexão permanecerá salva até você desconectá-la.';
+        document.getElementById('googleDriveConnect').hidden = false;
+        document.getElementById('googleDriveConnect').href = location.origin + '/api/admin/google-drive/oauth/start';
       }
+    }
+
+    function renderGoogleDriveConnected(data = {}) {
+      const status = document.getElementById('googleDriveStatus');
+      const badge = document.getElementById('googleDriveBadge');
+      const message = document.getElementById('googleDriveMessage');
+      const connect = document.getElementById('googleDriveConnect');
+      const account = document.getElementById('googleDriveAccount');
+      const quotaPanel = document.getElementById('googleDriveQuota');
+      const disconnect = document.getElementById('googleDriveDisconnect');
+      const driveAccount = data.account || lastDriveStatus?.account || {};
+      status.textContent = data.verified ? 'Conectado' : 'Conexão salva';
+      badge.className = data.verified ? 'storage-status-badge is-connected' : 'storage-status-badge is-connected is-stale';
+      message.textContent = data.verified
+        ? 'Conta compartilhada conectada. O estado e o armazenamento são atualizados automaticamente.'
+        : 'A autorização continua salva. A verificação do Drive será repetida automaticamente.';
+      connect.hidden = true;
+      connect.href = location.origin + '/api/admin/google-drive/oauth/start';
+      disconnect.hidden = false;
+      account.hidden = !driveAccount.name && !driveAccount.email && !lastDriveStatus?.account;
+      setGoogleDriveNoticeState({ connected: true, failed: !data.verified && Boolean(data.verification_failed) });
+      if (!data.verified && data.verification_failed) {
+        document.getElementById('googleDriveVerificationMessage').textContent = 'Não foi possível atualizar os dados do Drive agora. A autorização continua salva e o painel tentará novamente automaticamente.';
+      }
+      document.getElementById('googleDriveAccountCheck').innerHTML = data.verified
+        ? '<i class="fas fa-shield-check"></i> Conta verificada'
+        : '<i class="fas fa-link"></i> Autorização salva';
+
+      document.getElementById('googleDriveAccountName').textContent = driveAccount.name || 'Conta Google compartilhada';
+      document.getElementById('googleDriveAccountEmail').textContent = driveAccount.email || 'E-mail não informado pelo Google';
+      const avatar = document.getElementById('googleDriveAvatar');
+      avatar.replaceChildren();
+      let photoUrl = null;
+      try {
+        const candidate = new URL(driveAccount.photo_url);
+        if (candidate.protocol === 'https:') photoUrl = candidate.href;
+      } catch {}
+      if (photoUrl) {
+        const image = document.createElement('img');
+        image.src = photoUrl;
+        image.alt = '';
+        avatar.appendChild(image);
+      } else {
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-user';
+        avatar.appendChild(icon);
+      }
+
+      const quota = data.storage_quota || lastDriveStatus?.storage_quota || {};
+      const used = quota.used_bytes == null ? null : Number(quota.used_bytes);
+      const limit = quota.limit_bytes == null ? null : Number(quota.limit_bytes);
+      const free = Number.isFinite(used) && used >= 0 && Number.isFinite(limit) && limit >= used ? limit - used : null;
+      const percent = Number.isFinite(used) && Number.isFinite(limit) && limit > 0 ? Math.min(100, used / limit * 100) : null;
+      document.getElementById('googleDriveQuotaUsed').textContent = formatDriveBytes(quota.used_bytes);
+      document.getElementById('googleDriveQuotaFree').textContent = free == null ? (limit == null ? 'Sem limite informado' : 'Não informado') : formatDriveBytes(free);
+      document.getElementById('googleDriveQuotaLimit').textContent = limit == null ? 'Sem limite informado' : formatDriveBytes(limit);
+      document.getElementById('googleDriveDriveUsed').textContent = formatDriveBytes(quota.drive_used_bytes);
+      document.getElementById('googleDriveTrashUsed').textContent = formatDriveBytes(quota.trash_used_bytes);
+      document.getElementById('googleDriveQuotaPercent').textContent = percent == null ? '—' : `${percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% usado`;
+      const progress = document.getElementById('googleDriveQuotaBar');
+      progress.style.width = `${percent ?? 0}%`;
+      progress.classList.toggle('is-near-limit', percent !== null && percent >= 85);
+      document.querySelector('.storage-progress-track').setAttribute('aria-valuenow', String(Math.round(percent ?? 0)));
+      if (data.checked_at) document.getElementById('googleDriveCheckedAt').textContent = new Date(data.checked_at).toLocaleString('pt-BR');
+      quotaPanel.hidden = false;
+    }
+
+    async function disconnectGoogleDrive() {
+      if (!window.confirm('Desconectar a conta Google Drive compartilhada? Novos anexos deixarão de ser enviados ao Drive.')) return;
+      const button = document.getElementById('googleDriveDisconnect');
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/admin/google-drive/connection', { method: 'DELETE', headers: { 'Accept': 'application/json' } });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 401) { window.location.href = '/'; return; }
+        if (!response.ok || !data.success) throw new Error('Não foi possível desconectar a conta. Tente novamente.');
+        driveStatusIsRefreshing = false;
+        driveStatusSequence++;
+        driveStatusRequest = null;
+        lastDriveStatus = null;
+        renderGoogleDriveDisconnected({ configured: data.configured, connected: false });
+        showToast('Conta Google Drive desconectada. Os arquivos já armazenados permanecem no Drive.', 'info');
+      } catch (error) {
+        showToast(error.message || 'Não foi possível desconectar a conta.', 'error');
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function startDriveAutoRefresh() {
+      if (driveRefreshTimer) return;
+      driveRefreshTimer = setInterval(() => {
+        if (!document.hidden && document.getElementById('tab-storage').classList.contains('active')) loadGoogleDriveStatus();
+      }, 60000);
     }
 
     // Stats
     async function loadStats() {
       const res = await fetch('/api/admin/stats');
-      if (res.status === 401) { window.location.href = '/'; return; }
+        if (response.status === 401) { window.location.href = '/'; return; }
       const s = await res.json();
       if (!res.ok) return;
       document.getElementById('statUsers').textContent = s.totalUsers;
@@ -493,31 +594,90 @@
     async function loadNotifCount() {
       const res = await fetch('/api/me');
       if (res.status === 401) { window.location.href = '/'; return; }
+      if (!res.ok) throw new Error('Não foi possível atualizar as notificações.');
       const data = await res.json();
       const b = document.getElementById('notifBadge');
-      if (data.unread_notifications > 0) { b.textContent = data.unread_notifications; b.style.display = 'inline'; }
-      else b.style.display = 'none';
+      const count = Math.max(0, Number(data.unread_notifications) || 0);
+      b.textContent = count > 99 ? '99+' : String(count);
+      b.hidden = count === 0;
+      document.getElementById('notifBtn').setAttribute('aria-label', count ? `Notificações, ${count} não lidas` : 'Notificações');
     }
     async function renderNotifs() {
-      const res = await fetch('/api/notifications');
-      const notifs = await res.json();
-      if (!Array.isArray(notifs)) return;
-      const sig = JSON.stringify(notifs); if (sig === lastNotifsSig) return; lastNotifsSig = sig;
-      document.getElementById('notifList').innerHTML = notifs.length ?
-        notifs.map(n=>`<div class="notif-item ${n.read?'':'notif-unread'}"><div class="notif-title">${esc(n.title)}</div><div class="notif-msg">${esc(n.message)}</div><div class="text-muted">${fmtDate(n.created_at)}</div></div>`).join('') :
-        '<p class="text-muted" style="padding:20px;text-align:center;">Nenhuma notificação</p>';
+      if (notificationsRequest) return notificationsRequest;
+      notificationsRequest = (async () => {
+        try {
+          const res = await fetch('/api/notifications', { cache: 'no-store' });
+          if (res.status === 401) { window.location.href = '/'; return; }
+          if (!res.ok) throw new Error('Não foi possível carregar as notificações.');
+          const notifs = await res.json();
+          if (!Array.isArray(notifs)) throw new Error('Resposta de notificações inválida.');
+          lastNotifs = notifs;
+          const sig = JSON.stringify(notifs);
+          if (sig === lastNotifsSig) return;
+          lastNotifsSig = sig;
+          const list = document.getElementById('notifList');
+          list.replaceChildren();
+          if (!notifs.length) {
+            const empty = document.createElement('p');
+            empty.className = 'text-muted notif-empty';
+            empty.textContent = 'Nenhuma notificação';
+            list.appendChild(empty);
+          } else {
+            for (const notification of notifs) {
+              const item = document.createElement('article');
+              item.className = `notif-item ${Number(notification.read) ? '' : 'notif-unread'}`.trim();
+              const title = document.createElement('div');
+              title.className = 'notif-title';
+              title.textContent = notification.title || 'Notificação';
+              const body = document.createElement('div');
+              body.className = 'notif-msg';
+              body.textContent = notification.message || '';
+              const date = document.createElement('div');
+              date.className = 'text-muted';
+              date.textContent = fmtDate(notification.created_at);
+              item.append(title, body, date);
+              list.appendChild(item);
+            }
+          }
+          document.getElementById('markNotifsRead').disabled = !notifs.some(item => !Number(item.read));
+        } finally {
+          notificationsRequest = null;
+        }
+      })();
+      return notificationsRequest;
     }
     async function showNotifs() {
-      lastNotifsSig = '';
-      document.getElementById('notifPanel').style.display = 'flex';
-      try { await renderNotifs(); } catch (e) { showToast('Não foi possível carregar as notificações', 'error'); }
+      const panel = document.getElementById('notifPanel');
+      const button = document.getElementById('notifBtn');
+      const opening = panel.hidden;
+      panel.hidden = !opening;
+      button.setAttribute('aria-expanded', String(opening));
+      if (!opening) { button.focus(); return; }
+      if (opening) {
+        try { await renderNotifs(); }
+        catch (e) { showToast('Não foi possível carregar as notificações', 'error'); }
+        const closeButton = panel.querySelector('button');
+        if (closeButton) closeButton.focus();
+      }
     }
-    function hideNotifs() { document.getElementById('notifPanel').style.display = 'none'; }
+    function hideNotifs() {
+      document.getElementById('notifPanel').hidden = true;
+      const button = document.getElementById('notifBtn');
+      button.setAttribute('aria-expanded', 'false');
+      if (button && typeof button.focus === 'function') button.focus();
+    }
     async function markAllRead() {
-      await fetch('/api/notifications/read', { method: 'POST' });
+      const response = await fetch('/api/notifications/read', { method: 'POST', headers: { 'Accept': 'application/json' } });
+      if (response.status === 401) { window.location.href = '/'; return; }
+      if (!response.ok) { showToast('Não foi possível marcar as notificações como lidas.', 'error'); return; }
+      lastNotifs = lastNotifs.map(item => ({ ...item, read: 1 }));
       lastNotifsSig = '';
-      await Promise.all([loadNotifCount(), renderNotifs()]);
-      showToast('Notificações lidas', 'info');
+      try {
+        await Promise.all([loadNotifCount(), renderNotifs()]);
+        showToast('Notificações lidas', 'info');
+      } catch {
+        showToast('Notificações marcadas; a lista será sincronizada novamente.', 'info');
+      }
     }
 
     // Modals & misc
@@ -537,6 +697,11 @@
 
     // Init
     loadStats(); loadNotifCount();
+    startDriveAutoRefresh();
+    if (new URLSearchParams(location.search).get('drive_connected') === '1') {
+      showTab('storage');
+      history.replaceState(null, '', location.pathname + '#storage');
+    }
 
     // Atualização automática a cada 2 s (sem recarregar a página, para não perder o que está aberto)
     let refreshing = false;
@@ -546,15 +711,23 @@
       try {
         const tasks = [loadNotifCount(), loadStats()];
         // Atualiza todas as listas em segundo plano, preservando a tela e os filtros.
-        tasks.push(loadUsers());
-        if (uploading === 0) tasks.push(loadRooms());
-        if (document.getElementById('notifPanel').style.display !== 'none') tasks.push(renderNotifs());
-        await Promise.all(tasks);
+        if (document.getElementById('tab-users').classList.contains('active')) tasks.push(loadUsers());
+        if (document.getElementById('tab-rooms').classList.contains('active') && uploading === 0) tasks.push(loadRooms());
+        if (!document.getElementById('notifPanel').hidden) tasks.push(renderNotifs());
+        await Promise.allSettled(tasks);
       } catch (e) { /* tenta de novo no próximo ciclo */ }
       finally { refreshing = false; }
     }
     setInterval(autoRefresh, 2000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        autoRefresh();
+        if (document.getElementById('tab-storage').classList.contains('active')) loadGoogleDriveStatus();
+      }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !document.getElementById('notifPanel').hidden) hideNotifs();
+    });
   </script>
   <script src="/js/admin-social.js?v=20261014a"></script>
   <script src="/js/cursor.js?v=20261014a"></script>

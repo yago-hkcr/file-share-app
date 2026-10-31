@@ -900,6 +900,7 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 
 const SESSION_COOKIE = IS_VERCEL ? '__Host-fileshare_session' : 'fileshare_session';
 const REMEMBER_COOKIE = IS_VERCEL ? '__Host-fs_remember' : 'fs_remember';
+const GOOGLE_DRIVE_RETURN_COOKIE = 'fs_google_drive_return_origin';
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -909,9 +910,9 @@ const CONTENT_SECURITY_POLICY = [
   "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
   "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com",
-  "img-src 'self' data: blob: https://*.blob.vercel-storage.com",
+  "img-src 'self' data: blob: https://*.blob.vercel-storage.com https://*.googleusercontent.com",
   "media-src 'self' blob: https://*.blob.vercel-storage.com",
-  "connect-src 'self' https://cdn.jsdelivr.net https://vercel.com https://*.blob.vercel-storage.com",
+  "connect-src 'self' https://cdn.jsdelivr.net https://vercel.com https://*.blob.vercel-storage.com https://oauth2.googleapis.com https://www.googleapis.com",
   "frame-src 'self' blob: https://*.blob.vercel-storage.com",
   "worker-src 'self' blob: https://cdn.jsdelivr.net"
 ].join('; ') + (IS_VERCEL ? '; upgrade-insecure-requests' : '');
@@ -1597,6 +1598,7 @@ app.get('/admin', wrap(async (req, res) => {
   if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) { req.session = null; return res.redirect('/'); }
   if (Number(user.password_change_required)) return res.redirect('/change-password');
   if (!user || user.role !== 'admin') return res.redirect('/');
+  res.set('Cache-Control', 'no-store');
   res.sendFile(page('admin.html'));
 }));
 app.get('/dashboard', wrap(async (req, res) => {
@@ -1875,13 +1877,48 @@ app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
   }
 }));
 
+app.delete('/api/admin/google-drive/connection', asAdmin, wrap(async (req, res) => {
+  const encryptedRefreshToken = await getSetting('google_drive_refresh_token_enc', '');
+  await setSetting('google_drive_refresh_token_enc', '');
+  await setSetting('google_drive_connected_at', '');
+  cachedGoogleDriveStorage = null;
+  cachedGoogleDriveStorageKey = '';
+  if (encryptedRefreshToken) {
+    try {
+      const refreshToken = decryptRefreshToken(encryptedRefreshToken, sessionSecret());
+      await fetch('https://oauth2.googleapis.com/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: refreshToken }),
+        signal: AbortSignal.timeout(3000)
+      });
+    } catch { /* A desconexão local já está persistida; revogação remota é best-effort. */ }
+  }
+  res.set('Cache-Control', 'no-store');
+  return res.json({ success: true, configured: Boolean(process.env.GOOGLE_DRIVE_CLIENT_ID && process.env.GOOGLE_DRIVE_CLIENT_SECRET), connected: false, verified: false });
+}));
+
 app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) => {
   const clientId = String(process.env.GOOGLE_DRIVE_CLIENT_ID || '').trim();
   if (!clientId || !process.env.GOOGLE_DRIVE_CLIENT_SECRET) {
     return res.status(503).send('Configure GOOGLE_DRIVE_CLIENT_ID e GOOGLE_DRIVE_CLIENT_SECRET no ambiente do servidor antes de conectar o Drive.');
   }
   const state = crypto.randomBytes(32).toString('base64url');
+  const requestHost = String(req.get('host') || '').toLowerCase();
+  const returnOrigin = `${req.protocol}://${requestHost}`;
+  const allowedReturnOrigin = IS_VERCEL
+    ? ['https://arquive.online', 'https://www.arquive.online'].includes(returnOrigin)
+    : /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(returnOrigin);
+  if (!allowedReturnOrigin) return res.status(400).send('Origem de retorno inválida para a conexão do Google Drive.');
   res.cookie(GOOGLE_DRIVE_STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: IS_VERCEL,
+    sameSite: 'lax',
+    ...(IS_VERCEL ? { domain: '.arquive.online' } : {}),
+    path: '/api/google-drive/oauth/callback',
+    maxAge: 10 * 60 * 1000
+  });
+  res.cookie(GOOGLE_DRIVE_RETURN_COOKIE, returnOrigin, {
     httpOnly: true,
     secure: IS_VERCEL,
     sameSite: 'lax',
@@ -1903,8 +1940,13 @@ app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) =>
 // No callback, esse state amarra o retorno OAuth ao navegador que iniciou a autorização.
 app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {
   const expectedState = readCookie(req, GOOGLE_DRIVE_STATE_COOKIE);
+  const returnOriginCookie = readCookie(req, GOOGLE_DRIVE_RETURN_COOKIE);
   const receivedState = String(req.query.state || '');
   res.clearCookie(GOOGLE_DRIVE_STATE_COOKIE, {
+    path: '/api/google-drive/oauth/callback',
+    ...(IS_VERCEL ? { domain: '.arquive.online' } : {})
+  });
+  res.clearCookie(GOOGLE_DRIVE_RETURN_COOKIE, {
     path: '/api/google-drive/oauth/callback',
     ...(IS_VERCEL ? { domain: '.arquive.online' } : {})
   });
@@ -1934,7 +1976,11 @@ app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {
     await setSetting('google_drive_refresh_token_enc', encryptedToken);
     await setSetting('google_drive_connected_at', ts());
     res.set('Cache-Control', 'no-store');
-    return res.status(200).type('html').send('<!doctype html><html lang="pt-br"><meta charset="utf-8"><title>Drive conectado</title><body><h1>Google Drive conectado</h1><p>A conta autorizou o FileShare. O token foi armazenado de forma protegida.</p><p>Esta janela pode ser fechada.</p><a href="/admin">Voltar ao painel</a></body></html>');
+    const safeReturnOrigin = IS_VERCEL
+      ? (['https://arquive.online', 'https://www.arquive.online'].includes(returnOriginCookie) ? returnOriginCookie : 'https://arquive.online')
+      : (/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(returnOriginCookie) ? returnOriginCookie : null);
+    if (!safeReturnOrigin) return res.status(400).send('Não foi possível retornar ao painel administrativo. Abra o painel e conecte a conta novamente.');
+    return res.redirect(302, `${safeReturnOrigin}/admin?drive_connected=1#storage`);
   } catch (error) {
     console.error('Conexão OAuth do Google Drive falhou:', error && error.message);
     return res.status(502).send('Não foi possível concluir a conexão com o Google Drive. Confira as credenciais OAuth e tente novamente.');
