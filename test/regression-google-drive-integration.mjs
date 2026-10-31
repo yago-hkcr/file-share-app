@@ -12,6 +12,7 @@ const roomUpload = read('public', 'js', 'upload.js');
 const dmUpload = roomUpload.slice(roomUpload.indexOf('async function uploadToDmDirect'), roomUpload.indexOf('async function uploadWithQueue'));
 const libraryUpload = read('public', 'js', 'library.js');
 const dashboard = read('public', 'dashboard.html');
+const admin = read('public', 'admin.html');
 const serviceWorker = read('public', 'sw.js');
 
 assert.match(server, /CREATE TABLE IF NOT EXISTS google_drive_uploads/);
@@ -29,11 +30,18 @@ assert.match(server, /metadata\.appProperties\?\.fileshareUploadId !== upload\.u
 assert.match(server, /if \(isDriveFileRef\(item\.stored_name\)\)/);
 assert.match(server, /if \(isDriveFileRef\(file\.stored_name\)\)/);
 assert.match(server, /drive_upload_enabled: driveEnabled, blob_upload_enabled: blobsEnabled/);
+assert.match(server, /app\.get\('\/api\/admin\/google-drive\/status', asAdmin/);
+assert.match(server, /app\.get\('\/api\/admin\/google-drive\/oauth\/start', asAdmin/);
 assert.match(roomUpload, /\/api\/google-drive\/uploads\/' \+ encodeURIComponent\(session\.upload_id\) \+ '\/chunk/);
 assert.match(libraryUpload, /\/api\/library\/drive-files\/register/);
 assert.match(libraryUpload, /if \(driveUploadEnabled\) \{[\s\S]*?drive-upload-session[\s\S]*?if \(file\.size > 100 \* 1024 \* 1024 && blobUploadEnabled\)/);
 assert.match(roomUpload, /if \(driveUploadEnabled\) \{[\s\S]*?drive-upload-session[\s\S]*?else if \(file\.size > 100 \* 1024 \* 1024 && blobUploadEnabled\)/);
 assert.match(dmUpload, /if \(driveUploadEnabled\) \{[\s\S]*?\/api\/dm\/' \+ friendId \+ '\/drive-upload-session[\s\S]*?\/api\/dm\/' \+ friendId \+ '\/drive-files\/register/);
+assert.match(admin, /id="tab-storage"/);
+assert.match(admin, /\/api\/admin\/google-drive\/oauth\/start/);
+assert.match(admin, /loadGoogleDriveStatus\(\)/);
+assert.match(admin, /connect\.href = location\.origin \+ '\/api\/admin\/google-drive\/oauth\/start'/);
+assert.match(admin, /Novos anexos de salas e conversas diretas serão enviados ao Google Drive compartilhado/);
 assert.match(dashboard, /upload\.js\?v=20261031b/);
 assert.match(dashboard, /library\.js\?v=20261030e/);
 assert.match(serviceWorker, /upload\.js\?v=20261031b/);

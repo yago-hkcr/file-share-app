@@ -72,6 +72,17 @@ try {
   const cookies = (res.headers.getSetCookie ? res.headers.getSetCookie() : [res.headers.get('set-cookie')])
     .filter(Boolean).map(c => c.split(';')[0]).join('; ');
   check(res.ok, 'login do admin local');
+  const adminPage = await fetch(`${BASE}/admin`, { headers: { cookie: cookies, ...ORIGIN } });
+  const adminHtml = await adminPage.text();
+  check(adminPage.ok && adminHtml.includes('id="tab-storage"') && adminHtml.includes('loadGoogleDriveStatus()'),
+    'painel administrativo oferece estado e conexão do Google Drive compartilhado');
+  const driveStatusResponse = await fetch(`${BASE}/api/admin/google-drive/status`, { headers: { cookie: cookies, ...ORIGIN } });
+  const driveStatus = await driveStatusResponse.json();
+  check(driveStatusResponse.ok && driveStatus.configured === false && driveStatus.connected === false,
+    'status do Drive informa com segurança quando OAuth não está configurado no modo local');
+  const driveStatusAnonymous = await fetch(`${BASE}/api/admin/google-drive/status`, { headers: ORIGIN });
+  check(driveStatusAnonymous.status === 401,
+    'status da conexão do Drive continua restrito ao administrador autenticado');
   // 2) cria sala
   res = await fetch(`${BASE}/api/rooms`, {
     method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },
