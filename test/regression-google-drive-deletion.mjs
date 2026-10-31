@@ -90,16 +90,38 @@ const legacyRef = 'gdrive:drive_file_legacy_123';
 assert.deepEqual(await queue.enqueueAndDelete([legacyRef]), { deleted: 1, pending: 0 });
 assert.equal(deleted.at(-1), 'drive_file_legacy_123');
 
+const inactiveAccountRef = 'gdrive:inactive_account_123:drive_file_inactive_123';
+let resolvedAccount = '';
+const inactiveAwareQueue = createGoogleDriveDeletionQueue({
+  query,
+  getAccountId: value => {
+    resolvedAccount = value.startsWith('gdrive:') ? value.slice(7).split(':')[0] : '';
+    return resolvedAccount;
+  },
+  getFileId: resolveFileId,
+  getStorage: async (_value, accountId) => {
+    assert.equal(accountId, 'inactive_account_123', 'a exclusão usa a conta de origem, mesmo inativa para novos uploads');
+    return storage;
+  },
+  now: () => currentTime,
+  logger: { error() {} }
+});
+assert.deepEqual(await inactiveAwareQueue.enqueueAndDelete([inactiveAccountRef]), { deleted: 1, pending: 0 });
+assert.equal(resolvedAccount, 'inactive_account_123');
+assert.equal(deleted.at(-1), 'drive_file_inactive_123');
+
 const enqueuesBeforeEmpty = operations.filter(([type]) => type === 'enqueue').length;
 assert.deepEqual(await queue.enqueueAndDelete([]), { deleted: 0, pending: 0 });
 assert.equal(operations.filter(([type]) => type === 'enqueue').length, enqueuesBeforeEmpty);
 
 const deleteHelper = server.slice(server.indexOf('async function deleteBlobs'), server.indexOf('let cachedGoogleDriveStorage'));
-assert.match(deleteHelper, /filter\(isDriveFileRef\)/);
+assert.match(server, /async function isGoogleDriveStoredFile\(storedName\)[\s\S]*SELECT upload_id FROM google_drive_uploads WHERE file_id = \$1/,
+  'reconhece IDs antigos do Drive sem confundir os IDs do armazenamento local');
+assert.match(deleteHelper, /await isGoogleDriveStoredFile\(storedName\)/);
 assert.match(server, /getFileId: storedName => isDriveFileRef\(storedName\)[\s\S]{0,100}driveFileIdFromRef\(storedName\)/);
 assert.match(deleteHelper, /await googleDriveDeletionQueue\(\)\.enqueueAndDelete\(driveFiles\)/);
 const libraryCleanup = server.slice(server.indexOf('async function deleteLibraryBlobs'), server.indexOf('// Preenche o snapshot'));
-assert.match(libraryCleanup, /items\.map\(i => i\.stored_name\)\.filter\(isDriveFileRef\)/);
+assert.match(libraryCleanup, /await isGoogleDriveStoredFile\(item\.stored_name\)/);
 assert.match(libraryCleanup, /await deleteBlobs\(driveFiles\)/, 'a exclusão de item e de espaço da Biblioteca aguarda a limpeza do Drive');
 assert.match(server, /CREATE TABLE IF NOT EXISTS google_drive_deletion_queue/);
 const libraryDeleteStart = server.indexOf("app.delete('/api/library/:id'");
@@ -110,6 +132,14 @@ assert.ok(libraryDelete.indexOf('await deleteLibraryBlobs([item])') < libraryDel
 const librarySpaceDelete = server.slice(libraryDeleteEnd, server.indexOf('// Download de um item do Acervo', libraryDeleteEnd));
 assert.ok(librarySpaceDelete.indexOf('await deleteLibraryBlobs(removed)') < librarySpaceDelete.indexOf('DELETE FROM personal_library_items'),
   'os itens do espaço só são removidos após persistir as exclusões remotas');
+const staleCollectionCleanup = server.slice(server.indexOf('async function removeStaleCollectionUpload'), server.indexOf('async function recoverStaleCollectionUploadState'));
+assert.ok(staleCollectionCleanup.indexOf('await deleteBlobs([removed[0].stored_name])') < staleCollectionCleanup.indexOf("DELETE FROM file_collection_uploads WHERE id = $1 AND status = 'deleting'"),
+  'a limpeza de uploads abandonados persiste a exclusão no Drive antes de remover o registro');
+const collectionUploadDeleteStart = server.indexOf("app.delete('/api/coletas/enviar/:token/uploads/:uploadId'");
+const collectionUploadDeleteEnd = server.indexOf("app.post('/api/coletas/enviar/:token/finalizar'", collectionUploadDeleteStart);
+const collectionUploadDelete = server.slice(collectionUploadDeleteStart, collectionUploadDeleteEnd);
+assert.ok(collectionUploadDelete.indexOf('await deleteBlobs([found[0].stored_name])') < collectionUploadDelete.indexOf("DELETE FROM file_collection_uploads WHERE id = $1 AND status = 'deleting'"),
+  'a exclusão manual de anexo de coleta persiste a fila antes de remover o registro');
 const purgeStart = server.indexOf('async function purgeExpired');
 const purgeEnd = server.indexOf('// Arquivos ficam no próprio Postgres', purgeStart);
 const purge = server.slice(purgeStart, purgeEnd);

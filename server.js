@@ -115,6 +115,13 @@ const isBlobStoreSuspended = error => Boolean(error && (
   || /store has been suspended|billing state is suspended|limits-exceeded-suspended/i.test(String(error.message || ''))
 ));
 const blobStoreSuspendedMessage = 'O armazenamento de arquivos está suspenso na Vercel por limite de uso/faturamento. Os envios voltam após a reativação da Blob store.';
+async function isGoogleDriveStoredFile(storedName) {
+  if (isDriveFileRef(storedName)) return true;
+  if (!validateDriveFileId(storedName)) return false;
+  // Formato legado: algumas referências guardavam só o ID, sem "gdrive:".
+  // Confirma que o ID veio de um upload Drive para não apagar IDs locais.
+  return Boolean(await one('SELECT upload_id FROM google_drive_uploads WHERE file_id = $1 LIMIT 1', [storedName]));
+}
 async function deleteBlobs(pathnames) {
   const list = pathnames.filter(isBlobPath);
   if (list.length) {
@@ -125,7 +132,10 @@ async function deleteBlobs(pathnames) {
       console.error('Falha ao apagar do Blob:', e && e.message);
     }
   }
-  const driveFiles = pathnames.filter(isDriveFileRef);
+  const driveFiles = [];
+  for (const storedName of pathnames) {
+    if (await isGoogleDriveStoredFile(storedName)) driveFiles.push(storedName);
+  }
   if (driveFiles.length) await googleDriveDeletionQueue().enqueueAndDelete(driveFiles);
 }
 
@@ -321,7 +331,9 @@ function googleDriveDeletionQueue() {
 async function retryPendingGoogleDriveDeletions() {
   if (Date.now() - lastGoogleDriveDeletionRetry < 30000) return { deleted: 0, pending: 0 };
   lastGoogleDriveDeletionRetry = Date.now();
-  return googleDriveDeletionQueue().retryPending(10);
+  const staged = await retryDeletingCollectionUploads(10);
+  const queued = await googleDriveDeletionQueue().retryPending(10);
+  return { deleted: staged.deleted + queued.deleted, pending: staged.pending + queued.pending };
 }
 
 async function createDriveUploadSession({ userId, destinationType, roomId = null, spaceId = null, bookcaseId = null, name, size, mimeType }) {
@@ -736,7 +748,10 @@ async function copyRoomFileToLibrary(file, libraryItemId, { preferDrive = false 
 async function deleteLibraryBlobs(items) {
   const blobPaths = items.map(i => i.stored_name).filter(isLibraryBlobPath);
   if (blobPaths.length) await deleteBlobs(blobPaths);
-  const driveFiles = items.map(i => i.stored_name).filter(isDriveFileRef);
+  const driveFiles = [];
+  for (const item of items) {
+    if (await isGoogleDriveStoredFile(item.stored_name)) driveFiles.push(item.stored_name);
+  }
   if (driveFiles.length) await deleteBlobs(driveFiles);
   const ids = items.map(i => i.id).filter(Boolean);
   for (const id of ids) await q('DELETE FROM personal_library_blobs WHERE item_id = $1', [id]);
@@ -1470,13 +1485,42 @@ async function removeCollectionUpload(upload) {
 
 async function removeStaleCollectionUpload(upload, staleBefore) {
   if (!upload) return false;
-  const removed = await q(`DELETE FROM file_collection_uploads
+  const removed = await q(`UPDATE file_collection_uploads SET status = 'deleting'
     WHERE id = $1 AND status = 'uploading' AND (uploaded_at IS NULL OR uploaded_at <= $2)
     RETURNING id, stored_name`, [upload.id, staleBefore]);
   if (!removed.length) return false;
-  await deleteBlobs([removed[0].stored_name]).catch(error => console.error('Limpeza de upload abandonado:', error && error.message));
+  // Mantém a referência no banco até a exclusão remota ser salva na fila.
+  await deleteBlobs([removed[0].stored_name]);
+  await q("DELETE FROM file_collection_uploads WHERE id = $1 AND status = 'deleting'", [removed[0].id]);
   await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [removed[0].id]);
   return true;
+}
+
+async function retryDeletingCollectionUploads(limit = 10) {
+  let uploads;
+  try {
+    uploads = await q(`SELECT id, stored_name FROM file_collection_uploads
+      WHERE status = 'deleting'
+        AND NOT EXISTS (SELECT 1 FROM google_drive_deletion_queue dq WHERE dq.file_id = file_collection_uploads.stored_name)
+      ORDER BY uploaded_at NULLS FIRST, id LIMIT $1`, [limit]);
+  } catch (error) {
+    console.error('Falha ao consultar anexos pendentes de exclusão:', error && error.message);
+    return { deleted: 0, pending: 0 };
+  }
+  let deleted = 0;
+  let pending = 0;
+  for (const upload of uploads) {
+    try {
+      await deleteBlobs([upload.stored_name]);
+      await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [upload.id]);
+      await q("DELETE FROM file_collection_uploads WHERE id = $1 AND status = 'deleting'", [upload.id]);
+      deleted++;
+    } catch (error) {
+      pending++;
+      console.error('Anexo continua pendente de exclusão:', error && error.message);
+    }
+  }
+  return { deleted, pending };
 }
 
 async function recoverStaleCollectionUploadState(recipientId, tokenHash = null) {
@@ -3819,12 +3863,14 @@ app.delete('/api/coletas/enviar/:token/uploads/:uploadId', publicCollectionAcces
     WHERE id = $1 AND status = 'pending' AND token_hash = $2 RETURNING id`, [recipient.id, tokenHash]);
   if (!locked.length) return res.status(409).json({ error: 'Aguarde o envio em andamento terminar antes de remover arquivos.' });
   try {
-    const found = await q(`DELETE FROM file_collection_uploads u WHERE u.id = $1 AND u.recipient_id = $2 AND u.submission_id IS NULL
+    const found = await q(`UPDATE file_collection_uploads u SET status = 'deleting'
+      WHERE u.id = $1 AND u.recipient_id = $2 AND u.submission_id IS NULL AND u.status = 'ready'
       AND u.upload_session_hash = $4
       AND EXISTS (SELECT 1 FROM file_collection_recipients cr WHERE cr.id = $2 AND cr.status = 'deleting' AND cr.token_hash = $3)
       RETURNING u.id, u.stored_name`, [req.params.uploadId, recipient.id, tokenHash, req.collectionAccessSessionHash]);
     if (!found.length) return res.status(404).json({ error: 'Arquivo não encontrado ou envio já encerrado.' });
     await deleteBlobs([found[0].stored_name]);
+    await q("DELETE FROM file_collection_uploads WHERE id = $1 AND status = 'deleting'", [found[0].id]);
     await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [found[0].id]);
   } finally {
     await q("UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'deleting' AND token_hash = $2", [recipient.id, tokenHash]);
