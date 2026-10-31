@@ -26,6 +26,7 @@ const {
   driveFileRef,
   isDriveFileRef
 } = require('./lib/google-drive-storage');
+const { createGoogleDriveDeletionQueue } = require('./lib/google-drive-deletion');
 const { encryptSecret, decryptSecret } = require('./lib/google-drive-oauth');
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -119,9 +120,7 @@ async function deleteBlobs(pathnames) {
     }
   }
   const driveFiles = pathnames.filter(isDriveFileRef).map(driveFileIdFromRef).filter(Boolean);
-  if (!driveFiles.length) return;
-  try { await Promise.all(driveFiles.map(id => googleDriveStorage().deleteFile(id))); }
-  catch (e) { console.error('Falha ao apagar arquivo do Google Drive:', e && e.message); }
+  if (driveFiles.length) await googleDriveDeletionQueue().enqueueAndDelete(driveFiles);
 }
 
 let cachedGoogleDriveStorage = null;
@@ -140,6 +139,20 @@ async function googleDriveStorage() {
     getRefreshToken: async () => decryptRefreshToken(encryptedToken, sessionSecret())
   });
   return cachedGoogleDriveStorage;
+}
+
+let cachedGoogleDriveDeletionQueue = null;
+let lastGoogleDriveDeletionRetry = 0;
+function googleDriveDeletionQueue() {
+  if (!cachedGoogleDriveDeletionQueue) {
+    cachedGoogleDriveDeletionQueue = createGoogleDriveDeletionQueue({ query: q, getStorage: googleDriveStorage });
+  }
+  return cachedGoogleDriveDeletionQueue;
+}
+async function retryPendingGoogleDriveDeletions() {
+  if (Date.now() - lastGoogleDriveDeletionRetry < 30000) return { deleted: 0, pending: 0 };
+  lastGoogleDriveDeletionRetry = Date.now();
+  return googleDriveDeletionQueue().retryPending(10);
 }
 
 async function createDriveUploadSession({ userId, destinationType, roomId = null, spaceId = null, bookcaseId = null, name, size, mimeType }) {
@@ -638,6 +651,13 @@ async function createTables() {
       created_at TEXT NOT NULL,
       updated_at TEXT
     )`),
+    q(`CREATE TABLE IF NOT EXISTS google_drive_deletion_queue (
+      file_id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      next_attempt_at TEXT NOT NULL
+    )`),
     q(`CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
       room_id TEXT NOT NULL,
@@ -794,6 +814,7 @@ await q('ALTER TABLE files ADD COLUMN IF NOT EXISTS chat_only INTEGER DEFAULT 0'
   )`);
   await q('CREATE INDEX IF NOT EXISTS idx_file_collections_owner_created ON file_collections (owner_id, created_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_items_collection ON file_collection_items (collection_id)');
+  await q('CREATE INDEX IF NOT EXISTS idx_google_drive_deletion_queue_next_attempt ON google_drive_deletion_queue (next_attempt_at, created_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_recipients_collection ON file_collection_recipients (collection_id)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_uploads_recipient ON file_collection_uploads (recipient_id, status)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_uploads_submission ON file_collection_uploads (submission_id)');
@@ -976,6 +997,10 @@ async function issueRememberToken(req, res, userId) {
   res.cookie(REMEMBER_COOKIE, token, remCookieOpts(REMEMBER_DAYS * 86400000));
 }
 app.use(wrap(async (req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/sala/')) {
+    try { await retryPendingGoogleDriveDeletions(); }
+    catch (e) { console.error('Fila de exclusão do Google Drive:', e && e.message); }
+  }
   if (req.method === 'GET' && /\.(css|js|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(req.path)) return next();
   if (req.session && req.session.userId) return next();
   const token = readCookie(req, REMEMBER_COOKIE);
@@ -1023,7 +1048,7 @@ async function purgeExpired() {
   for (const r of old) {
     await removeRoomCollections(r.id);
     const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [r.id]);
-    try { await deleteBlobs(roomFiles.map(f => f.stored_name)); } catch (e) { console.error('purge blobs:', e && e.message); }
+    await deleteBlobs(roomFiles.map(f => f.stored_name));
     await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [r.id]);
     // Acervo e independente (snapshot): sala expirada NAO apaga o Acervo.
     await q('DELETE FROM files WHERE room_id = $1', [r.id]);
@@ -1198,7 +1223,7 @@ async function requireCollectionOwner(collectionId, userId) {
 
 async function removeCollectionUpload(upload) {
   if (!upload) return;
-  if (isBlobPath(upload.stored_name)) await deleteBlobs([upload.stored_name]);
+  await deleteBlobs([upload.stored_name]);
   await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [upload.id]);
   await q('DELETE FROM file_collection_uploads WHERE id = $1', [upload.id]);
 }
@@ -1209,9 +1234,7 @@ async function removeStaleCollectionUpload(upload, staleBefore) {
     WHERE id = $1 AND status = 'uploading' AND (uploaded_at IS NULL OR uploaded_at <= $2)
     RETURNING id, stored_name`, [upload.id, staleBefore]);
   if (!removed.length) return false;
-  if (isBlobPath(removed[0].stored_name)) {
-    await deleteBlobs([removed[0].stored_name]).catch(error => console.error('Limpeza de upload abandonado:', error && error.message));
-  }
+  await deleteBlobs([removed[0].stored_name]).catch(error => console.error('Limpeza de upload abandonado:', error && error.message));
   await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [removed[0].id]);
   return true;
 }
@@ -2251,9 +2274,10 @@ app.patch('/api/library/:id', asMember, wrap(async (req, res) => {
 }));
 
 app.delete('/api/library/:id', asMember, wrap(async (req, res) => {
-  const deleted = await q('DELETE FROM personal_library_items WHERE id = $1 AND user_id = $2 RETURNING id, stored_name', [req.params.id, req.user.id]);
-  if (!deleted.length) return res.status(404).json({ error: 'Item não encontrado no seu Acervo.' });
-  await deleteLibraryBlobs(deleted);
+  const item = await one('SELECT id, stored_name FROM personal_library_items WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!item) return res.status(404).json({ error: 'Item não encontrado no seu Acervo.' });
+  await deleteLibraryBlobs([item]);
+  await q('DELETE FROM personal_library_items WHERE id = $1 AND user_id = $2', [item.id, req.user.id]);
   res.json({ success: true });
 }));
 
@@ -2265,8 +2289,9 @@ app.delete('/api/library/spaces/:id', asMember, wrap(async (req, res) => {
     WHERE owner_id = $1 AND destination_type = 'library' AND library_space_id = $2
       AND status IN ('active','suspended') LIMIT 1`, [req.user.id, space.id]);
   if (usedByCollection) return res.status(409).json({ error: 'Este espaço está vinculado a uma coleta aberta. Encerre a coleta antes de excluí-lo.' });
-  const removed = await q('DELETE FROM personal_library_items WHERE user_id = $1 AND space_id = $2 RETURNING id, stored_name', [req.user.id, space.id]);
+  const removed = await q('SELECT id, stored_name FROM personal_library_items WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
   await deleteLibraryBlobs(removed);
+  await q('DELETE FROM personal_library_items WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
   await q('DELETE FROM personal_library_bookcases WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
   await q('DELETE FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [space.id, req.user.id]);
   res.json({ success: true, removed_count: removed.length });
@@ -3366,7 +3391,7 @@ app.delete('/api/coletas/enviar/:token/uploads/:uploadId', publicCollectionAcces
       AND EXISTS (SELECT 1 FROM file_collection_recipients cr WHERE cr.id = $2 AND cr.status = 'deleting' AND cr.token_hash = $3)
       RETURNING u.id, u.stored_name`, [req.params.uploadId, recipient.id, tokenHash, req.collectionAccessSessionHash]);
     if (!found.length) return res.status(404).json({ error: 'Arquivo não encontrado ou envio já encerrado.' });
-    if (isBlobPath(found[0].stored_name)) await deleteBlobs([found[0].stored_name]);
+    await deleteBlobs([found[0].stored_name]);
     await q('DELETE FROM file_collection_upload_blobs WHERE upload_id = $1', [found[0].id]);
   } finally {
     await q("UPDATE file_collection_recipients SET status = 'pending' WHERE id = $1 AND status = 'deleting' AND token_hash = $2", [recipient.id, tokenHash]);
@@ -3890,7 +3915,7 @@ async function dropFromPrivateRooms(ownerId, friendId) {
 async function destroyRoom(id) {
   await removeRoomCollections(id);
   const roomFiles = await q('SELECT stored_name FROM files WHERE room_id = $1', [id]);
-  try { await deleteBlobs(roomFiles.map(f => f.stored_name)); } catch (e) { console.error('blobs:', e && e.message); }
+  await deleteBlobs(roomFiles.map(f => f.stored_name));
   await q('DELETE FROM file_blobs WHERE file_id IN (SELECT id FROM files WHERE room_id = $1)', [id]);
   // O Acervo pessoal guarda COPIAS independentes (snapshot). Excluir a sala NAO apaga o Acervo.
   await q('DELETE FROM files WHERE room_id = $1', [id]);
@@ -4299,7 +4324,7 @@ app.post('/api/admin/files/bulk-delete', asAdmin, wrap(async (req, res) => {
   for (const id of ids) {
     const f = await one('SELECT id, stored_name FROM files WHERE id = $1', [id]);
     if (!f) continue;
-    try { await deleteBlobs([f.stored_name]); } catch (e) {}
+    await deleteBlobs([f.stored_name]);
     await q('DELETE FROM file_blobs WHERE file_id = $1', [f.id]);
     // Acervo e copia independente: exclusao em massa na sala NAO apaga o Acervo.
     await q('DELETE FROM files WHERE id = $1', [f.id]);
