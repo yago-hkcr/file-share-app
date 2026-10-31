@@ -7,10 +7,10 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v7';
+const CACHE_NAME = 'fileshare-v8';
 const ASSETS = [
   '/css/social.css?v=20261031a',
-  '/css/upload-queue.css?v=20261031a',
+  '/css/upload-queue.css?v=20261031b',
   '/css/collections.css?v=20261030d',
   '/css/style.css?v=20261014o',
   '/css/mobile.css?v=20261031a',
@@ -24,8 +24,8 @@ const ASSETS = [
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261014p',
   '/js/fx.js?v=20261014o',
-  '/js/upload-queue.js?v=20261031a',
-  '/js/upload.js?v=20261031a',
+  '/js/upload-queue.js?v=20261031b',
+  '/js/upload.js?v=20261031b',
   '/js/social.js?v=20261014o',
   '/js/personal.js?v=20261031a',
   '/js/message-export.js?v=20261027c',

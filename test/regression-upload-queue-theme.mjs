@@ -32,13 +32,25 @@ check(collectionUpload.includes('FileShareUploadQueue.run') && collectionUpload.
   'Coletas integram a fila e oferecem retry do item que falhou');
 check(library.includes('FileShareUploadQueue.run') && library.includes('putWithProgress'),
   'envios diretos à Biblioteca exibem progresso individual');
-check(dashboard.includes('/js/upload-queue.js?v=20261031a') && dashboard.includes('/css/upload-queue.css?v=20261031a') &&
-  dashboard.includes('/js/upload.js?v=20261031a') && dashboard.includes('/js/library.js?v=20261030e') && dashboard.includes('/css/collections.css?v=20261030d'),
+check(dashboard.includes('/js/upload-queue.js?v=20261031b') && dashboard.includes('/css/upload-queue.css?v=20261031b') &&
+  dashboard.includes('/js/upload.js?v=20261031b') && dashboard.includes('/js/library.js?v=20261030e') && dashboard.includes('/css/collections.css?v=20261030d'),
   'dashboard carrega os assets atualizados de upload, fila e Coletas');
-check(sw.includes("'/js/upload-queue.js?v=20261031a'") && sw.includes("'/css/upload-queue.css?v=20261031a'") &&
-  sw.includes("'/js/upload.js?v=20261031a'") && sw.includes("'/js/library.js?v=20261030e'") && sw.includes("'/css/collections.css?v=20261030d'") &&
+check(sw.includes("'/js/upload-queue.js?v=20261031b'") && sw.includes("'/css/upload-queue.css?v=20261031b'") &&
+  sw.includes("'/js/upload.js?v=20261031b'") && sw.includes("'/js/library.js?v=20261030e'") && sw.includes("'/css/collections.css?v=20261030d'") &&
   sw.includes("'/js/collection-upload.js?v=20261030c'") && sw.includes("'/js/collections.js?v=20261031a'"),
   'Service Worker inclui os assets atualizados de upload, fila e Coletas');
+check(queue.includes('IDLE_MINIMIZE_MS = 5000') && queue.includes('setTimeout(() => setOpen(false, true), IDLE_MINIMIZE_MS)') &&
+  queue.includes('enableDragging(launcher, false)') && queue.includes('enableDragging(panel.querySelector(\'.fs-upload-panel-head\'), true)') &&
+  queue.includes('is-side-rail') && queue.includes('positionPanelByLauncher()'),
+  'fila flutuante pode ser movida e recolhe para a lateral após cinco segundos sem atividade');
+check(server.includes('isBlobStoreSuspended') && server.includes('blobStoreSuspendedMessage') &&
+  server.includes("return res.status(503).json({ error: blobStoreSuspendedMessage })"),
+  'falha por Blob store suspensa informa a causa e orienta reativar o armazenamento');
+check(upload.includes("'/api/dm/' + friendId + '/drive-upload-session'") &&
+  upload.includes("'/api/dm/' + friendId + '/drive-files/register'") &&
+  upload.includes('if (driveUploadEnabled) {') &&
+  upload.includes('await uploadDriveInChunks(prep.data, file, reportProgress, options.signal);'),
+  'conversas diretas reutilizam o envio resumível pelo Google Drive quando conectado');
 check(queue.includes("task.cancelable = task.cancelAllowed && phase === 'uploading' && task.canCancel") &&
   queue.includes("['failed', 'cancelled'].includes(task.state)"),
   'cancelamento só fica disponível durante transporte cancelável e limpar fila preserva envios concluídos');
@@ -48,7 +60,9 @@ check(upload.includes('onPhase, onCancelable') && upload.includes("onPhase('fina
 const dmUpload = upload.slice(upload.indexOf('async function uploadToDmDirect'), upload.indexOf('async function uploadWithQueue'));
 check(dmUpload.includes('onCancelable(false);') && dmUpload.includes('onCancelable(true);') &&
   dmUpload.includes('await putWithProgress(prep.data.presignedUrl, file, reportProgress, options.signal);') &&
-  dmUpload.indexOf('onCancelable(false);', dmUpload.indexOf('await putWithProgress')) < dmUpload.indexOf("onPhase('finalizing')"),
+  dmUpload.includes('await uploadDriveInChunks(prep.data, file, reportProgress, options.signal);') &&
+  dmUpload.indexOf('onCancelable(false);', dmUpload.indexOf('await putWithProgress')) < dmUpload.indexOf("onPhase('finalizing')", dmUpload.indexOf('await putWithProgress')) &&
+  dmUpload.indexOf('onCancelable(false);', dmUpload.indexOf('await uploadDriveInChunks')) < dmUpload.indexOf("onPhase('finalizing')", dmUpload.indexOf('await uploadDriveInChunks')),
   'mensagem direta só permite cancelar o PUT direto e bloqueia cancelamento durante registro');
 check(personal.includes("directThread?.addEventListener('drop'") && personal.includes('sendDirectFiles(files)') &&
   personal.includes('event.shiftKey') && personal.includes('result.cancelled'),

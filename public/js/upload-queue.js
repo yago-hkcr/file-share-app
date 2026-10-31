@@ -3,8 +3,14 @@
   'use strict';
 
   const tasks = new Map();
+  const IDLE_MINIMIZE_MS = 5000;
   let nextId = 1;
   let launcher, panel, list, count;
+  let idleTimer = null;
+  let panelDrag = null;
+  let customPosition = false;
+  let panelPositionCustom = false;
+  let launcherPositionBeforeMinimize = null;
 
   const sizeLabel = bytes => {
     let size = Number(bytes) || 0;
@@ -32,9 +38,15 @@
     panel.setAttribute('aria-label', 'Fila de envios');
     panel.innerHTML = '<header class="fs-upload-panel-head"><div><strong><i class="fas fa-cloud-arrow-up" aria-hidden="true"></i> Fila de envios</strong><small class="fs-upload-summary"></small></div><div class="fs-upload-panel-actions"><button type="button" class="fs-upload-clear" aria-label="Limpar falhas e cancelados" hidden>Limpar falhas</button><button type="button" class="fs-upload-close" aria-label="Fechar fila">&times;</button></div></header><div class="fs-upload-list" role="list"></div>';
     list = panel.querySelector('.fs-upload-list');
-    launcher.addEventListener('click', () => setOpen(panel.hidden));
+    launcher.addEventListener('click', event => {
+      if (launcher.dataset.dragged === 'true') { launcher.dataset.dragged = 'false'; return; }
+      if (event.target.closest('.fs-upload-count') && !panel.hidden) return;
+      setOpen(panel.hidden);
+    });
+    enableDragging(launcher, false);
+    enableDragging(panel.querySelector('.fs-upload-panel-head'), true);
     panel.querySelector('.fs-upload-clear').addEventListener('click', clearFailedAndCancelled);
-    panel.querySelector('.fs-upload-close').addEventListener('click', () => setOpen(false));
+    panel.querySelector('.fs-upload-close').addEventListener('click', () => setOpen(false, true));
     panel.addEventListener('click', event => {
       const cancelButton = event.target.closest('[data-upload-cancel]');
       if (cancelButton) { cancelUpload(cancelButton.dataset.uploadCancel); return; }
@@ -43,14 +55,21 @@
       const button = event.target.closest('[data-upload-retry]');
       if (button) retry(button.dataset.uploadRetry);
     });
+    ['pointerdown', 'pointermove', 'keydown', 'wheel', 'focusin'].forEach(type => {
+      panel.addEventListener(type, noteActivity, { passive: type === 'wheel' });
+    });
     document.body.append(launcher, panel);
-    window.addEventListener('resize', positionQueue);
+    window.addEventListener('resize', () => {
+      if (customPosition) clampCustomPositions();
+      else positionQueue();
+    });
     positionQueue();
     render();
   }
 
   function positionQueue() {
     if (!launcher || !panel) return;
+    if (customPosition) return;
     const sheet = document.getElementById('directMessagesSheet');
     const composer = sheet && sheet.style.display !== 'none' && sheet.querySelector('#directMessageForm');
     if (!composer || typeof composer.getBoundingClientRect !== 'function') {
@@ -69,15 +88,129 @@
     panel.style.right = `${right}px`;
   }
 
+  function clampCustomPositions() {
+    [launcher, panel].forEach(element => {
+      if (!element || !element.style.left || !element.style.top) return;
+      const maxLeft = Math.max(8, window.innerWidth - element.offsetWidth - 8);
+      const maxTop = Math.max(8, window.innerHeight - element.offsetHeight - 8);
+      element.style.left = `${Math.max(8, Math.min(maxLeft, parseFloat(element.style.left) || 0))}px`;
+      element.style.top = `${Math.max(8, Math.min(maxTop, parseFloat(element.style.top) || 0))}px`;
+    });
+  }
+
+  function positionPanelByLauncher() {
+    if (!customPosition || panelPositionCustom || !launcher || !panel || panel.hidden) return;
+    const launcherRect = launcher.getBoundingClientRect();
+    const panelWidth = panel.offsetWidth;
+    const panelHeight = panel.offsetHeight;
+    const left = Math.max(8, Math.min(window.innerWidth - panelWidth - 8, launcherRect.right - panelWidth));
+    const above = launcherRect.top - panelHeight - 8;
+    const top = above >= 8 ? above : Math.min(window.innerHeight - panelHeight - 8, launcherRect.bottom + 8);
+    panel.style.left = `${left}px`;
+    panel.style.top = `${Math.max(8, top)}px`;
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+  }
+
   window.addEventListener('fileshare:direct-chat-open', positionQueue);
   window.addEventListener('fileshare:direct-chat-close', positionQueue);
 
   function setOpen(open) {
+    const sideRail = arguments.length > 1 && arguments[1] === true;
     ensureUI();
     if (!panel) return;
+    clearTimeout(idleTimer);
+    idleTimer = null;
     panel.hidden = !open;
     launcher.setAttribute('aria-expanded', String(open));
+    launcher.classList.toggle('is-side-rail', !open && sideRail);
+    if (open && launcherPositionBeforeMinimize) {
+      Object.assign(launcher.style, launcherPositionBeforeMinimize);
+      launcherPositionBeforeMinimize = null;
+    } else if (!open && sideRail && customPosition) {
+      launcherPositionBeforeMinimize = {
+        left: launcher.style.left,
+        top: launcher.style.top,
+        right: launcher.style.right,
+        bottom: launcher.style.bottom
+      };
+      launcher.style.left = 'auto';
+      launcher.style.top = '44%';
+      launcher.style.right = '0px';
+      launcher.style.bottom = 'auto';
+    }
     positionQueue();
+    if (open) {
+      positionPanelByLauncher();
+      noteActivity();
+    }
+  }
+
+  function noteActivity() {
+    if (!panel || panel.hidden) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => setOpen(false, true), IDLE_MINIMIZE_MS);
+  }
+
+  function enableDragging(handle, movePanel) {
+    handle.addEventListener('pointerdown', event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      if (event.target.closest('button')) return;
+      const target = movePanel ? panel : launcher;
+      const rect = target.getBoundingClientRect();
+      panelDrag = {
+        pointerId: event.pointerId,
+        target,
+        handle,
+        movePanel,
+        startX: event.clientX,
+        startY: event.clientY,
+        left: rect.left,
+        top: rect.top,
+        moved: false
+      };
+      handle.setPointerCapture(event.pointerId);
+      if (!movePanel && launcher.classList.contains('is-side-rail')) {
+        launcher.classList.remove('is-side-rail');
+        launcherPositionBeforeMinimize = null;
+        launcher.style.left = `${rect.left}px`;
+        launcher.style.top = `${rect.top}px`;
+        launcher.style.right = 'auto';
+        launcher.style.bottom = 'auto';
+      }
+      if (movePanel) noteActivity();
+    });
+    handle.addEventListener('pointermove', event => {
+      if (!panelDrag || panelDrag.pointerId !== event.pointerId) return;
+      const dx = event.clientX - panelDrag.startX;
+      const dy = event.clientY - panelDrag.startY;
+      if (!panelDrag.moved && Math.hypot(dx, dy) < 6) return;
+      panelDrag.moved = true;
+      const target = panelDrag.target;
+      const maxLeft = Math.max(8, window.innerWidth - target.offsetWidth - 8);
+      const maxTop = Math.max(8, window.innerHeight - target.offsetHeight - 8);
+      target.style.left = `${Math.max(8, Math.min(maxLeft, panelDrag.left + dx))}px`;
+      target.style.top = `${Math.max(8, Math.min(maxTop, panelDrag.top + dy))}px`;
+      target.style.right = 'auto';
+      target.style.bottom = 'auto';
+      customPosition = true;
+      if (panelDrag.movePanel) panelPositionCustom = true;
+      if (!panelDrag.movePanel) launcher.dataset.dragged = 'true';
+      panel.classList.toggle('is-dragging', panelDrag.movePanel);
+      noteActivity();
+      event.preventDefault();
+    });
+    const finishDrag = event => {
+      if (!panelDrag || panelDrag.pointerId !== event.pointerId) return;
+      const dragged = panelDrag.moved && !panelDrag.movePanel;
+      const movedPanel = panelDrag.movePanel;
+      panelDrag = null;
+      if (movedPanel && panel) panel.classList.remove('is-dragging');
+      if (dragged) setTimeout(() => { if (launcher) launcher.dataset.dragged = 'false'; }, 0);
+      if (!panel.hidden) noteActivity();
+    };
+    handle.addEventListener('pointerup', finishDrag);
+    handle.addEventListener('pointercancel', finishDrag);
   }
 
   function render() {

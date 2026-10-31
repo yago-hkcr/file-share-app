@@ -37,6 +37,23 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const ORIGIN = { origin: BASE };
 try {
   await waitHealthy();
+  const versionedAsset = await fetch(`${BASE}/js/common.js?v=cache-regression`);
+  const versionedCache = versionedAsset.headers.get('cache-control') || '';
+  check(versionedAsset.ok && /max-age=31536000/.test(versionedCache) && /immutable/.test(versionedCache),
+    'assets JS versionados recebem cache imutável de um ano');
+  const unversionedAsset = await fetch(`${BASE}/js/common.js`);
+  const unversionedCache = unversionedAsset.headers.get('cache-control') || '';
+  check(unversionedAsset.ok && !/immutable/.test(unversionedCache),
+    'assets sem versão não recebem cache imutável');
+  const healthResponse = await fetch(`${BASE}/health`);
+  check((healthResponse.headers.get('cache-control') || '').includes('no-store'),
+    'respostas de saúde continuam sem cache');
+  const manifestResponse = await fetch(`${BASE}/manifest.json?v=cache-regression`);
+  check(manifestResponse.ok && !/immutable/.test(manifestResponse.headers.get('cache-control') || ''),
+    'arquivos não CSS/JS não recebem cache imutável mesmo com parâmetro v');
+  const missingAsset = await fetch(`${BASE}/js/missing-cache-regression.js?v=cache-regression`);
+  check(missingAsset.status === 404 && !/immutable/.test(missingAsset.headers.get('cache-control') || ''),
+    'assets inexistentes não recebem cache imutável');
   // Páginas protegidas não podem ser obtidas diretamente via express.static.
   for (const page of ['/admin.html', '/dashboard.html', '/change-password.html', '/%61dmin.html', '/admin%2ehtml', '/dashboard%2ehtml', '/%2561dmin%252ehtml']) {
     const direct = await fetch(BASE + page, { redirect: 'manual' });
