@@ -130,7 +130,8 @@ check(directChat.includes('class="message-send-text-trigger message-action-butto
   'conversa direta oferece enviar o TXT como anexo pelo fluxo de upload da DM');
 check(dashboard.includes('textarea id="messageInput"') && directChat.includes('textarea id="directMessageInput"') &&
   !dashboard.includes('maxlength="1000"') && !directChat.includes('maxlength="1000"') &&
-  dashboard.includes('Enter envia · Shift+Enter quebra linha') && directChat.includes('Enter envia · Shift+Enter quebra linha'),
+  dashboard.includes('Enter envia · Shift+Enter quebra linha') &&
+  /id="directMessageInput"[^>]*(?:aria-label|title)="[^"]*Enter envia; Shift\+Enter quebra linha/.test(directChat),
   'os dois compositores aceitam texto multilinha sem maxlength e mantêm atalhos explícitos');
 check(dashboard.includes('window.createLongMessageFile(content)') && directChat.includes('window.createLongMessageFile(content)') &&
   exporterSource.includes('LONG_MESSAGE_THRESHOLD = 12000'),
@@ -139,8 +140,8 @@ check(/white-space:\s*pre-wrap/.test(styles) && /\.chat-compose textarea[\s\S]*?
   'mensagem recebida e compositor exibem as quebras de linha originais');
 check(/\.msg-actions[\s\S]*?flex-wrap:\s*wrap/.test(styles) && /@media \(hover:\s*none\), \(max-width:\s*640px\)[\s\S]*?min-height:\s*42px/.test(styles),
   'controles permanecem alcançáveis em telas pequenas e toque');
-  check(dashboard.includes('/js/common.js?v=20261027b') && dashboard.includes('/js/message-export.js?v=20261027c') && dashboard.includes('/js/personal.js?v=20261027d') && dashboard.includes('/css/social.css?v=20261027c') && dashboard.includes('/css/mobile-scroll-fix.css?v=20261027a') &&
-    serviceWorker.includes("'/js/common.js?v=20261027b'") && serviceWorker.includes("'/js/message-export.js?v=20261027c'") && serviceWorker.includes("'/js/personal.js?v=20261027d'") && serviceWorker.includes("'/css/social.css?v=20261027c'") && serviceWorker.includes("'/css/mobile-scroll-fix.css?v=20261027a'"),
+  check(dashboard.includes('/js/common.js?v=20261027b') && dashboard.includes('/js/message-export.js?v=20261027c') && dashboard.includes('/js/personal.js?v=20261031a') && dashboard.includes('/css/social.css?v=20261031a') && dashboard.includes('/css/mobile-scroll-fix.css?v=20261027a') &&
+    serviceWorker.includes("'/js/common.js?v=20261027b'") && serviceWorker.includes("'/js/message-export.js?v=20261027c'") && serviceWorker.includes("'/js/personal.js?v=20261031a'") && serviceWorker.includes("'/css/social.css?v=20261031a'") && serviceWorker.includes("'/css/mobile-scroll-fix.css?v=20261027a'"),
   'service worker pré-carrega os assets novos com versões atualizadas');
 
 const inlineScripts = [...dashboard.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]

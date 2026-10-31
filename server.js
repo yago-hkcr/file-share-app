@@ -109,6 +109,11 @@ async function verifyPassword(value, storedHash) {
 const blobSdk = () => import('@vercel/blob');
 const blobClientSdk = () => import('@vercel/blob/client');
 const blobEnabled = () => !LOCAL_MODE && Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
+const isBlobStoreSuspended = error => Boolean(error && (
+  error.name === 'BlobStoreSuspendedError'
+  || /store has been suspended|billing state is suspended|limits-exceeded-suspended/i.test(String(error.message || ''))
+));
+const blobStoreSuspendedMessage = 'O armazenamento de arquivos está suspenso na Vercel por limite de uso/faturamento. Os envios voltam após a reativação da Blob store.';
 async function deleteBlobs(pathnames) {
   const list = pathnames.filter(isBlobPath);
   if (list.length) {
@@ -814,10 +819,10 @@ await q('ALTER TABLE files ADD COLUMN IF NOT EXISTS chat_only INTEGER DEFAULT 0'
   )`);
   await q('CREATE INDEX IF NOT EXISTS idx_file_collections_owner_created ON file_collections (owner_id, created_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_items_collection ON file_collection_items (collection_id)');
-  await q('CREATE INDEX IF NOT EXISTS idx_google_drive_deletion_queue_next_attempt ON google_drive_deletion_queue (next_attempt_at, created_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_recipients_collection ON file_collection_recipients (collection_id)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_uploads_recipient ON file_collection_uploads (recipient_id, status)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_uploads_submission ON file_collection_uploads (submission_id)');
+  await q('CREATE INDEX IF NOT EXISTS idx_google_drive_deletion_queue_next_attempt ON google_drive_deletion_queue (next_attempt_at, created_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_submissions_collection ON file_collection_submissions (collection_id, submitted_at)');
   for (const col of ['last_login', 'last_seen', 'last_ip', 'force_logout_at', 'avatar_image']) await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col} TEXT`);
   await q('ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id TEXT');
@@ -2544,7 +2549,7 @@ app.post('/api/google-drive/uploads/:uploadId/chunk', asMember, express.raw({ ty
   if (!upload) return res.status(404).json({ error: 'Sessão de upload não encontrada.' });
   if (upload.status === 'complete' || upload.status === 'registered') return res.json({ complete: true, next_offset: num(upload.size) });
   if (upload.status !== 'uploading') return res.status(409).json({ error: 'Esta sessão de upload foi encerrada.' });
-  if (upload.destination_type === 'room' && !(await canUseRoom(req.user, upload.room_id))) return res.status(403).json({ error: 'Você não tem mais acesso a esta sala.' });
+  if (['room', 'dm'].includes(upload.destination_type) && !(await canUseRoom(req.user, upload.room_id))) return res.status(403).json({ error: 'Você não tem mais acesso a este destino.' });
   if (upload.destination_type === 'library' && !(await resolvePersonalLibraryLocation(req.user.id, { space_id: upload.space_id, bookcase_id: upload.bookcase_id }))) {
     return res.status(403).json({ error: 'A prateleira desta sessão não está mais disponível.' });
   }
@@ -2693,6 +2698,19 @@ app.post('/api/rooms/:id/drive-files/register', asMember, wrap(async (req, res) 
     [upload.upload_id, room.id, req.user.id, upload.original_name, storedName, num(upload.size), upload.mime_type, ts(), chatOnly]);
   await q("UPDATE google_drive_uploads SET status = 'registered', updated_at = $1 WHERE upload_id = $2 AND user_id = $3", [ts(), upload.upload_id, req.user.id]);
   res.json({ id: upload.upload_id, original_name: upload.original_name, size: num(upload.size), mime_type: upload.mime_type, chat_only: chatOnly });
+}));
+
+app.post('/api/dm/:id/drive-upload-session', asMember, wrap(async (req, res) => {
+  if (!(await googleDriveConnected())) return res.status(501).json({ error: 'Google Drive indisponível' });
+  const friend = await directFriend(req, res); if (!friend) return;
+  const size = Number(req.body && req.body.size);
+  if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio' });
+  if (size > MAX_BLOB_UPLOAD_BYTES) return res.status(413).json({ error: 'Arquivo grande demais (máximo 10 GiB).' });
+  const conversationKey = 'dm:' + [req.user.id, friend.id].sort().join(':');
+  res.json(await createDriveUploadSession({
+    userId: req.user.id, destinationType: 'dm', roomId: conversationKey,
+    name: req.body.name, size, mimeType: req.body.mime
+  }));
 }));
 
 // Upload direto ao Acervo (sem passar por sala): mesmo fluxo das salas, mas gravando em
@@ -4062,6 +4080,7 @@ app.post('/api/dm/:id/upload-token', asMember, wrap(async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Blob multipart (mensagem direta):', error && error.message);
+    if (isBlobStoreSuspended(error)) return res.status(503).json({ error: blobStoreSuspendedMessage });
     res.status(400).json({ error: 'Não foi possível preparar ou concluir o upload multipart' });
   }
 }));
@@ -4094,6 +4113,30 @@ app.post('/api/dm/:id/files/register', asMember, wrap(async (req, res) => {
   await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
     [m[2], conversationKey, req.user.id, name, pathname, size, mime, ts(), 1]);
   res.json({ id: m[2], original_name: name, size });
+}));
+
+app.post('/api/dm/:id/drive-files/register', asMember, wrap(async (req, res) => {
+  const friend = await directFriend(req, res); if (!friend) return;
+  const uploadId = String(req.body && req.body.upload_id || '');
+  const upload = await getDriveUploadSession(uploadId, req.user.id);
+  const conversationKey = 'dm:' + [req.user.id, friend.id].sort().join(':');
+  if (!upload || upload.destination_type !== 'dm' || upload.room_id !== conversationKey) return res.status(404).json({ error: 'Sessão de upload não encontrada.' });
+  if (!['complete', 'registered'].includes(upload.status) || !validateDriveFileId(upload.file_id)) return res.status(409).json({ state: 'upload_incomplete', error: 'O envio ao Google Drive ainda não foi concluído.' });
+  const drive = await googleDriveStorage();
+  const metadata = await drive.getFileMetadata(upload.file_id);
+  if (!metadata || metadata.appProperties?.fileshareUploadId !== upload.upload_id || Number(metadata.size) !== num(upload.size)) {
+    return res.status(409).json({ error: 'Não foi possível validar o arquivo enviado ao Google Drive.' });
+  }
+  if (upload.status === 'registered') {
+    const registered = await one('SELECT id, original_name, size, mime_type FROM files WHERE id = $1 AND room_id = $2', [upload.upload_id, conversationKey]);
+    if (registered) return res.json(registered);
+    return res.status(409).json({ error: 'A sessão consta como registrada, mas o arquivo não foi localizado.' });
+  }
+  const storedName = driveFileRef(upload.file_id);
+  await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1) ON CONFLICT (id) DO NOTHING',
+    [upload.upload_id, conversationKey, req.user.id, upload.original_name, storedName, num(upload.size), upload.mime_type, ts()]);
+  await q("UPDATE google_drive_uploads SET status = 'registered', updated_at = $1 WHERE upload_id = $2 AND user_id = $3", [ts(), upload.upload_id, req.user.id]);
+  res.json({ id: upload.upload_id, original_name: upload.original_name, size: num(upload.size), mime_type: upload.mime_type });
 }));
 
 app.post('/api/friends/request', asMember, wrap(async (req, res) => {
@@ -4459,6 +4502,7 @@ app.use((err, req, res, next) => {
   const safePath = String(req.path || '').replace(/(\/enviar\/)[^/]+/g, '$1[redacted]');
   console.error('Erro em', req.method, safePath, '-', err && err.stack || err);
   if (res.headersSent) return next(err);
+  if (isBlobStoreSuspended(err) && req.path.startsWith('/api/')) return res.status(503).json({ error: blobStoreSuspendedMessage });
   const message = 'Erro interno do servidor. Tente novamente.';
   if (req.originalUrl.startsWith('/api/')) return res.status(500).json({ error: message });
   res.status(500).send(message);

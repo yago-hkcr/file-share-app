@@ -434,6 +434,20 @@
         const onPhase = typeof options.onPhase === 'function' ? options.onPhase : () => {};
         const onCancelable = typeof options.onCancelable === 'function' ? options.onCancelable : () => {};
         onPhase('uploading');
+        if (driveUploadEnabled) {
+          onCancelable(false);
+          const prep = await postJson('/api/dm/' + friendId + '/drive-upload-session', { name: file.name, size: file.size, mime: file.type }, options.signal);
+          if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
+          onCancelable(true);
+          await uploadDriveInChunks(prep.data, file, reportProgress, options.signal);
+          onCancelable(false);
+          onPhase('finalizing');
+          const done = await postJson('/api/dm/' + friendId + '/drive-files/register', { upload_id: prep.data.upload_id }, options.signal);
+          if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
+          uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: done.data.mime_type || file.type || 'application/octet-stream' });
+          sent++;
+          continue;
+        }
         if (file.size > 100 * 1024 * 1024) {
           onCancelable(false);
           if (!currentUserId) throw new Error('Não foi possível identificar sua conta para preparar o upload. Atualize a página e tente novamente.');
