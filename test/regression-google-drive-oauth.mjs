@@ -80,6 +80,12 @@ assert.ok(server.includes("GOOGLE_DRIVE_REDIRECT_URI = process.env.GOOGLE_DRIVE_
   'callback OAuth usa o domínio canônico configurado para produção');
 assert.ok(server.includes('crypto.timingSafeEqual(expectedBytes, receivedBytes)'));
 assert.ok(server.includes("setSetting('google_drive_refresh_token_enc', encryptedToken)"));
+assert.ok(server.includes('res.cookie(GOOGLE_DRIVE_RETURN_COOKIE, returnOrigin'),
+  'a origem que iniciou o OAuth é preservada junto ao state sem compartilhar o cookie de sessão');
+assert.ok(server.includes('returnOriginCookie') && server.includes('/admin?drive_connected=1#storage'),
+  'o callback retorna ao painel na mesma origem autenticada');
+assert.ok(server.includes("app.delete('/api/admin/google-drive/connection', asAdmin"),
+  'somente o administrador consegue desconectar a conta');
 assert.ok(readme.includes('https://arquive.online/api/google-drive/oauth/callback'));
 
 console.log('Todas as asserções OAuth do Google Drive passaram.');
