@@ -2213,12 +2213,10 @@ app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) =>
     path: '/api/google-drive/oauth/callback',
     maxAge: 10 * 60 * 1000
   });
-  const loginHint = String(process.env.GOOGLE_DRIVE_ACCOUNT_EMAIL || '').trim();
   return res.redirect(302, createAuthorizationUrl({
     clientId,
     redirectUri: GOOGLE_DRIVE_REDIRECT_URI,
-    state,
-    loginHint
+    state
   }));
 }));
 
@@ -2242,7 +2240,14 @@ app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {
   if (!expectedState || expectedBytes.length !== receivedBytes.length || !crypto.timingSafeEqual(expectedBytes, receivedBytes)) {
     return res.status(400).send('Não foi possível validar esta autorização OAuth. Inicie a conexão do Drive novamente pelo painel administrativo.');
   }
-  if (req.query.error) return res.status(400).send('A autorização do Google Drive foi cancelada ou negada. Você pode tentar novamente pelo painel administrativo.');
+  if (req.query.error) {
+    const safeReturnOrigin = IS_VERCEL
+      ? (/^https:\/\/.+/.test(returnOriginCookie) ? returnOriginCookie : 'https://arquive.online')
+      : (/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(returnOriginCookie) ? returnOriginCookie : null);
+    if (!safeReturnOrigin) return res.status(400).send('Não foi possível retornar ao painel administrativo. Abra o painel e conecte a conta novamente.');
+    const failure = req.query.error === 'access_denied' ? 'access_denied' : 'authorization';
+    return res.redirect(302, `${safeReturnOrigin}/admin?drive_error=${failure}#storage`);
+  }
 
   const clientId = String(process.env.GOOGLE_DRIVE_CLIENT_ID || '').trim();
   const clientSecret = String(process.env.GOOGLE_DRIVE_CLIENT_SECRET || '');

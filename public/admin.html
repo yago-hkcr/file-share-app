@@ -263,49 +263,26 @@
           if (!response.ok) throw new Error('Não foi possível consultar as contas do Drive.');
           if (sequence !== driveStatusSequence) return;
           lastDriveStatus = { ...data, connected: Boolean(data.accounts && data.accounts.length) };
-          if (data.accounts && data.accounts.length) {
-            renderGoogleDriveAccounts(data.accounts, data.total);
-            renderGoogleDriveTotalQuota(data.total);
-            connectNew.hidden = false;
-            const verificationFailed = Boolean(data.verification_failed || data.accounts.some(account => account.verificationFailed));
-            setGoogleDriveNoticeState({ connected: true, failed: verificationFailed });
-            message.textContent = data.accounts.length + ' conta(s) do Google Drive conectada(s). Novos anexos usam a conta com mais espaço livre.';
-            if (verificationFailed) {
-              verificationError.hidden = false;
-              document.getElementById('googleDriveVerificationMessage').textContent = 'Algumas contas não puderam ser verificadas no momento. A autorização continua salva.';
-            }
-          } else if (data.connected && data.configured) {
-            accountsList.innerHTML = '';
-            totalPanel.hidden = true;
-            connectNew.hidden = false;
-            setGoogleDriveNoticeState({ connected: false, failed: true });
-            document.getElementById('googleDriveStatus').textContent = 'Contas desconectadas para novos uploads';
-            badge.className = 'storage-status-badge is-warning';
-            message.textContent = 'As contas armazenadas continuam disponíveis para os arquivos existentes. Conecte novamente para enviar novos arquivos.';
-          } else {
-            accountsList.innerHTML = '';
-            totalPanel.hidden = true;
-            connectNew.hidden = !data.configured;
-            setGoogleDriveNoticeState({ configured: Boolean(data.configured), connected: false });
-            if (!data.configured) {
-              document.getElementById('googleDriveStatus').textContent = 'Integração indisponível';
-              badge.className = 'storage-status-badge is-warning';
-              message.textContent = 'A integração do Google Drive precisa ser configurada no servidor.';
-            } else {
-              document.getElementById('googleDriveStatus').textContent = 'Nenhuma conta conectada';
-              badge.className = 'storage-status-badge is-warning';
-              message.textContent = 'Conecte uma ou mais contas do Google Drive para aumentar o armazenamento disponível.';
-            }
-          }
+          renderGoogleDriveStatus(lastDriveStatus);
           saveDriveStatusToStorage();
         } catch (error) {
           if (sequence !== driveStatusSequence) return;
-          document.getElementById('googleDriveStatus').textContent = 'Erro ao consultar contas';
-          badge.className = 'storage-status-badge is-error';
-          message.textContent = 'O painel tentará verificar novamente automaticamente.';
-          notConfigured.hidden = true;
-          verificationError.hidden = false;
-          document.getElementById('googleDriveVerificationMessage').textContent = 'Serviço temporariamente indisponível.';
+          if (lastDriveStatus) {
+            renderGoogleDriveStatus(lastDriveStatus);
+            setGoogleDriveNoticeState({
+              configured: Boolean(lastDriveStatus.configured),
+              connected: Boolean(lastDriveStatus.accounts && lastDriveStatus.accounts.length),
+              failed: true
+            });
+            document.getElementById('googleDriveVerificationMessage').textContent = 'Não foi possível atualizar agora. Exibindo o último status salvo; a verificação será tentada novamente automaticamente.';
+          } else {
+            document.getElementById('googleDriveStatus').textContent = 'Erro ao consultar contas';
+            badge.className = 'storage-status-badge is-error';
+            message.textContent = 'O painel tentará verificar novamente automaticamente.';
+            notConfigured.hidden = true;
+            verificationError.hidden = false;
+            document.getElementById('googleDriveVerificationMessage').textContent = 'Serviço temporariamente indisponível.';
+          }
         } finally {
           driveStatusRequest = null;
           if (sequence === driveStatusSequence) {
@@ -323,6 +300,24 @@
       const verificationError = document.getElementById('googleDriveVerificationError');
       notConfigured.hidden = configured || connected || failed;
       verificationError.hidden = !failed;
+    }
+
+    function renderGoogleDriveStatus(data = {}) {
+      const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+      if (!accounts.length) {
+        renderGoogleDriveDisconnected(data);
+        return;
+      }
+
+      renderGoogleDriveAccounts(accounts, data.total);
+      renderGoogleDriveTotalQuota(data.total);
+      document.getElementById('googleDriveConnectNew').hidden = false;
+      const verificationFailed = Boolean(data.verification_failed || accounts.some(account => account.verificationFailed));
+      setGoogleDriveNoticeState({ connected: true, failed: verificationFailed });
+      document.getElementById('googleDriveMessage').textContent = accounts.length + ' conta(s) do Google Drive conectada(s). Novos anexos usam a conta com mais espaço livre.';
+      if (verificationFailed) {
+        document.getElementById('googleDriveVerificationMessage').textContent = 'Algumas contas não puderam ser verificadas no momento. A autorização continua salva.';
+      }
     }
 
     function renderGoogleDriveDisconnected(data = {}) {
@@ -730,14 +725,22 @@
     const saved = restoreDriveStatusFromStorage();
     if (saved) {
       lastDriveStatus = saved;
-      if (saved.connected) renderGoogleDriveConnected(saved);
-      else renderGoogleDriveDisconnected(saved);
+      renderGoogleDriveStatus(saved);
     }
     loadGoogleDriveStatus();
     startDriveAutoRefresh();
-    if (new URLSearchParams(location.search).get('drive_connected') === '1') {
+    const driveReturnParams = new URLSearchParams(location.search);
+    if (driveReturnParams.get('drive_connected') === '1') {
       showTab('storage');
       history.replaceState(null, '', location.pathname + '#storage');
+    } else if (driveReturnParams.has('drive_error')) {
+      showTab('storage');
+      history.replaceState(null, '', location.pathname + '#storage');
+      if (driveReturnParams.get('drive_error') === 'access_denied') {
+        showToast('O Google bloqueou esta conta. Adicione o e-mail em Google Cloud → Google Auth Platform → Público-alvo → Usuários de teste e tente novamente.', 'error', 12000);
+      } else {
+        showToast('A autorização foi cancelada. Clique em “Conectar outra conta” para tentar novamente.', 'info', 8000);
+      }
     }
 
     // Atualização automática a cada 2 s (sem recarregar a página, para não perder o que está aberto)

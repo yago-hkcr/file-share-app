@@ -22,12 +22,12 @@ const authUrl = new URL(createAuthorizationUrl({
   clientId: 'client-id.apps.googleusercontent.com',
   redirectUri: 'https://arquive.online/api/google-drive/oauth/callback',
   state: 'state-value',
-  loginHint: 'drive@example.com'
 }));
 assert.equal(authUrl.origin, 'https://accounts.google.com');
 assert.equal(authUrl.searchParams.get('scope'), DRIVE_FILE_SCOPE);
 assert.equal(authUrl.searchParams.get('access_type'), 'offline');
-assert.equal(authUrl.searchParams.get('prompt'), 'consent');
+assert.equal(authUrl.searchParams.get('prompt'), 'select_account consent');
+assert.equal(authUrl.searchParams.has('login_hint'), false, 'o seletor deve permitir escolher outra conta Google');
 assert.equal(authUrl.searchParams.get('state'), 'state-value');
 assert.equal(authUrl.searchParams.get('redirect_uri'), 'https://arquive.online/api/google-drive/oauth/callback');
 
@@ -72,6 +72,7 @@ await assert.rejects(() => exchangeAuthorizationCode({
 });
 assert.ok(server.includes("app.get('/api/admin/google-drive/oauth/start', asAdmin"));
 assert.ok(server.includes("app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {"));
+assert.ok(!server.includes('GOOGLE_DRIVE_ACCOUNT_EMAIL'), 'a autorização não deve fixar o login em uma única conta Google');
 assert.ok(server.includes("app.get('/api/admin/google-drive/oauth/start', asAdmin"),
   'somente administradores podem iniciar o OAuth');
 assert.ok(server.includes("...(IS_VERCEL ? { domain: '.arquive.online' } : {})"),
@@ -87,6 +88,8 @@ assert.ok(server.includes('res.cookie(GOOGLE_DRIVE_RETURN_COOKIE, returnOrigin')
   'a origem que iniciou o OAuth é preservada junto ao state sem compartilhar o cookie de sessão');
 assert.ok(server.includes('returnOriginCookie') && server.includes('/admin?drive_connected=1#storage'),
   'o callback retorna ao painel na mesma origem autenticada');
+assert.ok(server.includes('/admin?drive_error=${failure}#storage'),
+  'uma autorização negada retorna ao painel para explicar como liberar o usuário de teste');
 assert.ok(server.includes("app.delete('/api/admin/google-drive/connection', asAdmin"),
   'somente o administrador consegue desconectar a conta');
 assert.ok(readme.includes('https://arquive.online/api/google-drive/oauth/callback'));
