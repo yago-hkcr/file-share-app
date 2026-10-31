@@ -181,6 +181,27 @@
     let lastUsersSig = '', lastRoomsSig = '', lastNotifsSig = '', uploading = 0;
     let driveStatusRequest = null, driveStatusSequence = 0, lastDriveStatus = null;
     let driveStatusIsRefreshing = false;
+    const DRIVE_STATUS_STORAGE_KEY = 'fs_drive_status';
+    function saveDriveStatusToStorage() {
+      try {
+        if (lastDriveStatus) {
+          localStorage.setItem(DRIVE_STATUS_STORAGE_KEY, JSON.stringify({
+            ...lastDriveStatus,
+            saved_at: Date.now()
+          }));
+        }
+      } catch {}
+    }
+    function restoreDriveStatusFromStorage() {
+      try {
+        const raw = localStorage.getItem(DRIVE_STATUS_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        const savedAt = parsed.saved_at || 0;
+        if (Date.now() - savedAt > 24 * 60 * 60 * 1000) return null;
+        return parsed;
+      } catch { return null; }
+    }
     let lastNotifs = [], notificationsRequest = null, driveRefreshTimer = null;
     function showToast(msg, type='success', ms) {
       const c = document.getElementById('toastContainer');
@@ -314,6 +335,7 @@
         document.getElementById('googleDriveConnect').hidden = false;
         document.getElementById('googleDriveConnect').href = location.origin + '/api/admin/google-drive/oauth/start';
       }
+      saveDriveStatusToStorage();
     }
 
     function renderGoogleDriveConnected(data = {}) {
@@ -379,6 +401,7 @@
       document.querySelector('.storage-progress-track').setAttribute('aria-valuenow', String(Math.round(percent ?? 0)));
       if (data.checked_at) document.getElementById('googleDriveCheckedAt').textContent = new Date(data.checked_at).toLocaleString('pt-BR');
       quotaPanel.hidden = false;
+      saveDriveStatusToStorage();
     }
 
     async function disconnectGoogleDrive() {
@@ -697,6 +720,13 @@
 
     // Init
     loadStats(); loadNotifCount();
+    const saved = restoreDriveStatusFromStorage();
+    if (saved) {
+      lastDriveStatus = saved;
+      if (saved.connected) renderGoogleDriveConnected(saved);
+      else renderGoogleDriveDisconnected(saved);
+    }
+    loadGoogleDriveStatus();
     startDriveAutoRefresh();
     if (new URLSearchParams(location.search).get('drive_connected') === '1') {
       showTab('storage');
