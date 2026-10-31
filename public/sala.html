@@ -10,7 +10,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>FileShare - Sala</title>
+  <title>Arquive Online - Sala</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014o">
@@ -36,7 +36,7 @@
     <div class="sala-header">
       <div class="sala-left">
         <div class="sala-logo">
-          <i class="fas fa-share-alt"></i> FileShare
+          <i class="fas fa-share-alt"></i> Arquive Online
         </div>
       </div>
       <a class="sala-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Voltar</a>
@@ -47,7 +47,7 @@
     </div>
 
     <footer class="sala-footer">
-      <p>Powered by <strong>FileShare</strong> <i class="fas fa-heart" style="color: #ef4444;"></i></p>
+      <p>Compartilhado pelo <strong>Arquive Online</strong> <i class="fas fa-heart" style="color: #ef4444;"></i></p>
     </footer>
   </div>
 
@@ -120,7 +120,7 @@
         const sig = JSON.stringify(room);
         if (isPoll && sig === lastSig) return;
         lastSig = sig;
-        document.title = `FileShare - ${room.name}`;
+        document.title = `Arquive Online - ${room.name}`;
 
         let filesHtml = '';
         if (room.files && room.files.length > 0) {

@@ -1,6 +1,6 @@
 {
-  "name": "FileShare",
-  "short_name": "FileShare",
+  "name": "Arquive Online",
+  "short_name": "Arquive Online",
   "description": "Compartilhe arquivos em salas privadas com preview e chat em tempo real.",
   "start_url": "/",
   "scope": "/",

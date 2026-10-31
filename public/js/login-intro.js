@@ -1,4 +1,4 @@
-/* FileShare first-run product film: controllable, short, and reduced-motion aware. */
+/* Arquive Online first-run product film: controllable, short, and reduced-motion aware. */
 (function () {
   'use strict';
 
@@ -50,11 +50,11 @@
     wrap.id = 'loginIntro';
     wrap.setAttribute('role', 'dialog');
     wrap.setAttribute('aria-modal', 'true');
-    wrap.setAttribute('aria-label', 'Conheça o FileShare');
+    wrap.setAttribute('aria-label', 'Conheça o Arquive Online');
     wrap.innerHTML =
       '<div class="intro-atmosphere" aria-hidden="true"><span class="atmosphere-glow glow-a"></span><span class="atmosphere-glow glow-b"></span><span class="atmosphere-grid"></span><span class="atmosphere-grain"></span></div>' +
       '<button class="intro-skip" type="button" data-intro-action="close">Pular apresentação <i class="fas fa-forward-step"></i></button>' +
-      '<div class="login-intro-stage"><div class="intro-topline"><span class="intro-brand-lockup"><i class="fas fa-share-nodes"></i><b>FILESHARE</b></span><span class="intro-chapter" id="introChapter"></span></div>' +
+      '<div class="login-intro-stage"><div class="intro-topline"><span class="intro-brand-lockup"><i class="fas fa-share-nodes"></i><b>ARQUIVE ONLINE</b></span><span class="intro-chapter" id="introChapter"></span></div>' +
       '<div class="intro-scenes" id="introScenes"></div>' +
       '<div class="intro-controls"><div class="intro-progress" id="introProgress" aria-label="Progresso da apresentação"></div><div class="intro-control-row"><span class="intro-hint" id="introHint"><i class="fas fa-sparkles"></i> Um tour rápido pelo seu novo espaço</span><div class="intro-nav"><button class="intro-control intro-play" type="button" data-intro-action="toggle" aria-label="Pausar apresentação"><i class="fas fa-pause"></i></button><button class="intro-control intro-back" type="button" data-intro-action="back" aria-label="Cena anterior"><i class="fas fa-arrow-left"></i></button><button class="intro-next" type="button" data-intro-action="next"><span>Próximo</span><i class="fas fa-arrow-right"></i></button></div></div></div></div>';
 
@@ -117,7 +117,7 @@
         segment.querySelector('span').style.transform = 'scaleX(' + (sceneIndex < index ? 1 : 0) + ')';
       });
       chapter.textContent = String(index + 1).padStart(2, '0') + ' / ' + String(scenes.length).padStart(2, '0');
-      nextButton.innerHTML = index === scenes.length - 1 ? '<span>Entrar no FileShare</span><i class="fas fa-arrow-right"></i>' : '<span>Próximo</span><i class="fas fa-arrow-right"></i>';
+      nextButton.innerHTML = index === scenes.length - 1 ? '<span>Entrar no Arquive Online</span><i class="fas fa-arrow-right"></i>' : '<span>Próximo</span><i class="fas fa-arrow-right"></i>';
       nextButton.classList.toggle('intro-enter', index === scenes.length - 1);
       sceneStartedAt = performance.now();
       setPlaying(Boolean(resume) && index < scenes.length - 1);

@@ -245,7 +245,7 @@
     });
     const badge = document.getElementById('sectionBadge');
     if (badge) badge.textContent = titles[active];
-    if (titles[active]) document.title = 'FileShare - ' + titles[active];
+    if (titles[active]) document.title = 'Arquive Online - ' + titles[active];
     if (active === 'collections') { loadRoomsForSelect(); loadCollections(); }
     if (active === 'library') window.loadLibrary?.();
     updateLiquidIndicator(active);

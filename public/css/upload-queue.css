@@ -24,6 +24,16 @@
 .fs-upload-item progress { width: 100%; height: 6px; accent-color: var(--cy, #35f28b); }
 .fs-upload-percent { justify-self: end; }
 .fs-upload-retry { grid-column: 2 / 4; justify-self: end; min-height: 36px; padding: 6px 10px; border: 1px solid rgba(248,113,113,.45); border-radius: 8px; background: rgba(248,113,113,.1); color: #fca5a5; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.fs-upload-cancel, .fs-upload-clear-item { grid-column: 2 / 4; justify-self: end; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line, #39453e); border-radius: 8px; background: transparent; color: var(--muted, #9eaaa2); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.fs-upload-cancel:hover, .fs-upload-clear-item:hover { border-color: var(--cy, #35f28b); color: var(--ink, #f3f7f4); }
+.fs-upload-item.is-cancelled .fs-upload-file-icon { color: var(--muted, #9eaaa2); }
+.personal-sheet .fs-upload-launcher { z-index: 1700; }
+.personal-sheet .fs-upload-panel { z-index: 1701; }
+.direct-drop-notice[hidden] { display: none !important; }
+.direct-thread { position: relative; }
+.direct-drop-notice { position: absolute; z-index: 5; inset: 8px; display: grid; place-content: center; gap: 12px; border: 2px dashed var(--cy, #35f28b); border-radius: 16px; background: color-mix(in srgb, var(--surface, #111713) 84%, transparent); color: var(--cy, #35f28b); font-size: 15px; font-weight: 700; pointer-events: none; }
+.direct-drop-notice i { font-size: 36px; text-align: center; }
+.direct-thread.is-file-dragging .direct-message-list, .direct-thread.is-file-dragging .direct-thread-heading, .direct-thread.is-file-dragging .direct-compose, .direct-thread.is-file-dragging #directReplyPreview { filter: brightness(.65); }
 .fs-upload-empty { margin: 0; padding: 18px; color: var(--muted, #9eaaa2); text-align: center; font-size: 13px; }
 html:not([data-theme="dark"]) .fs-upload-panel { --surface: #fff; --ink: #252525; --muted: #686868; --line: #dedede; }
 @media (max-width: 520px) { .fs-upload-launcher { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); } .fs-upload-panel { right: 12px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 54px); width: calc(100vw - 24px); max-height: 58vh; } }

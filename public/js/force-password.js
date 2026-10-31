@@ -33,7 +33,7 @@
       success.hidden = false;
       window.location.replace(data.role === 'admin' ? '/admin' : '/dashboard');
     } catch (e) {
-      showError('Não foi possível conectar ao FileShare. Verifique sua conexão e tente novamente.');
+      showError('Não foi possível conectar ao Arquive Online. Verifique sua conexão e tente novamente.');
     } finally {
       save.disabled = false;
     }
