@@ -36,7 +36,11 @@ assert.match(server, /if \(isDriveFileRef\(item\.stored_name\)\)/);
 assert.match(server, /if \(isDriveFileRef\(file\.stored_name\)\)/);
 assert.match(server, /drive_upload_enabled: driveEnabled, blob_upload_enabled: blobsEnabled/);
 assert.match(server, /app\.get\('\/api\/admin\/google-drive\/status', asAdmin/);
-assert.match(server, /verified: true/);
+assert.match(server, /verified: verifiedOk/);
+assert.match(server, /getGoogleDriveAccounts\(\{ includeInactive: true \}\)/);
+assert.match(server, /driveFileRef\(upload\.file_id, accountId\)/);
+assert.match(server, /ALTER TABLE google_drive_uploads ADD COLUMN IF NOT EXISTS drive_account_id TEXT/);
+assert.match(server, /uploadsInProgressByAccount/);
 assert.match(server, /storage_quota:/);
 assert.match(server, /\.getAbout\(\)/);
 assert.match(server, /verification_failed: true/);
@@ -49,10 +53,13 @@ assert.match(roomUpload, /if \(driveUploadEnabled\) \{[\s\S]*?drive-upload-sessi
 assert.match(dmUpload, /if \(driveUploadEnabled\) \{[\s\S]*?\/api\/dm\/' \+ friendId \+ '\/drive-upload-session[\s\S]*?\/api\/dm\/' \+ friendId \+ '\/drive-files\/register/);
 assert.match(admin, /id="tab-storage"/);
 assert.match(admin, /\/api\/admin\/google-drive\/oauth\/start/);
+assert.match(admin, /googleDriveAccountsList/);
+assert.match(admin, /Conectar outra conta/);
+assert.match(admin, /verificationFailed/);
 assert.match(admin, /loadGoogleDriveStatus\(\)/);
-assert.match(admin, /googleDriveQuotaUsed/);
-assert.match(admin, /googleDriveQuotaFree/);
-assert.match(admin, /googleDriveAccountEmail/);
+assert.match(admin, /googleDriveTotalQuotaUsed/);
+assert.match(admin, /googleDriveTotalQuotaFree/);
+assert.match(admin, /googleDriveAccountsList/);
 assert.match(admin, /Atualizar status/);
 assert.match(admin, /Atualização automática ativada/);
 assert.match(admin, /setInterval\(\(\) => \{[\s\S]*?loadGoogleDriveStatus\(\)/);
@@ -61,9 +68,12 @@ assert.match(admin, /get\('drive_connected'\) === '1'/);
 assert.match(server, /res\.redirect\(302, `\$\{safeReturnOrigin\}\/admin\?drive_connected=1#storage`\)/);
 assert.match(server, /app\.delete\('\/api\/admin\/google-drive\/connection', asAdmin/);
 assert.match(admin, /admin-storage\.css/);
-assert.match(admin, /connect\.href = location\.origin \+ '\/api\/admin\/google-drive\/oauth\/start'/);
-assert.match(admin, /Conta compartilhada conectada\. O estado e o armazenamento são atualizados automaticamente/);
-assert.match(admin, /Não foi possível atualizar os dados do Drive agora\. A autorização continua salva/);
+assert.match(admin, /async function connectNewGoogleDrive\(event\)[\s\S]*?window\.location\.href = location\.origin \+ '\/api\/admin\/google-drive\/oauth\/start'/,
+  'o painel inicia a conexão OAuth para adicionar outra conta');
+assert.match(admin, /conta\(s\) do Google Drive conectada\(s\)\. Novos anexos usam a conta com mais espaço livre/,
+  'o painel informa o estado agregado das contas conectadas');
+assert.match(admin, /O painel tentará verificar novamente automaticamente\./,
+  'falhas temporárias mantêm a autorização e orientam uma nova verificação');
 assert.match(dashboard, /upload\.js\?v=20261031b/);
 assert.match(dashboard, /library\.js\?v=20261030e/);
 assert.match(serviceWorker, /upload\.js\?v=20261031b/);
