@@ -32,8 +32,8 @@ for (const [name, route] of [['ZIP da coleta', collectionZip], ['ZIP individual'
 
 check(server.includes("app.get('/api/coletas/:id/arquivos/:uploadId/download', asMember") &&
   collectionsClient.includes("'/arquivos/' + encodeURIComponent(file.id) + '/download'") &&
-  /if \(num\(file\.size\) > MAX_COLLECTION_ZIP_BYTES\)[\s\S]*?presignBlobDownloadUrl\(blobPath, true\)/.test(server),
-  'arquivos grandes oferecem download individual protegido por autenticação');
+  /if \(isBlobPath\(blobPath\)\)[\s\S]*?presignBlobDownloadUrl\(blobPath, true\)/.test(server),
+  'arquivos Blob oferecem download individual autenticado direto pela CDN; arquivos legados preservam fallback');
 
 if (failures) process.exit(1);
 console.log('\nLimites e rotas de ZIP das Coletas validados.');

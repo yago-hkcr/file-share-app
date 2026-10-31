@@ -388,9 +388,9 @@ async function resolvePersonalLibraryLocation(userId, body = {}) {
 // ---------------------------------------------------------------------------
 const LIBRARY_BLOB_PREFIX = 'library/';
 const isLibraryBlobPath = name => typeof name === 'string' && name.startsWith(LIBRARY_BLOB_PREFIX);
-// Acima deste tamanho, download/preview é redirecionado direto ao Blob (a CDN entrega o
-// arquivo), em vez de passar por dentro da função serverless. É o que permite baixar
-// arquivos de até 10 GiB sem estourar o maxDuration da função.
+// Preview grande e downloads de qualquer tamanho podem ir direto à CDN privada do Blob,
+// sem retransmitir os bytes pela função serverless. O limite também preserva o streaming
+// existente de previews pequenos; downloads sempre preferem o caminho direto.
 const BLOB_REDIRECT_MIN_BYTES = 100 * 1024 * 1024;
 
 // Gera uma URL (GET) temporária para um blob privado via CDN.
@@ -926,7 +926,21 @@ app.use((req, res, next) => {
   if (/\.html?$/i.test(requestPath)) return res.status(404).end();
   next();
 });
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+// Assets com query de versão são imutáveis: o HTML troca o identificador quando
+// o conteúdo muda, então navegador/CDN podem reutilizá-los sem revalidar a cada visita.
+app.use((req, res, next) => {
+  const version = String(req.query && req.query.v || '');
+  res.locals.cacheImmutableAsset = (req.method === 'GET' || req.method === 'HEAD') && /^\/(?:css|js)\//.test(req.path) && /^[A-Za-z0-9._-]{1,64}$/.test(version);
+  next();
+});
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,
+  setHeaders(res, filePath) {
+    if (res.locals.cacheImmutableAsset && /\.(?:css|js)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  }
+}));
 app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon-48.png')));
 app.use(cookieSession({
   name: SESSION_COOKIE,
@@ -2279,8 +2293,8 @@ app.get('/download/library/:itemId', requireAuth, wrap(async (req, res) => {
     }
     return;
   }
-  // Arquivos grandes: redireciona direto ao Blob (a CDN entrega) para não estourar a função.
-  if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
+  // O download vai direto à CDN privada em qualquer tamanho, evitando retransmitir bytes pelo servidor.
+  if (isLibraryBlobPath(item.stored_name)) {
     try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name, true)); }
     catch (err) { console.error('presign download Acervo:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
   }
@@ -3554,24 +3568,9 @@ app.get('/api/coletas/:id/arquivos/:uploadId/download', asMember, wrap(async (re
 
   const blobPath = file.library_stored_name || file.stored_name;
   if (isBlobPath(blobPath)) {
-    // A Function só pode preparar o redirect; não transmita bytes de um Blob
-    // para depois tentar responder com um status caso a leitura falhe.
-    if (num(file.size) > MAX_COLLECTION_ZIP_BYTES) {
-      try { return res.redirect(302, await presignBlobDownloadUrl(blobPath, true)); }
-      catch (error) { console.error('presign download de coleta:', error && error.message); return res.status(502).send('Não foi possível preparar o download.'); }
-    }
-    if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) {
-      try { return res.redirect(302, await presignBlobDownloadUrl(blobPath, true)); }
-      catch (error) { console.error('presign download de coleta:', error && error.message); return res.status(502).send('Não foi possível preparar o download.'); }
-    }
-    try {
-      const ok = await pipeBlobToResponse(res, blobPath, file.size);
-      if (!ok) return res.status(404).send('Arquivo não encontrado.');
-      return;
-    } catch (error) {
-      console.error('download individual de coleta:', error && error.message);
-      return res.status(503).send('Não foi possível ler o arquivo agora. Tente novamente.');
-    }
+    // O arquivo vai direto à CDN privada; a Function só valida acesso e assina o redirect.
+    try { return res.redirect(302, await presignBlobDownloadUrl(blobPath, true)); }
+    catch (error) { console.error('presign download de coleta:', error && error.message); return res.status(502).send('Não foi possível preparar o download.'); }
   }
 
   const libraryBytes = file.library_item_id
@@ -3630,20 +3629,9 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
   }
 
   if (isBlobPath(file.stored_name)) {
-    // Arquivos grandes: redireciona direto ao Blob (a CDN entrega, sem passar pela função).
-    // É isto que permite baixar arquivos de até 50 GB sem estourar o tempo da função.
-    // get() em blob privado não devolve url, por isso emitimos uma URL presigned de GET.
-    if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) {
-      try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name, true)); }
-      catch (err) { console.error('presign download:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
-    }
-    // Em blobs privados get() devolve somente o stream (sem url); o helper transmite.
-    headers();
-    let ok;
-    try { ok = await pipeBlobToResponse(res, file.stored_name, file.size); }
-    catch (err) { console.error('Erro no download:', err && err.message); return res.status(503).send('Não foi possível ler o arquivo agora. Tente novamente.'); }
-    if (!ok) return res.status(404).send('Arquivo não encontrado');
-    return;
+    // Mesmo arquivos pequenos são entregues pela CDN privada para evitar um salto de streaming pela Function.
+    try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name, true)); }
+    catch (err) { console.error('presign download:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
   }
 
   // Arquivos antigos, guardados no Postgres
