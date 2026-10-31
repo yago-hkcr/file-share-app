@@ -78,8 +78,10 @@ try {
     'painel administrativo oferece estado e conexão do Google Drive compartilhado');
   const driveStatusResponse = await fetch(`${BASE}/api/admin/google-drive/status`, { headers: { cookie: cookies, ...ORIGIN } });
   const driveStatus = await driveStatusResponse.json();
-  check(driveStatusResponse.ok && driveStatus.configured === false && driveStatus.connected === false,
+  check(driveStatusResponse.ok && driveStatus.configured === false && driveStatus.connected === false && driveStatus.verified === false && driveStatus.storage_quota === null,
     'status do Drive informa com segurança quando OAuth não está configurado no modo local');
+  check(!Object.hasOwn(driveStatus, 'scope') && !Object.hasOwn(driveStatus, 'redirect_uri') && !Object.hasOwn(driveStatus, 'verification_error'),
+    'status do Drive não expõe escopo OAuth, URL de callback ou erro técnico');
   const driveStatusAnonymous = await fetch(`${BASE}/api/admin/google-drive/status`, { headers: ORIGIN });
   check(driveStatusAnonymous.status === 401,
     'status da conexão do Drive continua restrito ao administrador autenticado');

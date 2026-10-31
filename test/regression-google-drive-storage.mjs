@@ -18,6 +18,12 @@ const fetchImpl = async (url, options = {}) => {
     tokenRequests++;
     return { ok: true, status: 200, json: async () => ({ access_token: 'access-1', expires_in: 3600 }) };
   }
+  if (target.startsWith('https://www.googleapis.com/drive/v3/about?')) {
+    return { ok: true, status: 200, json: async () => ({
+      user: { displayName: 'Conta de teste', emailAddress: 'drive@example.com', photoLink: 'https://example.com/avatar.png' },
+      storageQuota: { limit: '1000000000', usage: '300000000', usageInDrive: '250000000', usageInDriveTrash: '50000000' }
+    }) };
+  }
   if (target.startsWith('https://www.googleapis.com/upload/drive/v3/files?')) {
     return { ok: true, status: 200, headers: new Headers({ location: 'https://www.googleapis.com/upload/session-123' }) };
   }
@@ -62,6 +68,11 @@ assert.equal(tokenRequests, 1, 'o token OAuth é reutilizado');
 
 const metadata = await storage.getFileMetadata('drive_file_123456');
 assert.equal(metadata.size, '8');
+const about = await storage.getAbout();
+assert.equal(about.user.emailAddress, 'drive@example.com');
+assert.equal(about.storageQuota.limit, '1000000000');
+const aboutUrl = new URL(fetchCalls.find(call => call.url.startsWith('https://www.googleapis.com/drive/v3/about?')).url);
+assert.equal(aboutUrl.searchParams.get('fields'), 'user(displayName,emailAddress,photoLink),storageQuota(limit,usage,usageInDrive,usageInDriveTrash)');
 const media = await storage.getFile('drive_file_123456', { range: 'bytes=0-3' });
 assert.equal(media.status, 206);
 assert.equal(await media.text(), 'test');
