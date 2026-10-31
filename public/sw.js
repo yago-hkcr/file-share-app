@@ -1,5 +1,5 @@
 // ============================================================================
-// FileShare — Service Worker
+// Arquive Online — Service Worker
 //  • Cache offline de assets estáticos (estratégia cache-first)
 //  • HTML/API: sempre pela rede (não armazenar conteúdo ou redirects autenticados)
 //  • Background Sync: fila de uploads em IndexedDB processada quando volta online
@@ -7,13 +7,13 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v5';
+const CACHE_NAME = 'fileshare-v7';
 const ASSETS = [
-  '/css/social.css?v=20261027c',
-  '/css/upload-queue.css?v=20261027a',
+  '/css/social.css?v=20261031a',
+  '/css/upload-queue.css?v=20261031a',
   '/css/collections.css?v=20261030d',
   '/css/style.css?v=20261014o',
-  '/css/mobile.css?v=20261014o',
+  '/css/mobile.css?v=20261031a',
   '/css/adaptive.css?v=20261014b',
   '/css/mobile-scroll-fix.css?v=20261027a',
   '/css/fx.css?v=20261014o',
@@ -24,20 +24,21 @@ const ASSETS = [
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261014p',
   '/js/fx.js?v=20261014o',
-  '/js/upload-queue.js?v=20261027a',
-  '/js/upload.js?v=20261030e',
+  '/js/upload-queue.js?v=20261031a',
+  '/js/upload.js?v=20261031a',
   '/js/social.js?v=20261014o',
-  '/js/personal.js?v=20261027d',
+  '/js/personal.js?v=20261031a',
   '/js/message-export.js?v=20261027c',
   '/js/cursor.js?v=20261014o',
   '/js/preview.js?v=20261014o',
-  '/js/collections.js?v=20261030c',
+  '/js/collections.js?v=20261031a',
   '/js/collection-upload.js?v=20261030c',
   '/js/library.js?v=20261030e',
   '/js/dashboard-shell.js?v=20261014o',
   '/js/announce.js?v=20261014o',
   '/js/cyber.js?v=20261014o',
   '/manifest.json',
+  '/js/login-intro.js?v=20261031a',
   '/favicon.png',
   '/favicon-48.png',
   '/apple-touch-icon.png'
@@ -66,7 +67,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k.startsWith('fileshare-') && k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => (k.startsWith('fileshare-') || k.startsWith('arquive-online-')) && k !== CACHE_NAME).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
@@ -305,7 +306,7 @@ self.addEventListener('message', event => {
 // ---------------------------------------------------------------------------
 self.addEventListener('push', event => {
   const data = event.data ? event.data.json() : {};
-  const title = data.title || 'FileShare';
+  const title = data.title || 'Arquive Online';
   const options = {
     body: data.body || 'Você tem uma nova notificação.',
     icon: '/favicon-48.png',

@@ -30,36 +30,68 @@
     panel.className = 'fs-upload-panel';
     panel.hidden = true;
     panel.setAttribute('aria-label', 'Fila de envios');
-    panel.innerHTML = '<header class="fs-upload-panel-head"><div><strong><i class="fas fa-cloud-arrow-up" aria-hidden="true"></i> Fila de envios</strong><small class="fs-upload-summary"></small></div><div class="fs-upload-panel-actions"><button type="button" class="fs-upload-clear" hidden>Limpar concluídos</button><button type="button" class="fs-upload-close" aria-label="Fechar fila">&times;</button></div></header><div class="fs-upload-list" role="list"></div>';
+    panel.innerHTML = '<header class="fs-upload-panel-head"><div><strong><i class="fas fa-cloud-arrow-up" aria-hidden="true"></i> Fila de envios</strong><small class="fs-upload-summary"></small></div><div class="fs-upload-panel-actions"><button type="button" class="fs-upload-clear" aria-label="Limpar falhas e cancelados" hidden>Limpar falhas</button><button type="button" class="fs-upload-close" aria-label="Fechar fila">&times;</button></div></header><div class="fs-upload-list" role="list"></div>';
     list = panel.querySelector('.fs-upload-list');
     launcher.addEventListener('click', () => setOpen(panel.hidden));
+    panel.querySelector('.fs-upload-clear').addEventListener('click', clearFailedAndCancelled);
     panel.querySelector('.fs-upload-close').addEventListener('click', () => setOpen(false));
-    panel.querySelector('.fs-upload-clear').addEventListener('click', clearCompleted);
     panel.addEventListener('click', event => {
+      const cancelButton = event.target.closest('[data-upload-cancel]');
+      if (cancelButton) { cancelUpload(cancelButton.dataset.uploadCancel); return; }
+      const clearButton = event.target.closest('[data-upload-clear]');
+      if (clearButton) { clearTask(clearButton.dataset.uploadClear); return; }
       const button = event.target.closest('[data-upload-retry]');
       if (button) retry(button.dataset.uploadRetry);
     });
     document.body.append(launcher, panel);
+    window.addEventListener('resize', positionQueue);
+    positionQueue();
     render();
   }
+
+  function positionQueue() {
+    if (!launcher || !panel) return;
+    const sheet = document.getElementById('directMessagesSheet');
+    const composer = sheet && sheet.style.display !== 'none' && sheet.querySelector('#directMessageForm');
+    if (!composer || typeof composer.getBoundingClientRect !== 'function') {
+      launcher.style.bottom = '';
+      launcher.style.right = '';
+      panel.style.bottom = '';
+      panel.style.right = '';
+      return;
+    }
+    const rect = composer.getBoundingClientRect();
+    const bottom = Math.max(12, window.innerHeight - rect.top + 8);
+    const right = Math.max(12, window.innerWidth - rect.right + 14);
+    launcher.style.bottom = `${bottom}px`;
+    launcher.style.right = `${right}px`;
+    panel.style.bottom = `${bottom + 56}px`;
+    panel.style.right = `${right}px`;
+  }
+
+  window.addEventListener('fileshare:direct-chat-open', positionQueue);
+  window.addEventListener('fileshare:direct-chat-close', positionQueue);
 
   function setOpen(open) {
     ensureUI();
     if (!panel) return;
     panel.hidden = !open;
     launcher.setAttribute('aria-expanded', String(open));
+    positionQueue();
   }
 
   function render() {
     if (!panel) return;
+    positionQueue();
     const entries = [...tasks.values()];
     const active = entries.filter(task => task.state === 'uploading' || task.state === 'queued').length;
     const failed = entries.filter(task => task.state === 'failed').length;
     const summary = panel.querySelector('.fs-upload-summary');
-    summary.textContent = failed ? `${active} em andamento · ${failed} com falha` : `${active} em andamento · ${entries.filter(task => task.state === 'done').length} concluídos`;
+    const cancelled = entries.filter(task => task.state === 'cancelled').length;
+    summary.textContent = `${active} em andamento · ${failed} com falha` + (cancelled ? ` · ${cancelled} cancelados` : '') + (!failed && !cancelled ? ` · ${entries.filter(task => task.state === 'done').length} concluídos` : '');
     count.textContent = String(active + failed);
     launcher.classList.toggle('has-failure', failed > 0);
-    panel.querySelector('.fs-upload-clear').hidden = !entries.some(task => task.state === 'done');
+    panel.querySelector('.fs-upload-clear').hidden = !entries.some(task => ['failed', 'cancelled'].includes(task.state));
     list.replaceChildren();
     if (!entries.length) {
       const empty = document.createElement('p');
@@ -74,7 +106,7 @@
       row.setAttribute('role', 'listitem');
       const icon = document.createElement('span');
       icon.className = 'fs-upload-file-icon';
-      icon.innerHTML = task.state === 'done' ? '<i class="fas fa-circle-check" aria-hidden="true"></i>' : task.state === 'failed' ? '<i class="fas fa-triangle-exclamation" aria-hidden="true"></i>' : task.state === 'queued' ? '<i class="fas fa-clock" aria-hidden="true"></i>' : '<i class="fas fa-file" aria-hidden="true"></i>';
+      icon.innerHTML = task.state === 'done' ? '<i class="fas fa-circle-check" aria-hidden="true"></i>' : task.state === 'failed' ? '<i class="fas fa-triangle-exclamation" aria-hidden="true"></i>' : task.state === 'cancelled' ? '<i class="fas fa-ban" aria-hidden="true"></i>' : task.state === 'queued' ? '<i class="fas fa-clock" aria-hidden="true"></i>' : '<i class="fas fa-file" aria-hidden="true"></i>';
       const body = document.createElement('div');
       body.className = 'fs-upload-item-body';
       const name = document.createElement('strong');
@@ -102,6 +134,23 @@
         body.append(percent);
       }
       row.append(icon, body);
+      if (task.state === 'uploading' && task.controller && task.cancelable && task.phase !== 'finalizing') {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'fs-upload-cancel';
+        button.dataset.uploadCancel = task.id;
+        button.setAttribute('aria-label', `Cancelar envio de ${task.file.name}`);
+        button.innerHTML = '<i class="fas fa-xmark" aria-hidden="true"></i> Cancelar';
+        row.append(button);
+      } else if (task.state === 'failed' || task.state === 'cancelled') {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'fs-upload-clear-item';
+        button.dataset.uploadClear = task.id;
+        button.setAttribute('aria-label', `Limpar envio de ${task.file.name}`);
+        button.innerHTML = '<i class="fas fa-trash-can" aria-hidden="true"></i> Limpar';
+        row.append(button);
+      }
       if (task.state === 'failed' && task.backgroundId != null && task.backgroundRetry) {
         const button = document.createElement('button');
         button.type = 'button';
@@ -125,7 +174,7 @@
     ensureUI();
     const id = taskId == null ? String(nextId++) : String(taskId);
     if (taskId != null) nextId++;
-    tasks.set(id, { id, file, destination: destination || 'Site', state: 'queued', progress: 0, label: 'Na fila', error: '', retry: null, operation: null, onSuccess: null });
+    tasks.set(id, { id, file, destination: destination || 'Site', state: 'queued', progress: 0, label: 'Na fila', error: '', retry: null, operation: null, onSuccess: null, controller: null, cancelable: false, phase: 'queued' });
     setOpen(true);
     render();
     return id;
@@ -141,6 +190,11 @@
   async function execute(task, operation) {
     task.operation = operation || task.operation;
     task.retry = null;
+    task.controller = new AbortController();
+    const controller = task.controller;
+    task.canCancel = false;
+    task.cancelable = false;
+    task.phase = 'uploading';
     task.state = 'uploading';
     task.progress = 0;
     task.error = '';
@@ -151,7 +205,16 @@
         task.progress = Math.max(0, Math.min(100, Number(percent) || 0));
         task.label = 'Enviando';
         render();
+      }, controller.signal, phase => {
+        task.phase = phase;
+        task.cancelable = task.cancelAllowed && phase === 'uploading' && task.canCancel;
+        render();
+      }, canCancel => {
+        task.canCancel = task.cancelAllowed && canCancel === true;
+        task.cancelable = task.canCancel && task.phase === 'uploading';
+        render();
       });
+      if (controller.signal.aborted || task.state === 'cancelled') return { ok: false, cancelled: true };
       if (value && value.backgroundPending) {
         task.state = 'queued';
         task.label = 'Aguardando conexão';
@@ -160,24 +223,49 @@
         task.backgroundRetry = value.backgroundRetry || null;
       } else {
         task.completedValue = value;
+        task.phase = 'finalizing';
+        render();
+        if (task.onSuccess) await task.onSuccess(value, controller.signal);
+        if (controller.signal.aborted || task.state === 'cancelled') return { ok: false, cancelled: true };
         task.state = 'done';
         task.label = 'Concluído';
         task.progress = 100;
         task.error = '';
-        if (task.onSuccess) await task.onSuccess(value);
         task.completedValue = null;
       }
       render();
       window.dispatchEvent(new CustomEvent('fileshare:upload-queue-change', { detail: { id: task.id, state: task.state, destination: task.destination } }));
       return { ok: true, value };
     } catch (error) {
+      if (controller.signal.aborted || task.state === 'cancelled') {
+        task.state = 'cancelled';
+        task.label = 'Envio cancelado';
+        task.error = '';
+        render();
+        return { ok: false, cancelled: true, error };
+      }
       task.state = 'failed';
       task.label = 'Falha no envio';
       task.error = String(error && error.message || error || 'Não foi possível enviar este arquivo.');
       task.retry = () => execute(task);
       render();
       return { ok: false, error };
+    } finally {
+      if (task.controller === controller) task.controller = null;
+      if (task.state !== 'cancelled') task.phase = task.state;
+      render();
     }
+  }
+
+  function cancelUpload(id) {
+    const task = tasks.get(String(id));
+    if (!task || task.state !== 'uploading' || !task.controller || !task.cancelable || task.phase === 'finalizing') return;
+    task.state = 'cancelled';
+    task.label = 'Envio cancelado';
+    task.error = '';
+    task.retry = null;
+    task.controller.abort();
+    render();
   }
 
   async function retry(id) {
@@ -190,8 +278,15 @@
     await task.retry();
   }
 
-  function clearCompleted() {
-    for (const [id, task] of tasks) if (task.state === 'done') tasks.delete(id);
+  function clearFailedAndCancelled() {
+    for (const [id, task] of tasks) if (['failed', 'cancelled'].includes(task.state)) tasks.delete(id);
+    render();
+  }
+
+  function clearTask(id) {
+    const task = tasks.get(String(id));
+    if (!task || !['failed', 'cancelled'].includes(task.state)) return;
+    tasks.delete(task.id);
     render();
   }
 
@@ -205,6 +300,9 @@
       if (id && !tasks.has(taskId)) add(file, destination, taskId);
       const task = tasks.get(taskId);
       if (typeof options.onSuccess === 'function') task.onSuccess = options.onSuccess;
+      task.cancelAllowed = options.cancelable === true;
+      task.canCancel = false;
+      task.cancelable = false;
       return execute(task, operation).then(result => ({ ...result, id: taskId }));
     },
     completeBackground(id) {
@@ -234,4 +332,6 @@
     },
     failBackground(id, requestRetry) { this.retryBackground(id, requestRetry); }
   };
+  window.addEventListener('fileshare:direct-chat-open', positionQueue);
+  window.addEventListener('fileshare:direct-chat-close', positionQueue);
 })();

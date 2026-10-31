@@ -32,13 +32,27 @@ check(collectionUpload.includes('FileShareUploadQueue.run') && collectionUpload.
   'Coletas integram a fila e oferecem retry do item que falhou');
 check(library.includes('FileShareUploadQueue.run') && library.includes('putWithProgress'),
   'envios diretos à Biblioteca exibem progresso individual');
-check(dashboard.includes('/js/upload-queue.js?v=20261027a') && dashboard.includes('/css/upload-queue.css?v=20261027a') &&
-  dashboard.includes('/js/upload.js?v=20261030e') && dashboard.includes('/js/library.js?v=20261030e') && dashboard.includes('/css/collections.css?v=20261030d'),
+check(dashboard.includes('/js/upload-queue.js?v=20261031a') && dashboard.includes('/css/upload-queue.css?v=20261031a') &&
+  dashboard.includes('/js/upload.js?v=20261031a') && dashboard.includes('/js/library.js?v=20261030e') && dashboard.includes('/css/collections.css?v=20261030d'),
   'dashboard carrega os assets atualizados de upload, fila e Coletas');
-check(sw.includes("'/js/upload-queue.js?v=20261027a'") && sw.includes("'/css/upload-queue.css?v=20261027a'") &&
-  sw.includes("'/js/upload.js?v=20261030e'") && sw.includes("'/js/library.js?v=20261030e'") && sw.includes("'/css/collections.css?v=20261030d'") &&
-  sw.includes("'/js/collection-upload.js?v=20261030c'") && sw.includes("'/js/collections.js?v=20261030c'"),
+check(sw.includes("'/js/upload-queue.js?v=20261031a'") && sw.includes("'/css/upload-queue.css?v=20261031a'") &&
+  sw.includes("'/js/upload.js?v=20261031a'") && sw.includes("'/js/library.js?v=20261030e'") && sw.includes("'/css/collections.css?v=20261030d'") &&
+  sw.includes("'/js/collection-upload.js?v=20261030c'") && sw.includes("'/js/collections.js?v=20261031a'"),
   'Service Worker inclui os assets atualizados de upload, fila e Coletas');
+check(queue.includes("task.cancelable = task.cancelAllowed && phase === 'uploading' && task.canCancel") &&
+  queue.includes("['failed', 'cancelled'].includes(task.state)"),
+  'cancelamento só fica disponível durante transporte cancelável e limpar fila preserva envios concluídos');
+check(upload.includes('onPhase, onCancelable') && upload.includes("onPhase('finalizing')") &&
+  upload.includes('cancelable: destination === \'Sala\' || (destination === \'Conversa direta\' && options.cancelableDm === true)'),
+  'fase de finalização e cancelabilidade explícita são propagadas ao transporte');
+const dmUpload = upload.slice(upload.indexOf('async function uploadToDmDirect'), upload.indexOf('async function uploadWithQueue'));
+check(dmUpload.includes('onCancelable(false);') && dmUpload.includes('onCancelable(true);') &&
+  dmUpload.includes('await putWithProgress(prep.data.presignedUrl, file, reportProgress, options.signal);') &&
+  dmUpload.indexOf('onCancelable(false);', dmUpload.indexOf('await putWithProgress')) < dmUpload.indexOf("onPhase('finalizing')"),
+  'mensagem direta só permite cancelar o PUT direto e bloqueia cancelamento durante registro');
+check(personal.includes("directThread?.addEventListener('drop'") && personal.includes('sendDirectFiles(files)') &&
+  personal.includes('event.shiftKey') && personal.includes('result.cancelled'),
+  'drag-and-drop envia anexos, Shift+Enter mantém quebras de linha e cancelamento não envia mensagem de texto');
 check(common.includes("const normalizeTheme = theme => ['system', 'light', 'dark'].includes(theme) ? theme : 'dark'"),
   'tema escuro é o padrão inicial e escolhas locais salvas continuam válidas');
 check(personal.includes("const defaults = { theme: 'dark'") && personal.includes("!prefs.has_preferences") &&

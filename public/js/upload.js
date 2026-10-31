@@ -23,40 +23,51 @@
     .catch(() => {});
   const driveChunkSize = 4 * 1024 * 1024;
 
-  function putWithProgress(url, file, onProgress) {
+  function uploadAbortError() {
+    const error = new Error('Envio cancelado.');
+    error.name = 'AbortError';
+    return error;
+  }
+
+  function putWithProgress(url, file, onProgress, signal) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      if (signal && signal.aborted) { reject(uploadAbortError()); return; }
       xhr.open('PUT', url);
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
       xhr.upload.onprogress = e => {
         if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
       };
-      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300)
-        ? resolve()
-        : reject(new Error('Falha no envio (' + xhr.status + ')'));
-      xhr.onerror = () => reject(new Error('Falha de rede durante o envio'));
+      const cleanup = () => { if (signal) signal.removeEventListener('abort', abort); };
+      const abort = () => xhr.abort();
+      if (signal) signal.addEventListener('abort', abort, { once: true });
+      xhr.onload = () => { cleanup(); if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error('Falha no envio (' + xhr.status + ')')); };
+      xhr.onerror = () => { cleanup(); reject(new Error('Falha de rede durante o envio')); };
+      xhr.onabort = () => { cleanup(); reject(uploadAbortError()); };
       xhr.send(file);
     });
   }
 
-  async function postJson(url, body) {
+  async function postJson(url, body, signal) {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal
     });
     const data = await response.json().catch(() => ({}));
     return { status: response.status, ok: response.ok, data };
   }
 
-  async function uploadDriveInChunks(session, file, onProgress) {
+  async function uploadDriveInChunks(session, file, onProgress, signal) {
     const chunkSize = Number(session.chunk_bytes) || driveChunkSize;
     let offset = 0;
     while (offset < file.size) {
+      if (signal && signal.aborted) throw uploadAbortError();
       const end = Math.min(offset + chunkSize, file.size);
       const chunk = file.slice(offset, end);
       const response = await fetch('/api/google-drive/uploads/' + encodeURIComponent(session.upload_id) + '/chunk', {
-        method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'Content-Range': 'bytes ' + offset + '-' + (end - 1) + '/' + file.size }, body: chunk
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'Content-Range': 'bytes ' + offset + '-' + (end - 1) + '/' + file.size }, body: chunk, signal
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || 'Falha ao enviar bloco ao Google Drive.');
@@ -66,22 +77,28 @@
     }
   }
 
-  function postFormWithProgress(url, form, onProgress) {
+  function postFormWithProgress(url, form, onProgress, signal) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      if (signal && signal.aborted) { reject(uploadAbortError()); return; }
       xhr.open('POST', url);
+      const cleanup = () => { if (signal) signal.removeEventListener('abort', abort); };
+      const abort = () => xhr.abort();
+      if (signal) signal.addEventListener('abort', abort, { once: true });
       xhr.upload.onprogress = event => { if (event.lengthComputable && onProgress) onProgress(Math.round(event.loaded / event.total * 100)); };
       xhr.onload = () => {
+        cleanup();
         const data = (() => { try { return JSON.parse(xhr.responseText || '{}'); } catch (_) { return {}; } })();
         if (xhr.status >= 200 && xhr.status < 300) resolve(data);
         else reject(new Error(data.error || 'Erro ao enviar arquivos (' + xhr.status + ')'));
       };
-      xhr.onerror = () => reject(new Error('Falha de rede durante o envio'));
+      xhr.onerror = () => { cleanup(); reject(new Error('Falha de rede durante o envio')); };
+      xhr.onabort = () => { cleanup(); reject(uploadAbortError()); };
       xhr.send(form);
     });
   }
 
-  async function legacyUpload(roomId, files, onProgress) {
+  async function legacyUpload(roomId, files, onProgress, signal) {
     const max = limitBytes || 4 * 1024 * 1024;
     const inserted = [];
     for (let i = 0; i < files.length; i++) {
@@ -89,7 +106,7 @@
       if (file.size > max) throw new Error('Limite de ' + sizeLabel(max) + ' por arquivo neste ambiente.');
       const form = new FormData();
       form.append('files', file);
-      const data = await postFormWithProgress('/api/rooms/' + roomId + '/files', form, onProgress && (percent => onProgress(i, percent)));
+      const data = await postFormWithProgress('/api/rooms/' + roomId + '/files', form, onProgress && (percent => onProgress(i, percent)), signal);
       if (Array.isArray(data)) inserted.push(...data);
       else if (data && data.id) inserted.push(data);
     }
@@ -168,6 +185,7 @@
     const uploaded = [];
     let sent = 0;
     for (let i = 0; i < files.length; i++) {
+      if (options.signal && options.signal.aborted) throw uploadAbortError();
       const file = files[i];
       const label = '(' + (i + 1) + '/' + files.length + ') ' + file.name;
       say('Enviando ' + label + '...');
@@ -181,18 +199,25 @@
       let uploadCompleted = false;
       let bgKind = null;
       try {
+      if (typeof options.onCancelable === 'function') options.onCancelable(false);
+      if (typeof options.onPhase === 'function') options.onPhase('uploading');
       if (driveUploadEnabled) {
         bgKind = 'drive';
-        const prep = await postJson('/api/rooms/' + roomId + '/drive-upload-session', { name: file.name, size: file.size, mime: file.type });
+        if (typeof options.onCancelable === 'function') options.onCancelable(false);
+        const prep = await postJson('/api/rooms/' + roomId + '/drive-upload-session', { name: file.name, size: file.size, mime: file.type }, options.signal);
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
-        await uploadDriveInChunks(prep.data, file, reportProgress);
-        const done = await postJson('/api/rooms/' + roomId + '/drive-files/register', { upload_id: prep.data.upload_id, chat_only: options.chatOnly ? 1 : 0 });
+        if (typeof options.onCancelable === 'function') options.onCancelable(true);
+        await uploadDriveInChunks(prep.data, file, reportProgress, options.signal);
+        if (typeof options.onCancelable === 'function') options.onCancelable(false);
+        if (typeof options.onPhase === 'function') options.onPhase('finalizing');
+        const done = await postJson('/api/rooms/' + roomId + '/drive-files/register', { upload_id: prep.data.upload_id, chat_only: options.chatOnly ? 1 : 0 }, options.signal);
         if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
         uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: done.data.mime_type || file.type || 'application/octet-stream' });
         sent++;
         continue;
       } else if (file.size > 100 * 1024 * 1024 && blobUploadEnabled) {
         bgKind = 'multipart';
+        if (typeof options.onCancelable === 'function') options.onCancelable(false);
         try {
           const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
           const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
@@ -202,6 +227,7 @@
             handleUploadUrl: '/api/rooms/' + roomId + '/upload-token',
             clientPayload: JSON.stringify({ size: file.size }),
             multipart: true,
+            abortSignal: options.signal,
             onUploadProgress: event => reportProgress(event.percentage)
           });
           pathname = blob.pathname;
@@ -211,10 +237,12 @@
         }
       } else {
         if (!blobUploadEnabled && file.size > 100 * 1024 * 1024) throw new Error('Arquivos acima de 100 MB exigem Blob multipart, que não está disponível neste ambiente.');
-        const prep = await postJson('/api/rooms/' + roomId + '/upload-url', { name: file.name, size: file.size, type: file.type });
+        const prep = await postJson('/api/rooms/' + roomId + '/upload-url', { name: file.name, size: file.size, type: file.type }, options.signal);
         if (prep.status === 501) {
           const rest = files.slice(i);
-          const inserted = await legacyUpload(roomId, rest, (index, percent) => { if (index === 0) reportProgress(percent); });
+          if (typeof options.onPhase === 'function') options.onPhase('uploading');
+          if (typeof options.onCancelable === 'function') options.onCancelable(true);
+          const inserted = await legacyUpload(roomId, rest, (index, percent) => { if (index === 0) reportProgress(percent); }, options.signal);
           (inserted || []).forEach(item => uploaded.push({ id: item.id, name: item.original_name || item.name, size: item.size || 0, mime: item.mime_type || file.type || 'application/octet-stream' }));
           sent += rest.length;
           return { sent, skipped, files: uploaded };
@@ -225,18 +253,21 @@
         if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponivel).');
         uploadUrl = prep.data.presignedUrl;
         pathname = prep.data.pathname;
-        await putWithProgress(uploadUrl, file, reportProgress);
+        await putWithProgress(uploadUrl, file, reportProgress, options.signal);
         uploadCompleted = true;
       }
+      if (typeof options.onCancelable === 'function') options.onCancelable(false);
+      if (typeof options.onPhase === 'function') options.onPhase('finalizing');
       const done = await postJson('/api/rooms/' + roomId + '/files/register', {
         pathname, name: file.name, size: file.size, mime: file.type, chat_only: options.chatOnly ? 1 : 0
-      });
+      }, options.signal);
       if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
       uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: file.type || 'application/octet-stream' });
       sent++;
       } catch (error) {
         const msg = String(error && error.message ? error.message : error);
         const isNetwork = error.name === 'TypeError' || /rede|conexão|conexao|failed to fetch|network|offline|failed to execute/i.test(msg);
+        if (options.signal && options.signal.aborted) throw uploadAbortError();
         if (isNetwork && ((bgKind === 'presigned' && uploadUrl && pathname) || (bgKind === 'multipart' && uploadCompleted && pathname))) {
           say('Sem conexão — arquivo enfileirado para confirmar quando voltar online.');
           const item = {
@@ -267,6 +298,8 @@
             : 'A conexão caiu antes da preparação segura do envio. Tente novamente quando estiver online.');
         }
         throw error;
+      } finally {
+        if (typeof options.onCancelable === 'function') options.onCancelable(false);
       }
     }
     return { sent, skipped, files: uploaded };
@@ -388,6 +421,7 @@
       const uploaded = [];
       let sent = 0;
       for (let i = 0; i < files.length; i++) {
+        if (options.signal && options.signal.aborted) throw uploadAbortError();
         const file = files[i];
         const label = '(' + (i + 1) + '/' + files.length + ') ' + file.name;
         say('Enviando ' + label + '...');
@@ -397,32 +431,45 @@
           if (typeof options.onProgress === 'function') options.onProgress(value);
         };
         let pathname;
+        const onPhase = typeof options.onPhase === 'function' ? options.onPhase : () => {};
+        const onCancelable = typeof options.onCancelable === 'function' ? options.onCancelable : () => {};
+        onPhase('uploading');
         if (file.size > 100 * 1024 * 1024) {
+          onCancelable(false);
           if (!currentUserId) throw new Error('Não foi possível identificar sua conta para preparar o upload. Atualize a página e tente novamente.');
           const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
           const objectPath = 'dm/' + currentUserId + '/' + crypto.randomUUID() + '-' + safe;
           const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
+          if (options.signal && options.signal.aborted) throw uploadAbortError();
           const blob = await uploadPresigned(objectPath, file, {
             access: 'private',
             handleUploadUrl: '/api/dm/' + friendId + '/upload-token',
             multipart: true,
+            abortSignal: options.signal,
             onUploadProgress: event => reportProgress(event.percentage)
           });
           pathname = blob.pathname;
         } else {
-          const prep = await postJson('/api/dm/' + friendId + '/upload-url', { name: file.name, size: file.size, type: file.type });
+          onCancelable(false);
+          const prep = await postJson('/api/dm/' + friendId + '/upload-url', { name: file.name, size: file.size, type: file.type }, options.signal);
           if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
           if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponível).');
-          await putWithProgress(prep.data.presignedUrl, file, reportProgress);
           pathname = prep.data.pathname;
+          onCancelable(true);
+          await putWithProgress(prep.data.presignedUrl, file, reportProgress, options.signal);
         }
-        const done = await postJson('/api/dm/' + friendId + '/files/register', { pathname, name: file.name, size: file.size, mime: file.type });
+        onCancelable(false);
+        onPhase('finalizing');
+        const done = await postJson('/api/dm/' + friendId + '/files/register', { pathname, name: file.name, size: file.size, mime: file.type }, options.signal);
         if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo');
         uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: file.type || 'application/octet-stream' });
         sent++;
       }
       return { sent, skipped, files: uploaded };
-    } finally { window.__fsBusy = Math.max(0, window.__fsBusy - 1); }
+    } finally {
+      if (typeof options.onCancelable === 'function') options.onCancelable(false);
+      window.__fsBusy = Math.max(0, window.__fsBusy - 1);
+    }
   }
 
   async function uploadWithQueue(fileList, destination, onStatus, options, operation) {
@@ -442,8 +489,9 @@
     let sent = 0;
     for (let index = 0; index < eligible.length; index++) {
       const file = eligible[index];
-      const taskOperation = async progress => {
-        const result = await operation(file, index, eligible.length, progress);
+      const taskOperation = async (progress, signal, onPhase, onCancelable) => {
+        const result = await operation(file, index, eligible.length, progress, signal, onPhase, onCancelable);
+        if (signal.aborted) throw uploadAbortError();
         if (!result || result.cancelled || !result.sent || !Array.isArray(result.files) || !result.files.length) {
           throw new Error((result && window.skippedMessage(result)) || 'O servidor não confirmou o envio deste arquivo.');
         }
@@ -451,9 +499,14 @@
         return pending ? { ...result, backgroundPending: true, backgroundId: pending.queueId, backgroundRetry: () => resumeQueuedUploads() } : result;
       };
       const progress = await window.FileShareUploadQueue.run(file, destination, taskOperation, {
-        onSuccess: value => options.onFileSuccess ? options.onFileSuccess(value, file, index) : undefined
+        cancelable: destination === 'Sala' || (destination === 'Conversa direta' && options.cancelableDm === true),
+        onSuccess: (value, signal) => options.onFileSuccess ? options.onFileSuccess(value, file, index, signal) : undefined
       });
-      if (!progress.ok) { failed.push({ name: file.name, error: progress.error && progress.error.message || 'Falha no envio.' }); continue; }
+      if (!progress.ok) {
+        if (progress.cancelled) return { sent, skipped, failed, cancelled: true, files: uploaded };
+        failed.push({ name: file.name, error: progress.error && progress.error.message || 'Falha no envio.' });
+        continue;
+      }
       uploaded.push(...progress.value.files);
       sent += progress.value.sent;
     }
@@ -463,18 +516,18 @@
   window.uploadToRoom = function (roomId, fileList, onStatus, options) {
     options = options || {};
     if (options.skipQueue || !window.FileShareUploadQueue) return uploadToRoomDirect(roomId, fileList, onStatus, options);
-    const operation = (file, index, total, progress) => uploadToRoomDirect(roomId, [file], text => {
+    const operation = (file, index, total, progress, signal, onPhase, onCancelable) => uploadToRoomDirect(roomId, [file], text => {
       if (typeof onStatus === 'function') onStatus(text);
-    }, { ...options, skipConfirm: true, onProgress: progress });
+    }, { ...options, skipConfirm: true, onProgress: progress, signal, onPhase, onCancelable });
     return uploadWithQueue(fileList, 'Sala', onStatus, options, operation);
   };
 
   window.uploadToDm = function (friendId, fileList, onStatus, options) {
     options = options || {};
     if (options.skipQueue || !window.FileShareUploadQueue) return uploadToDmDirect(friendId, fileList, onStatus, options);
-    const operation = (file, index, total, progress) => uploadToDmDirect(friendId, [file], text => {
+    const operation = (file, index, total, progress, signal, onPhase, onCancelable) => uploadToDmDirect(friendId, [file], text => {
       if (typeof onStatus === 'function') onStatus(text);
-    }, { ...options, skipConfirm: true, onProgress: progress });
+    }, { ...options, skipConfirm: true, onProgress: progress, signal, onPhase, onCancelable });
     return uploadWithQueue(fileList, 'Conversa direta', onStatus, options, operation);
   };
 })();

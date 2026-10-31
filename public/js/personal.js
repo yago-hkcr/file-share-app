@@ -12,10 +12,10 @@
     node.setAttribute('role', 'dialog'); node.setAttribute('aria-modal', 'true'); node.setAttribute('aria-labelledby', id + 'Title');
     node.innerHTML = '<div class="modal-overlay" data-close></div><div class="modal-content"><div class="modal-header"><h3 id="' + id + 'Title">' + title + '</h3><button class="modal-close" type="button" data-close aria-label="Fechar">&times;</button></div><div class="modal-body"></div></div>';
     document.body.appendChild(node);
-    node.addEventListener('click', event => { if (event.target.closest('[data-close]')) node.style.display = 'none'; });
+    node.addEventListener('click', event => { if (event.target.closest('[data-close]')) { node.style.display = 'none'; if (node.id === 'directMessagesSheet') window.dispatchEvent(new Event('fileshare:direct-chat-close')); } });
     return node;
   };
-  const open = el => { el.style.display = 'flex'; const focusable = el.querySelector('button:not([data-close]), input:not([type=file]), select, textarea'); if (focusable) setTimeout(() => focusable.focus(), 50); };
+  const open = el => { el.style.display = 'flex'; if (el.id === 'directMessagesSheet') window.dispatchEvent(new Event('fileshare:direct-chat-open')); const focusable = el.querySelector('button:not([data-close]), input:not([type=file]), select, textarea'); if (focusable) setTimeout(() => focusable.focus(), 50); };
 
   // Atalhos pessoais ficam na barra lateral ("Pessoal") do dashboard, em
   // dashboard.html — não competem mais com as ações de cada painel.
@@ -25,7 +25,7 @@
   // Conversas diretas entre amigos.
   const dm = modal('directMessagesSheet', '<i class="fas fa-message"></i> Conversas', 'direct-sheet');
   dm.querySelector('.modal-content').classList.add('direct-modal-content');
-  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread"><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><textarea id="directMessageInput" rows="1" placeholder="Mensagem ou cole texto grande… (Enter envia · Shift+Enter quebra linha)" aria-label="Mensagem" disabled required></textarea><input id="directFileInput" type="file" multiple hidden><input id="directOcrFileInput" type="file" accept="image/*" hidden><button class="btn btn-outline attach-button" type="button" id="directAttachFileBtn" title="Anexar arquivos" aria-label="Anexar arquivos"><i class="fas fa-paperclip"></i></button><button class="btn btn-outline ocr-button" type="button" id="directOcrButton" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
+  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread" id="directThread"><div id="directDropNotice" class="direct-drop-notice" hidden><i class="fas fa-cloud-arrow-up" aria-hidden="true"></i><span>Solte para enviar na conversa</span></div><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><textarea id="directMessageInput" rows="1" placeholder="Mensagem…" aria-label="Mensagem. Enter envia; Shift+Enter quebra linha." title="Enter envia; Shift+Enter quebra linha" disabled required></textarea><input id="directFileInput" type="file" multiple hidden><input id="directOcrFileInput" type="file" accept="image/*" hidden><button class="btn btn-outline attach-button" type="button" id="directAttachFileBtn" title="Anexar arquivos" aria-label="Anexar arquivos"><i class="fas fa-paperclip"></i></button><button class="btn btn-outline ocr-button" type="button" id="directOcrButton" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
   let dmFriends = [], activeFriend = null, lastDmSig = '', dmReply = null, initialDm = true, dmAvatarsLoaded = false;
   const renderDmFriends = conversations => {
     const host = $('directFriendList');
@@ -161,14 +161,43 @@
   const directOcrButton = $('directOcrButton'), directOcrFileInput = $('directOcrFileInput');
   directOcrButton?.addEventListener('click', () => directOcrFileInput?.click());
   const directAttachFileBtn = $('directAttachFileBtn'), directFileInput = $('directFileInput');
+  const directThread = $('directThread'), directDropNotice = $('directDropNotice');
+  const hasDraggedFiles = event => Array.from(event.dataTransfer && event.dataTransfer.types || []).includes('Files');
+  directThread?.addEventListener('dragenter', event => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    directDropNotice.hidden = false;
+    directThread.classList.add('is-file-dragging');
+  });
+  directThread?.addEventListener('dragover', event => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = activeFriend ? 'copy' : 'none';
+  });
+  directThread?.addEventListener('dragleave', event => {
+    if (!hasDraggedFiles(event)) return;
+    const rect = directThread.getBoundingClientRect();
+    if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) return;
+    directDropNotice.hidden = true;
+    directThread.classList.remove('is-file-dragging');
+  });
+  directThread?.addEventListener('drop', event => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    directDropNotice.hidden = true;
+    directThread.classList.remove('is-file-dragging');
+    const files = Array.from(event.dataTransfer.files || []);
+    if (!activeFriend) { toast('Escolha uma conversa antes de soltar arquivos.', 'error'); return; }
+    if (files.length) sendDirectFiles(files);
+  });
   directAttachFileBtn?.addEventListener('click', () => directFileInput?.click());
-  directFileInput?.addEventListener('change', async event => {
-    const files = Array.from(event.target.files || []); event.target.value = '';
+  async function sendDirectFiles(files) {
     if (!files.length || !activeFriend) return;
     try {
       const targetId = activeFriend.id;
       const replyToId = dmReply && dmReply.id;
       const result = await window.uploadToDm(targetId, files, text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); }, {
+        cancelableDm: true,
         onFileSuccess: async (uploaded, file) => {
           for (const entry of (uploaded.files || [])) {
             const token = '[[file:' + entry.id + '|' + (entry.name || file.name) + '|' + (entry.mime || file.type || '') + ']]';
@@ -177,10 +206,15 @@
         }
       });
       const warn = window.skippedMessage ? window.skippedMessage(result) : '';
+      if (result.cancelled) return;
       if (result.failed && result.failed.length) toast(result.failed.length + (result.failed.length === 1 ? ' arquivo falhou. Veja a fila de envios para tentar novamente.' : ' arquivos falharam. Veja a fila de envios para tentar novamente.'), 'error');
       if (warn) toast(warn, 'error');
       await Promise.all([loadDmMessages(), loadDmFriends()]);
     } catch (e) { toast(e.message, 'error'); }
+  }
+  directFileInput?.addEventListener('change', event => {
+    const files = Array.from(event.target.files || []); event.target.value = '';
+    if (files.length) sendDirectFiles(files);
   });
   directOcrFileInput?.addEventListener('change', async event => {
     const file = event.target.files && event.target.files[0]; event.target.value = '';
@@ -197,17 +231,17 @@
       const longMessage = window.createLongMessageFile(content);
       if (longMessage) {
         toast(window.describeLongMessage(content), 'info');
-          const result = await window.uploadToDm(targetId, [longMessage.file], text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); }, {
-            onFileSuccess: async uploaded => {
-              for (const entry of (uploaded.files || [])) {
-                const token = '[[file:' + entry.id + '|' + (entry.name || longMessage.file.name) + '|' + (entry.mime || longMessage.file.type || '') + ']]';
-                await post('/api/dm/' + encodeURIComponent(targetId) + '/messages', { content: token, reply_to_id: replyToId });
-              }
+        const result = await window.uploadToDm(targetId, [longMessage.file], text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); }, {
+          onFileSuccess: async uploaded => {
+            for (const entry of (uploaded.files || [])) {
+              const token = '[[file:' + entry.id + '|' + (entry.name || longMessage.file.name) + '|' + (entry.mime || longMessage.file.type || '') + ']]';
+              await post('/api/dm/' + encodeURIComponent(targetId) + '/messages', { content: token, reply_to_id: replyToId });
             }
-          });
+          }
+        });
         const warn = window.skippedMessage ? window.skippedMessage(result) : '';
-        if (!result.sent) { if (warn) toast(warn, 'error'); return; }
-          if (result.failed && result.failed.length) toast(result.failed.length + ' arquivo falhou. Veja a fila de envios para tentar novamente.', 'error');
+        if (!result.sent || result.cancelled) { if (warn) toast(warn, 'error'); return; }
+        if (result.failed && result.failed.length) toast(result.failed.length + ' arquivo falhou. Veja a fila de envios para tentar novamente.', 'error');
         if (input.value === content) { input.value = ''; resizeDirectComposer(); }
         if ((dmReply && dmReply.id || null) === (replyToId || null)) clearDmReply();
         await Promise.all([loadDmMessages(), loadDmFriends()]);
