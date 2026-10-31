@@ -1,10 +1,12 @@
 // Envio de arquivos para uma sala.
-// Arquivos até 100 MB usam URL assinada; acima disso, upload multipart direto ao Blob (limite 10 GiB).
+// Arquivos até 100 MB usam Google Drive em blocos autenticados ou URL Blob; arquivos maiores usam Blob multipart.
 // Reserva (servidor sem Blob, ex.: rodando local sem `vercel env pull`): envio pelo servidor.
 // O limite por arquivo vem do servidor (/api/me → max_upload_bytes), então o aviso nunca fica desatualizado.
 (function () {
   let limitBytes = null;
   let currentUserId = '';
+  let driveUploadEnabled = false;
+  let blobUploadEnabled = false;
   const sizeLabel = b => {
     const gb = b / (1024 ** 3);
     if (gb >= 1) return (Number.isInteger(gb) ? gb : gb.toFixed(1)) + ' GB';
@@ -17,8 +19,9 @@
 
   const limitReady = fetch('/api/me')
     .then(r => r.json())
-    .then(u => { if (u && u.max_upload_bytes) limitBytes = Number(u.max_upload_bytes); if (u && u.id) currentUserId = String(u.id); window.fillLimitNotes(); })
+    .then(u => { if (u && u.max_upload_bytes) limitBytes = Number(u.max_upload_bytes); if (u && u.id) currentUserId = String(u.id); driveUploadEnabled = Boolean(u && u.drive_upload_enabled); blobUploadEnabled = Boolean(u && u.blob_upload_enabled); window.fillLimitNotes(); })
     .catch(() => {});
+  const driveChunkSize = 4 * 1024 * 1024;
 
   function putWithProgress(url, file, onProgress) {
     return new Promise((resolve, reject) => {
@@ -44,6 +47,23 @@
     });
     const data = await response.json().catch(() => ({}));
     return { status: response.status, ok: response.ok, data };
+  }
+
+  async function uploadDriveInChunks(session, file, onProgress) {
+    const chunkSize = Number(session.chunk_bytes) || driveChunkSize;
+    let offset = 0;
+    while (offset < file.size) {
+      const end = Math.min(offset + chunkSize, file.size);
+      const chunk = file.slice(offset, end);
+      const response = await fetch('/api/google-drive/uploads/' + encodeURIComponent(session.upload_id) + '/chunk', {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'Content-Range': 'bytes ' + offset + '-' + (end - 1) + '/' + file.size }, body: chunk
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Falha ao enviar bloco ao Google Drive.');
+      offset = Number(result.next_offset);
+      if (!Number.isSafeInteger(offset) || offset <= 0 || offset > file.size) throw new Error('O Google Drive retornou uma posição de envio inválida.');
+      if (onProgress) onProgress(Math.round(offset / file.size * 100));
+    }
   }
 
   function postFormWithProgress(url, form, onProgress) {
@@ -161,7 +181,7 @@
       let uploadCompleted = false;
       let bgKind = null;
       try {
-      if (file.size > 100 * 1024 * 1024) {
+      if (file.size > 100 * 1024 * 1024 && blobUploadEnabled) {
         bgKind = 'multipart';
         try {
           const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
@@ -180,6 +200,18 @@
           throw new Error(error && error.message ? error.message : 'Falha no envio multipart. Confira sua conexão e tente novamente.');
         }
       } else {
+        if (driveUploadEnabled) {
+          bgKind = 'drive';
+          const prep = await postJson('/api/rooms/' + roomId + '/drive-upload-session', { name: file.name, size: file.size, mime: file.type });
+          if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
+          await uploadDriveInChunks(prep.data, file, reportProgress);
+          const done = await postJson('/api/rooms/' + roomId + '/drive-files/register', { upload_id: prep.data.upload_id, chat_only: options.chatOnly ? 1 : 0 });
+          if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
+          uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: done.data.mime_type || file.type || 'application/octet-stream' });
+          sent++;
+          continue;
+        }
+        if (!blobUploadEnabled && file.size > 100 * 1024 * 1024) throw new Error('Arquivos acima de 100 MB exigem Blob multipart, que não está disponível neste ambiente.');
         const prep = await postJson('/api/rooms/' + roomId + '/upload-url', { name: file.name, size: file.size, type: file.type });
         if (prep.status === 501) {
           const rest = files.slice(i);

@@ -13,6 +13,20 @@ const { pathToFileURL } = require('url');
 const { Readable } = require('stream');
 const { once } = require('events');
 const { isBlobPath } = require('./lib/blob-paths');
+const {
+  DRIVE_FILE_SCOPE,
+  createAuthorizationUrl,
+  encryptRefreshToken,
+  decryptRefreshToken,
+  exchangeAuthorizationCode
+} = require('./lib/google-drive-oauth');
+const {
+  createGoogleDriveStorage,
+  driveFileIdFromRef,
+  driveFileRef,
+  isDriveFileRef
+} = require('./lib/google-drive-storage');
+const { encryptSecret, decryptSecret } = require('./lib/google-drive-oauth');
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
 
@@ -32,6 +46,8 @@ if (!IS_VERCEL) {
 
 const LOCAL_MODE = !IS_VERCEL && process.env.FILESHARE_LOCAL === '1';
 const LOCAL_DATA_DIR = path.resolve(process.env.FILESHARE_DATA_DIR || path.join(__dirname, 'data', 'local'));
+const GOOGLE_DRIVE_REDIRECT_URI = process.env.GOOGLE_DRIVE_REDIRECT_URI || 'https://arquive.online/api/google-drive/oauth/callback';
+const GOOGLE_DRIVE_STATE_COOKIE = 'fs_google_drive_oauth_state';
 const LOCAL_LAN_PORT = Number(process.env.FILESHARE_LAN_PORT || Number(process.env.PORT || 3000) + 1);
 let localLanServer = null;
 let localLanStartPromise = null;
@@ -94,13 +110,97 @@ const blobClientSdk = () => import('@vercel/blob/client');
 const blobEnabled = () => !LOCAL_MODE && Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
 async function deleteBlobs(pathnames) {
   const list = pathnames.filter(isBlobPath);
-  if (!list.length) return;
-  try {
-    const { del } = await blobSdk();
-    await del(list);
-  } catch (e) {
-    console.error('Falha ao apagar do Blob:', e && e.message);
+  if (list.length) {
+    try {
+      const { del } = await blobSdk();
+      await del(list);
+    } catch (e) {
+      console.error('Falha ao apagar do Blob:', e && e.message);
+    }
   }
+  const driveFiles = pathnames.filter(isDriveFileRef).map(driveFileIdFromRef).filter(Boolean);
+  if (!driveFiles.length) return;
+  try { await Promise.all(driveFiles.map(id => googleDriveStorage().deleteFile(id))); }
+  catch (e) { console.error('Falha ao apagar arquivo do Google Drive:', e && e.message); }
+}
+
+let cachedGoogleDriveStorage = null;
+let cachedGoogleDriveStorageKey = '';
+async function googleDriveStorage() {
+  const encryptedToken = await getSetting('google_drive_refresh_token_enc', '');
+  if (!encryptedToken) throw new Error('Google Drive não está conectado.');
+  const clientId = String(process.env.GOOGLE_DRIVE_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.GOOGLE_DRIVE_CLIENT_SECRET || '');
+  const cacheKey = `${encryptedToken}:${clientId}:${clientSecret}`;
+  if (cachedGoogleDriveStorage && cachedGoogleDriveStorageKey === cacheKey) return cachedGoogleDriveStorage;
+  cachedGoogleDriveStorageKey = cacheKey;
+  cachedGoogleDriveStorage = createGoogleDriveStorage({
+    clientId,
+    clientSecret,
+    getRefreshToken: async () => decryptRefreshToken(encryptedToken, sessionSecret())
+  });
+  return cachedGoogleDriveStorage;
+}
+
+async function createDriveUploadSession({ userId, destinationType, roomId = null, spaceId = null, bookcaseId = null, name, size, mimeType }) {
+  const uploadId = uuidv4();
+  const normalizedName = String(name || 'arquivo').trim().slice(0, 255) || 'arquivo';
+  const normalizedMime = String(mimeType || 'application/octet-stream').trim().slice(0, 100) || 'application/octet-stream';
+  const drive = await googleDriveStorage();
+  const sessionUrl = await drive.startResumableUpload({ name: normalizedName, mimeType: normalizedMime, size, uploadId });
+  const encryptedSessionUrl = encryptSecret(sessionUrl, sessionSecret());
+  await q(`INSERT INTO google_drive_uploads
+      (upload_id, user_id, destination_type, room_id, space_id, bookcase_id, original_name, size, mime_type, session_url_enc, status, created_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'uploading',$11)`,
+  [uploadId, userId, destinationType, roomId, spaceId, bookcaseId, normalizedName, size, normalizedMime, encryptedSessionUrl, ts()]);
+  return { upload_id: uploadId, chunk_bytes: 4 * 1024 * 1024, max_bytes: MAX_DIRECT_BYTES };
+}
+
+async function getDriveUploadSession(uploadId, userId) {
+  const row = await one(`SELECT upload_id, user_id, destination_type, room_id, space_id, bookcase_id, original_name, size,
+      mime_type, session_url_enc, status, file_id FROM google_drive_uploads WHERE upload_id = $1 AND user_id = $2`, [uploadId, userId]);
+  if (!row) return null;
+  if (row.status === 'uploading' && row.session_url_enc) row.session_url = decryptSecret(row.session_url_enc, sessionSecret());
+  return row;
+}
+
+function validateDriveFileId(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{10,200}$/.test(value);
+}
+
+async function googleDriveConnected() {
+  return Boolean(await getSetting('google_drive_refresh_token_enc', ''));
+}
+
+async function uploadBufferToDrive({ name, mimeType, buffer, uploadId }) {
+  const drive = await googleDriveStorage();
+  const file = await drive.uploadBufferChunked({ name, mimeType, buffer, uploadId });
+  if (!file || !file.id) throw new Error('Google Drive não retornou o identificador do arquivo enviado.');
+  return driveFileRef(file.id);
+}
+
+async function pipeDriveFileToResponse(res, storedName, knownSize, range) {
+  const fileId = driveFileIdFromRef(storedName);
+  if (!fileId) return false;
+  const drive = await googleDriveStorage();
+  const response = await drive.getFile(fileId, { range });
+  if (response.status === 206) {
+    res.status(206);
+    for (const header of ['content-range', 'accept-ranges', 'content-length']) {
+      const value = response.headers.get(header);
+      if (value) res.setHeader(header, value);
+    }
+  } else if (knownSize > 0) {
+    res.setHeader('Content-Length', String(knownSize));
+  }
+  if (!response.body) return false;
+  const stream = Readable.fromWeb(response.body);
+  stream.on('error', error => {
+    console.error('Erro ao transmitir arquivo do Google Drive:', error && error.message);
+    if (!res.headersSent) res.status(500).end(); else res.destroy(error);
+  });
+  stream.pipe(res);
+  return true;
 }
 
 function cleanUrl(value) {
@@ -338,6 +438,11 @@ async function pipeBlobToResponse(res, pathname, knownSize) {
 // Le os bytes de um arquivo de sala (Blob privado ou Postgres) para copiar ao Acervo.
 async function readRoomFileBytes(file) {
   if (!file) return null;
+  if (isDriveFileRef(file.stored_name)) {
+    const drive = await googleDriveStorage();
+    const response = await drive.getFile(driveFileIdFromRef(file.stored_name));
+    return Buffer.from(await response.arrayBuffer());
+  }
   if (isBlobPath(file.stored_name)) {
     const { get } = await blobSdk();
     const stored = await get(file.stored_name, { access: 'private' });
@@ -363,6 +468,11 @@ async function writeLibraryBlob(libraryItemId, buffer, mimeType = 'application/o
 
 async function readLibraryBlob(item) {
   if (!item) return null;
+  if (isDriveFileRef(item.stored_name)) {
+    const drive = await googleDriveStorage();
+    const response = await drive.getFile(driveFileIdFromRef(item.stored_name));
+    return Buffer.from(await response.arrayBuffer());
+  }
   if (isLibraryBlobPath(item.stored_name)) {
     const { get } = await blobSdk();
     const stored = await get(item.stored_name, { access: 'private' });
@@ -399,8 +509,24 @@ async function copyCollectionUploadToLibrary(upload, libraryItemId) {
 
 // Copia um arquivo de sala para o Acervo sem carregar os bytes em memória quando ambos
 // estiverem no Blob (copy server-side). Assim arquivos de até 50 GB não estouram a função.
-async function copyRoomFileToLibrary(file, libraryItemId) {
+async function copyRoomFileToLibrary(file, libraryItemId, { preferDrive = false } = {}) {
+  if (isDriveFileRef(file.stored_name)) {
+    const drive = await googleDriveStorage();
+    const copied = await drive.copyFile(driveFileIdFromRef(file.stored_name), {
+      name: String(file.original_name || `fileshare-${libraryItemId}`).slice(0, 255),
+      uploadId: libraryItemId
+    });
+    if (!copied || !copied.id) throw new Error('O Google Drive não confirmou a cópia para o Acervo.');
+    return driveFileRef(copied.id);
+  }
   const storedName = `${LIBRARY_BLOB_PREFIX}${libraryItemId}`;
+  if (preferDrive && num(file.size) <= MAX_DIRECT_BYTES && !isBlobPath(file.stored_name)) {
+    const bytes = isDriveFileRef(file.stored_name)
+      ? await (await googleDriveStorage()).getFile(driveFileIdFromRef(file.stored_name)).then(response => response.arrayBuffer()).then(Buffer.from)
+      : await readRoomFileBytes(file);
+    if (!bytes) return null;
+    return uploadBufferToDrive({ name: file.original_name, mimeType: file.mime_type, buffer: bytes, uploadId: libraryItemId });
+  }
   if (isBlobPath(file.stored_name) && blobEnabled()) {
     const { copy } = await blobSdk();
     await copy(file.stored_name, storedName, {
@@ -419,6 +545,8 @@ async function copyRoomFileToLibrary(file, libraryItemId) {
 async function deleteLibraryBlobs(items) {
   const blobPaths = items.map(i => i.stored_name).filter(isLibraryBlobPath);
   if (blobPaths.length) await deleteBlobs(blobPaths);
+  const driveFiles = items.map(i => i.stored_name).filter(isDriveFileRef);
+  if (driveFiles.length) await deleteBlobs(driveFiles);
   const ids = items.map(i => i.id).filter(Boolean);
   for (const id of ids) await q('DELETE FROM personal_library_blobs WHERE item_id = $1', [id]);
 }
@@ -493,6 +621,22 @@ async function createTables() {
     q(`CREATE TABLE IF NOT EXISTS file_blobs (
       file_id TEXT PRIMARY KEY,
       data BYTEA NOT NULL
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS google_drive_uploads (
+      upload_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      destination_type TEXT NOT NULL,
+      room_id TEXT,
+      space_id TEXT,
+      bookcase_id TEXT,
+      original_name TEXT NOT NULL,
+      size BIGINT NOT NULL,
+      mime_type TEXT NOT NULL,
+      session_url_enc TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'uploading',
+      file_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT
     )`),
     q(`CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
@@ -1647,8 +1791,80 @@ app.post('/api/reset-password', wrap(async (req, res) => {
 app.get('/api/me', requireAuth, wrap(async (req, res) => {
   const user = await one('SELECT id, username, email, role, status, avatar_color, avatar_image, created_at, onboarding_seen FROM users WHERE id = $1', [req.user.id]);
   const unread = await one('SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND "read" = 0', [req.user.id]);
-  res.json({ ...user, unread_notifications: num(unread && unread.count), max_upload_bytes: blobEnabled() ? MAX_BLOB_UPLOAD_BYTES : MAX_FILE_BYTES });
+  const driveEnabled = await googleDriveConnected();
+  const blobsEnabled = blobEnabled();
+  res.json({ ...user, unread_notifications: num(unread && unread.count), drive_upload_enabled: driveEnabled, blob_upload_enabled: blobsEnabled,
+    max_upload_bytes: blobsEnabled ? MAX_BLOB_UPLOAD_BYTES : driveEnabled ? MAX_DIRECT_BYTES : MAX_FILE_BYTES });
 }));
+
+// OAuth do Google Drive: somente ADM pode iniciar/concluir a conexão da conta dedicada.
+// O refresh token é cifrado antes de persistir no banco; nunca é enviado ao navegador.
+app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
+  const configured = Boolean(process.env.GOOGLE_DRIVE_CLIENT_ID && process.env.GOOGLE_DRIVE_CLIENT_SECRET);
+  const connected = Boolean(await getSetting('google_drive_refresh_token_enc', ''));
+  res.set('Cache-Control', 'no-store');
+  res.json({ configured, connected, redirect_uri: GOOGLE_DRIVE_REDIRECT_URI, scope: DRIVE_FILE_SCOPE });
+}));
+
+app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) => {
+  const clientId = String(process.env.GOOGLE_DRIVE_CLIENT_ID || '').trim();
+  if (!clientId || !process.env.GOOGLE_DRIVE_CLIENT_SECRET) {
+    return res.status(503).send('Configure GOOGLE_DRIVE_CLIENT_ID e GOOGLE_DRIVE_CLIENT_SECRET no ambiente do servidor antes de conectar o Drive.');
+  }
+  const state = crypto.randomBytes(32).toString('base64url');
+  res.cookie(GOOGLE_DRIVE_STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: IS_VERCEL,
+    sameSite: 'lax',
+    path: '/api/google-drive/oauth/callback',
+    maxAge: 10 * 60 * 1000
+  });
+  const loginHint = String(process.env.GOOGLE_DRIVE_ACCOUNT_EMAIL || '').trim();
+  return res.redirect(302, createAuthorizationUrl({
+    clientId,
+    redirectUri: GOOGLE_DRIVE_REDIRECT_URI,
+    state,
+    loginHint
+  }));
+}));
+
+app.get('/api/google-drive/oauth/callback', asAdmin, wrap(async (req, res) => {
+  const expectedState = readCookie(req, GOOGLE_DRIVE_STATE_COOKIE);
+  const receivedState = String(req.query.state || '');
+  res.clearCookie(GOOGLE_DRIVE_STATE_COOKIE, { path: '/api/google-drive/oauth/callback' });
+  const expectedBytes = Buffer.from(expectedState);
+  const receivedBytes = Buffer.from(receivedState);
+  if (!expectedState || expectedBytes.length !== receivedBytes.length || !crypto.timingSafeEqual(expectedBytes, receivedBytes)) {
+    return res.status(400).send('Não foi possível validar esta autorização OAuth. Inicie a conexão do Drive novamente pelo painel administrativo.');
+  }
+  if (req.query.error) return res.status(400).send('A autorização do Google Drive foi cancelada ou negada. Você pode tentar novamente pelo painel administrativo.');
+
+  const clientId = String(process.env.GOOGLE_DRIVE_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.GOOGLE_DRIVE_CLIENT_SECRET || '');
+  if (!clientId || !clientSecret || !req.query.code) return res.status(503).send('A configuração OAuth está incompleta. Verifique as credenciais do Google no servidor.');
+
+  try {
+    const tokens = await exchangeAuthorizationCode({
+      code: String(req.query.code),
+      clientId,
+      clientSecret,
+      redirectUri: GOOGLE_DRIVE_REDIRECT_URI
+    });
+    const grantedScopes = String(tokens.scope || '').split(/\s+/).filter(Boolean);
+    if (grantedScopes.length && !grantedScopes.includes(DRIVE_FILE_SCOPE)) {
+      return res.status(403).send('O acesso ao Google Drive não foi concedido. Reconecte e aceite a permissão solicitada pelo FileShare.');
+    }
+    const encryptedToken = encryptRefreshToken(tokens.refresh_token, sessionSecret());
+    await setSetting('google_drive_refresh_token_enc', encryptedToken);
+    await setSetting('google_drive_connected_at', ts());
+    res.set('Cache-Control', 'no-store');
+    return res.status(200).type('html').send('<!doctype html><html lang="pt-br"><meta charset="utf-8"><title>Drive conectado</title><body><h1>Google Drive conectado</h1><p>A conta autorizou o FileShare. O token foi armazenado de forma protegida.</p><p>Esta janela pode ser fechada.</p><a href="/admin">Voltar ao painel</a></body></html>');
+  } catch (error) {
+    console.error('Conexão OAuth do Google Drive falhou:', error && error.message);
+    return res.status(502).send('Não foi possível concluir a conexão com o Google Drive. Confira as credenciais OAuth e tente novamente.');
+  }
+}));
+
 app.post('/api/onboarding/complete', requireAuth, wrap(async (req, res) => {
   await q('UPDATE users SET onboarding_seen = 1 WHERE id = $1', [req.user.id]);
   res.json({ success: true });
@@ -1984,7 +2200,9 @@ app.post('/api/library/upload', asMember, (req, res, next) => {
   for (const file of req.files) {
     const name = Buffer.from(file.originalname, 'latin1').toString('utf8');
     const itemId = uuidv4();
-    const storedName = await writeLibraryBlob(itemId, file.buffer);
+    const storedName = await googleDriveConnected()
+      ? uploadBufferToDrive({ name, mimeType: file.mimetype, buffer: file.buffer, uploadId: itemId })
+      : await writeLibraryBlob(itemId, file.buffer, file.mimetype || 'application/octet-stream');
     const saved = await one(`INSERT INTO personal_library_items (id, user_id, file_id, shelf, space_id, bookcase_id, note, is_favorite,
         original_name, size, mime_type, stored_name, room_name, uploader_name, snapshot_ready, created_at, updated_at)
       VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,'Envio direto','',1,$12,$12)
@@ -2046,6 +2264,21 @@ app.get('/download/library/:itemId', requireAuth, wrap(async (req, res) => {
   if (!item) return res.status(404).send('Arquivo não encontrado no seu Acervo');
   try { item = await backfillLibrarySnapshot(item); } catch (e) { console.error('snapshot do Acervo:', e && e.message); }
   if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+  if (isDriveFileRef(item.stored_name)) {
+    const ascii = String(item.original_name || 'arquivo').replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+    res.set('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(item.original_name || 'arquivo')}`);
+    res.type(item.mime_type || 'application/octet-stream');
+    res.set('Cache-Control', 'private, no-store');
+    try {
+      const ok = await pipeDriveFileToResponse(res, item.stored_name, num(item.size), req.get('Range'));
+      if (!ok) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+    } catch (error) {
+      console.error('Download do Acervo no Drive falhou:', error && error.message);
+      if (!res.headersSent) res.status(503).send('Não foi possível ler o arquivo agora. Tente novamente.');
+      else res.destroy(error);
+    }
+    return;
+  }
   // Arquivos grandes: redireciona direto ao Blob (a CDN entrega) para não estourar a função.
   if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
     try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name, true)); }
@@ -2065,6 +2298,27 @@ app.get('/preview/library/:itemId', requireAuth, wrap(async (req, res) => {
   if (!item) return res.status(404).send('Arquivo não encontrado no seu Acervo');
   try { item = await backfillLibrarySnapshot(item); } catch (e) { console.error('snapshot do Acervo:', e && e.message); }
   if (!item.snapshot_ready) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+  if (isDriveFileRef(item.stored_name)) {
+    const declaredMime = String(item.mime_type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+    const isPdf = declaredMime === 'application/pdf' || /\.pdf$/i.test(String(item.original_name || ''));
+    const safeMediaMime = isPdf || /^(image\/(png|jpeg|gif|webp|avif|bmp)|video\/(mp4|webm|ogg|quicktime)|audio\/(mpeg|mp4|ogg|wav|webm|aac))$/.test(declaredMime);
+    const textMime = declaredMime.startsWith('text/') || ['application/json', 'application/xml', 'application/yaml', 'application/x-yaml'].includes(declaredMime);
+    const mime = isPdf ? 'application/pdf' : safeMediaMime ? declaredMime : textMime ? 'text/plain; charset=utf-8' : 'application/octet-stream';
+    const ascii = String(item.original_name || 'arquivo').replace(/[^a-zA-Z0-9._ -]/g, '_');
+    res.set('Content-Disposition', (safeMediaMime || textMime ? 'inline' : 'attachment') + '; filename="' + ascii + '"');
+    res.set('Cache-Control', 'private, no-store');
+    res.set('Content-Type', mime);
+    res.set('Accept-Ranges', 'bytes');
+    try {
+      const ok = await pipeDriveFileToResponse(res, item.stored_name, num(item.size), req.get('Range'));
+      if (!ok) return res.status(404).send('A cópia deste arquivo não está mais disponível');
+    } catch (error) {
+      console.error('Preview do Acervo no Drive falhou:', error && error.message);
+      if (!res.headersSent) res.status(503).send('Não foi possível ler o arquivo agora. Tente novamente.');
+      else res.destroy(error);
+    }
+    return;
+  }
   // Grandes arquivos (ex.: vídeo): redireciona ao Blob para o CDN entregar com suporte a Range.
   if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
     try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name)); }
@@ -2159,7 +2413,9 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
     const id = uuidv4();
     const name = Buffer.from(file.originalname, 'latin1').toString('utf8'); // corrige acentos vindos do multipart
     let storedName = id; // legado: arquivo guardado no Postgres
-    if (blobEnabled()) {
+    if (await googleDriveConnected()) {
+      storedName = await uploadBufferToDrive({ name, mimeType: file.mimetype, buffer: file.buffer, uploadId: id });
+    } else if (blobEnabled()) {
       const { put } = await blobSdk();
       const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
       storedName = `rooms/${room.id}/${id}-${safe}`;
@@ -2215,6 +2471,68 @@ app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
   const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_DIRECT_BYTES, validUntil });
   const signed = await presignUrl(token, { operation: 'put', pathname, access: 'private', maximumSizeInBytes: MAX_DIRECT_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil });
   res.json({ pathname, presignedUrl: signed.presignedUrl, validUntil, maxBytes: MAX_DIRECT_BYTES });
+}));
+
+app.post('/api/rooms/:id/drive-upload-session', asMember, wrap(async (req, res) => {
+  if (!(await googleDriveConnected())) return res.status(501).json({ error: 'Google Drive indisponível' });
+  const room = await one('SELECT id FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala antes de enviar arquivos' });
+  const size = Number(req.body && req.body.size);
+  if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio' });
+  if (size > MAX_BLOB_UPLOAD_BYTES) return res.status(413).json({ error: 'Arquivo grande demais (máximo 10 GiB).' });
+  res.json(await createDriveUploadSession({
+    userId: req.user.id, destinationType: 'room', roomId: room.id,
+    name: req.body.name, size, mimeType: req.body.mime
+  }));
+}));
+
+app.post('/api/library/drive-upload-session', asMember, wrap(async (req, res) => {
+  if (!(await googleDriveConnected())) return res.status(501).json({ error: 'Google Drive indisponível' });
+  const location = await resolvePersonalLibraryLocation(req.user.id, req.body || {});
+  if (!location) return res.status(400).json({ error: 'Escolha uma prateleira de um espaço seu.' });
+  const size = Number(req.body && req.body.size);
+  if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio' });
+  if (size > MAX_BLOB_UPLOAD_BYTES) return res.status(413).json({ error: 'Arquivo grande demais (máximo 10 GiB).' });
+  res.json(await createDriveUploadSession({
+    userId: req.user.id, destinationType: 'library', spaceId: location.space.id, bookcaseId: location.bookcase.id,
+    name: req.body.name, size, mimeType: req.body.mime
+  }));
+}));
+
+app.post('/api/google-drive/uploads/:uploadId/chunk', asMember, express.raw({ type: 'application/octet-stream', limit: '4mb' }), wrap(async (req, res) => {
+  const upload = await getDriveUploadSession(req.params.uploadId, req.user.id);
+  if (!upload) return res.status(404).json({ error: 'Sessão de upload não encontrada.' });
+  if (upload.status === 'complete' || upload.status === 'registered') return res.json({ complete: true, next_offset: num(upload.size) });
+  if (upload.status !== 'uploading') return res.status(409).json({ error: 'Esta sessão de upload foi encerrada.' });
+  if (upload.destination_type === 'room' && !(await canUseRoom(req.user, upload.room_id))) return res.status(403).json({ error: 'Você não tem mais acesso a esta sala.' });
+  if (upload.destination_type === 'library' && !(await resolvePersonalLibraryLocation(req.user.id, { space_id: upload.space_id, bookcase_id: upload.bookcase_id }))) {
+    return res.status(403).json({ error: 'A prateleira desta sessão não está mais disponível.' });
+  }
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'Bloco de upload vazio.' });
+  const match = String(req.get('Content-Range') || '').match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+  if (!match) return res.status(400).json({ error: 'Content-Range inválido.' });
+  const start = Number(match[1]), end = Number(match[2]), total = Number(match[3]);
+  if (total !== num(upload.size) || end - start + 1 !== req.body.length || start < 0 || end >= total || req.body.length > 4 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Bloco de upload incompatível com a sessão.' });
+  }
+  const drive = await googleDriveStorage();
+  let result;
+  try {
+    result = await drive.uploadChunkFromServer(upload.session_url, total, start, req.body);
+  } catch (error) {
+    if (error && /HTTP 404|HTTP 410/.test(error.message)) {
+      return res.status(410).json({ state: 'upload_session_expired', error: 'A sessão do Google Drive expirou. Selecione o arquivo novamente para reiniciar o envio.' });
+    }
+    throw error;
+  }
+  if (result.complete) {
+    if (!validateDriveFileId(result.file && result.file.id)) return res.status(502).json({ error: 'O Drive não confirmou o arquivo enviado.' });
+    await q(`UPDATE google_drive_uploads SET status = 'complete', file_id = $1, session_url_enc = '', updated_at = $2
+      WHERE upload_id = $3 AND user_id = $4 AND status = 'uploading'`, [result.file.id, ts(), upload.upload_id, req.user.id]);
+    return res.json({ complete: true, next_offset: total });
+  }
+  res.json({ complete: false, next_offset: result.nextOffset });
 }));
 
 
@@ -2310,6 +2628,32 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
   await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
     [m[2], room.id, req.user.id, name, pathname, size, mime, ts(), chatOnly]);
   res.json({ id: m[2], original_name: name, size, chat_only: chatOnly });
+}));
+
+app.post('/api/rooms/:id/drive-files/register', asMember, wrap(async (req, res) => {
+  const uploadId = String(req.body && req.body.upload_id || '');
+  const upload = await getDriveUploadSession(uploadId, req.user.id);
+  if (!upload || upload.destination_type !== 'room' || upload.room_id !== req.params.id) return res.status(404).json({ error: 'Sessão de upload não encontrada.' });
+  const room = await one('SELECT id FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
+  if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala antes de enviar arquivos' });
+  if (!['complete', 'registered'].includes(upload.status) || !validateDriveFileId(upload.file_id)) return res.status(409).json({ state: 'upload_incomplete', error: 'O envio ao Google Drive ainda não foi concluído.' });
+  const drive = await googleDriveStorage();
+  const metadata = await drive.getFileMetadata(upload.file_id);
+  if (!metadata || metadata.appProperties?.fileshareUploadId !== upload.upload_id || Number(metadata.size) !== num(upload.size)) {
+    return res.status(409).json({ error: 'Não foi possível validar o arquivo enviado ao Google Drive.' });
+  }
+  const storedName = driveFileRef(upload.file_id);
+  const chatOnly = req.body && req.body.chat_only ? 1 : 0;
+  if (upload.status === 'registered') {
+    const registered = await one('SELECT id, original_name, size, mime_type, chat_only FROM files WHERE id = $1 AND room_id = $2', [upload.upload_id, room.id]);
+    if (registered) return res.json(registered);
+    return res.status(409).json({ error: 'A sessão consta como registrada, mas o arquivo não foi localizado.' });
+  }
+  await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING',
+    [upload.upload_id, room.id, req.user.id, upload.original_name, storedName, num(upload.size), upload.mime_type, ts(), chatOnly]);
+  await q("UPDATE google_drive_uploads SET status = 'registered', updated_at = $1 WHERE upload_id = $2 AND user_id = $3", [ts(), upload.upload_id, req.user.id]);
+  res.json({ id: upload.upload_id, original_name: upload.original_name, size: num(upload.size), mime_type: upload.mime_type, chat_only: chatOnly });
 }));
 
 // Upload direto ao Acervo (sem passar por sala): mesmo fluxo das salas, mas gravando em
@@ -2408,6 +2752,32 @@ app.post('/api/library/files/register', asMember, wrap(async (req, res) => {
     RETURNING id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at`,
     [m[1], req.user.id, location.bookcase.name, location.space.id, location.bookcase.id, note, favorite,
       name, size, mime, pathname, now]);
+  res.status(201).json({ ...saved, is_favorite: Boolean(saved.is_favorite) });
+}));
+
+app.post('/api/library/drive-files/register', asMember, wrap(async (req, res) => {
+  const uploadId = String(req.body && req.body.upload_id || '');
+  const upload = await getDriveUploadSession(uploadId, req.user.id);
+  if (!upload || upload.destination_type !== 'library') return res.status(404).json({ error: 'Sessão de upload não encontrada.' });
+  if (!['complete', 'registered'].includes(upload.status) || !validateDriveFileId(upload.file_id)) return res.status(409).json({ state: 'upload_incomplete', error: 'O envio ao Google Drive ainda não foi concluído.' });
+  const location = await resolvePersonalLibraryLocation(req.user.id, { space_id: upload.space_id, bookcase_id: upload.bookcase_id });
+  if (!location) return res.status(400).json({ error: 'A prateleira escolhida não está mais disponível.' });
+  const drive = await googleDriveStorage();
+  const metadata = await drive.getFileMetadata(upload.file_id);
+  if (!metadata || metadata.appProperties?.fileshareUploadId !== upload.upload_id || Number(metadata.size) !== num(upload.size)) {
+    return res.status(409).json({ error: 'Não foi possível validar o arquivo enviado ao Google Drive.' });
+  }
+  const existing = await one('SELECT id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at FROM personal_library_items WHERE id = $1 AND user_id = $2', [upload.upload_id, req.user.id]);
+  if (existing) return res.json({ ...existing, is_favorite: Boolean(existing.is_favorite) });
+  const name = upload.original_name;
+  const mime = upload.mime_type || 'application/octet-stream';
+  const storedName = driveFileRef(upload.file_id);
+  const saved = await one(`INSERT INTO personal_library_items (id, user_id, file_id, shelf, space_id, bookcase_id, note, is_favorite,
+      original_name, size, mime_type, stored_name, room_name, uploader_name, snapshot_ready, created_at, updated_at)
+    VALUES ($1,$2,NULL,$3,$4,$5,'',0,$6,$7,$8,$9,'Envio direto','',1,$10,$10)
+    RETURNING id, file_id, shelf, space_id, bookcase_id, note, is_favorite, created_at AS saved_at, updated_at`,
+  [upload.upload_id, req.user.id, location.bookcase.name, location.space.id, location.bookcase.id, name, num(upload.size), mime, storedName, ts()]);
+  await q("UPDATE google_drive_uploads SET status = 'registered', updated_at = $1 WHERE upload_id = $2 AND user_id = $3", [ts(), upload.upload_id, req.user.id]);
   res.status(201).json({ ...saved, is_favorite: Boolean(saved.is_favorite) });
 }));
 
@@ -3244,6 +3614,21 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
     res.type(file.mime_type || 'application/octet-stream');
   };
 
+  if (isDriveFileRef(file.stored_name)) {
+    headers();
+    res.set('Cache-Control', 'private, no-store');
+    try {
+      if (num(file.size) > 0) res.set('Accept-Ranges', 'bytes');
+      const ok = await pipeDriveFileToResponse(res, file.stored_name, num(file.size), req.get('Range'));
+      if (!ok) return res.status(404).send('Arquivo não encontrado');
+    } catch (error) {
+      console.error('Download do Drive falhou:', error && error.message);
+      if (!res.headersSent) res.status(503).send('Não foi possível ler o arquivo agora. Tente novamente.');
+      else res.destroy(error);
+    }
+    return;
+  }
+
   if (isBlobPath(file.stored_name)) {
     // Arquivos grandes: redireciona direto ao Blob (a CDN entrega, sem passar pela função).
     // É isto que permite baixar arquivos de até 50 GB sem estourar o tempo da função.
@@ -3282,6 +3667,18 @@ app.get('/preview/:fileId', asMember, wrap(async (req, res) => {
   res.set('Content-Disposition', (safeMediaMime || textMime ? 'inline' : 'attachment') + '; filename="' + ascii + '"');
   res.set('Cache-Control', 'private, no-store');
   res.set('Content-Type', mime);
+  if (isDriveFileRef(file.stored_name)) {
+    res.set('Accept-Ranges', 'bytes');
+    try {
+      const ok = await pipeDriveFileToResponse(res, file.stored_name, num(file.size), req.get('Range'));
+      if (!ok) return res.status(404).send('Arquivo não encontrado');
+    } catch (error) {
+      console.error('Preview do Drive falhou:', error && error.message);
+      if (!res.headersSent) res.status(503).send('Não foi possível ler o arquivo agora. Tente novamente.');
+      else res.destroy(error);
+    }
+    return;
+  }
   if (isBlobPath(file.stored_name)) {
     // Grandes arquivos (ex.: vídeo): redireciona ao Blob para o CDN entregar com suporte a
     // Range (busca no player), sem travar a função serverless em transfers longos.

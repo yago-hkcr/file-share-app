@@ -24,6 +24,8 @@
   let modalSpaceId = '';
   let modalBookcaseId = '';
   let pendingLibraryEditor = null;
+  let driveUploadEnabled = false;
+  let blobUploadEnabled = false;
 
   function normalize(value) {
     return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
@@ -37,6 +39,11 @@
     do { size /= 1024; i++; } while (size >= 1024 && i < units.length - 1);
     return size.toLocaleString('pt-BR', { maximumFractionDigits: size < 10 ? 1 : 0 }) + ' ' + units[i];
   }
+
+  const driveUploadReady = fetch('/api/me', { credentials: 'same-origin' }).then(response => response.json()).then(user => {
+    driveUploadEnabled = Boolean(user && user.drive_upload_enabled);
+    blobUploadEnabled = Boolean(user && user.blob_upload_enabled);
+  }).catch(() => {});
 
   function formatDate(value) {
     if (!value) return 'Agora';
@@ -345,6 +352,7 @@
   async function uploadDirectFiles(picked, space, bookcaseId) {
     const all = picked.slice(0, 5);
     if (!all.length) return;
+    await driveUploadReady;
     const putWithProgress = (url, file, onProgress) => new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', url);
@@ -354,6 +362,23 @@
       xhr.onerror = () => reject(new Error('Falha de rede durante o envio'));
       xhr.send(file);
     });
+    const uploadDriveInChunks = async (session, file, onProgress) => {
+      const chunkSize = Number(session.chunk_bytes) || 4 * 1024 * 1024;
+      let offset = 0;
+      while (offset < file.size) {
+        const end = Math.min(offset + chunkSize, file.size);
+        const response = await fetch('/api/google-drive/uploads/' + encodeURIComponent(session.upload_id) + '/chunk', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/octet-stream', 'Content-Range': 'bytes ' + offset + '-' + (end - 1) + '/' + file.size },
+          body: file.slice(offset, end)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Falha ao enviar bloco ao Google Drive.');
+        offset = Number(result.next_offset);
+        if (!Number.isSafeInteger(offset) || offset <= 0 || offset > file.size) throw new Error('O Google Drive retornou uma posição de envio inválida.');
+        if (onProgress) onProgress(Math.round(offset / file.size * 100));
+      }
+    };
     const postJson = async (url, body) => {
       const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await response.json().catch(() => ({}));
@@ -371,7 +396,15 @@
     };
     const uploadOne = async (file, progress) => {
       let pathname;
-      if (file.size > 100 * 1024 * 1024) {
+      if (driveUploadEnabled && (file.size <= 100 * 1024 * 1024 || !blobUploadEnabled)) {
+        const prep = await postJson('/api/library/drive-upload-session', { name: file.name, size: file.size, mime: file.type, space_id: space.id, bookcase_id: bookcaseId });
+        if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
+        await uploadDriveInChunks(prep.data, file, progress);
+        const done = await postJson('/api/library/drive-files/register', { upload_id: prep.data.upload_id });
+        if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
+        return done.data;
+      }
+      if (file.size > 100 * 1024 * 1024 && blobUploadEnabled) {
         try {
           const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
           const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';
@@ -383,6 +416,7 @@
           pathname = blob.pathname;
         } catch (error) { throw new Error(error && error.message ? error.message : 'Falha no envio multipart. Confira sua conexão e tente novamente.'); }
       } else {
+        if (!blobUploadEnabled && file.size > 100 * 1024 * 1024) throw new Error('Arquivos acima de 100 MB exigem Blob multipart, que não está disponível neste ambiente.');
         const prep = await postJson('/api/library/upload-url', { name: file.name, size: file.size, type: file.type, space_id: space.id, bookcase_id: bookcaseId });
         if (prep.status === 501) return legacyUpload(file);
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
