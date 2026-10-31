@@ -32,6 +32,14 @@ Como a Vercel nao tem disco persistente, os arquivos sao gravados no proprio Pos
 corpo de uma requisicao a ~4,5 MB, entao o limite de envio e de 4 MB por vez. Para arquivos maiores,
 use Vercel Blob com upload direto do navegador.
 
+## Conexão OAuth do Google Drive
+
+O callback OAuth de produção é `https://arquive.online/api/google-drive/oauth/callback`. No Google Cloud Console, crie um cliente OAuth do tipo **Aplicativo da Web** e cadastre essa URI exatamente em **Authorized redirect URIs**. Mantenha o modo de consentimento em teste e a conta dedicada como usuário de teste durante a configuração.
+
+Configure no ambiente de produção (Vercel) as variáveis secretas `GOOGLE_DRIVE_CLIENT_ID` e `GOOGLE_DRIVE_CLIENT_SECRET`. Opcionalmente, `GOOGLE_DRIVE_ACCOUNT_EMAIL` pode indicar a conta dedicada a abrir no consentimento. `GOOGLE_DRIVE_REDIRECT_URI` só deve ser definido para substituir o callback em um ambiente de teste; se omitido, usa o callback de produção acima.
+
+Depois do deploy com essas variáveis, entre como ADM e abra `/api/admin/google-drive/oauth/start` para autorizar a conta dedicada. O FileShare solicita somente o escopo `drive.file`, pede acesso offline para receber um refresh token e guarda esse token cifrado no banco usando `SESSION_SECRET`. Mantenha `SESSION_SECRET` estável; se ele for trocado, será necessário reconectar o Google Drive. Nunca cole o client secret ou tokens OAuth no código, em issues ou em mensagens.
+
 ## Seguranca
 
 Defina `SESSION_SECRET` em producao. Nunca publique `.env`, `data/database.sqlite` ou arquivos enviados.
