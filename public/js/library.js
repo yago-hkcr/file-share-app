@@ -396,7 +396,7 @@
     };
     const uploadOne = async (file, progress) => {
       let pathname;
-      if (driveUploadEnabled && (file.size <= 100 * 1024 * 1024 || !blobUploadEnabled)) {
+      if (driveUploadEnabled) {
         const prep = await postJson('/api/library/drive-upload-session', { name: file.name, size: file.size, mime: file.type, space_id: space.id, bookcase_id: bookcaseId });
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
         await uploadDriveInChunks(prep.data, file, progress);

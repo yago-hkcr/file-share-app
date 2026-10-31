@@ -181,7 +181,17 @@
       let uploadCompleted = false;
       let bgKind = null;
       try {
-      if (file.size > 100 * 1024 * 1024 && blobUploadEnabled) {
+      if (driveUploadEnabled) {
+        bgKind = 'drive';
+        const prep = await postJson('/api/rooms/' + roomId + '/drive-upload-session', { name: file.name, size: file.size, mime: file.type });
+        if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
+        await uploadDriveInChunks(prep.data, file, reportProgress);
+        const done = await postJson('/api/rooms/' + roomId + '/drive-files/register', { upload_id: prep.data.upload_id, chat_only: options.chatOnly ? 1 : 0 });
+        if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
+        uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: done.data.mime_type || file.type || 'application/octet-stream' });
+        sent++;
+        continue;
+      } else if (file.size > 100 * 1024 * 1024 && blobUploadEnabled) {
         bgKind = 'multipart';
         try {
           const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
@@ -200,17 +210,6 @@
           throw new Error(error && error.message ? error.message : 'Falha no envio multipart. Confira sua conexão e tente novamente.');
         }
       } else {
-        if (driveUploadEnabled) {
-          bgKind = 'drive';
-          const prep = await postJson('/api/rooms/' + roomId + '/drive-upload-session', { name: file.name, size: file.size, mime: file.type });
-          if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
-          await uploadDriveInChunks(prep.data, file, reportProgress);
-          const done = await postJson('/api/rooms/' + roomId + '/drive-files/register', { upload_id: prep.data.upload_id, chat_only: options.chatOnly ? 1 : 0 });
-          if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
-          uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: done.data.mime_type || file.type || 'application/octet-stream' });
-          sent++;
-          continue;
-        }
         if (!blobUploadEnabled && file.size > 100 * 1024 * 1024) throw new Error('Arquivos acima de 100 MB exigem Blob multipart, que não está disponível neste ambiente.');
         const prep = await postJson('/api/rooms/' + roomId + '/upload-url', { name: file.name, size: file.size, type: file.type });
         if (prep.status === 501) {

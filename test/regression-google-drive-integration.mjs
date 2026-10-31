@@ -27,10 +27,11 @@ assert.match(server, /if \(isDriveFileRef\(file\.stored_name\)\)/);
 assert.match(server, /drive_upload_enabled: driveEnabled, blob_upload_enabled: blobsEnabled/);
 assert.match(roomUpload, /\/api\/google-drive\/uploads\/' \+ encodeURIComponent\(session\.upload_id\) \+ '\/chunk/);
 assert.match(libraryUpload, /\/api\/library\/drive-files\/register/);
-assert.match(libraryUpload, /driveUploadEnabled && \(file\.size <= 100 \* 1024 \* 1024 \|\| !blobUploadEnabled\)/);
-assert.match(dashboard, /upload\.js\?v=20261030d/);
-assert.match(dashboard, /library\.js\?v=20261030d/);
-assert.match(serviceWorker, /upload\.js\?v=20261030d/);
-assert.match(serviceWorker, /library\.js\?v=20261030d/);
+assert.match(libraryUpload, /if \(driveUploadEnabled\) \{[\s\S]*?drive-upload-session[\s\S]*?if \(file\.size > 100 \* 1024 \* 1024 && blobUploadEnabled\)/);
+assert.match(roomUpload, /if \(driveUploadEnabled\) \{[\s\S]*?drive-upload-session[\s\S]*?else if \(file\.size > 100 \* 1024 \* 1024 && blobUploadEnabled\)/);
+assert.match(dashboard, /upload\.js\?v=20261030e/);
+assert.match(dashboard, /library\.js\?v=20261030e/);
+assert.match(serviceWorker, /upload\.js\?v=20261030e/);
+assert.match(serviceWorker, /library\.js\?v=20261030e/);
 
 console.log('Todas as asserções da integração Google Drive passaram.');
