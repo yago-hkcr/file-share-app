@@ -14,6 +14,7 @@ const dmUpload = roomUpload.slice(roomUpload.indexOf('async function uploadToDmD
 const libraryUpload = read('public', 'js', 'library.js');
 const dashboard = read('public', 'dashboard.html');
 const admin = read('public', 'admin.html');
+const adminStorageCss = read('public', 'css', 'admin-storage.css');
 const serviceWorker = read('public', 'sw.js');
 const inlineScripts = [...admin.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
   .map(match => match[1]).filter(script => script.trim());
@@ -68,6 +69,20 @@ assert.match(admin, /get\('drive_connected'\) === '1'/);
 assert.match(server, /res\.redirect\(302, `\$\{safeReturnOrigin\}\/admin\?drive_connected=1#storage`\)/);
 assert.match(server, /app\.delete\('\/api\/admin\/google-drive\/connection', asAdmin/);
 assert.match(admin, /admin-storage\.css/);
+assert.match(admin, /admin-storage\.css\?v=20261031c/, 'mudanças de layout invalidam o CSS antigo em cache');
+assert.match(admin, /hacker-ui\.css\?v=[^"']+"[^>]*>\s*<link rel="stylesheet" href="\/css\/admin-storage\.css\?v=20261031c"/,
+  'o CSS do painel é carregado depois dos estilos globais');
+assert.match(admin, /<span>Uso da cota<\/span>/, 'o cartão não repete o e-mail na linha de percentual');
+assert.match(adminStorageCss, /\.storage-account-card\{[^}]*display:grid/,
+  'o cartão da conta tem layout estruturado em grade');
+assert.match(adminStorageCss, /\.storage-account-card-quota-row\{[^}]*display:flex/,
+  'as métricas de cota aparecem em linhas alinhadas');
+assert.match(adminStorageCss, /@media\(max-width:760px\)\{\.storage-account-card\{grid-template-columns:minmax\(0,1fr\)\}/,
+  'os cartões viram uma coluna em telas estreitas');
+assert.match(adminStorageCss, /\.storage-heading-actions\{[^}]*display:flex/,
+  'os controles do painel ficam agrupados');
+assert.match(adminStorageCss, /\.storage-heading-actions>\.btn\{[^}]*width:100%/,
+  'os botões do painel ocupam igualmente a linha disponível');
 assert.match(admin, /async function connectNewGoogleDrive\(event\)[\s\S]*?window\.location\.href = location\.origin \+ '\/api\/admin\/google-drive\/oauth\/start'/,
   'o painel inicia a conexão OAuth para adicionar outra conta');
 assert.match(admin, /conta\(s\) do Google Drive conectada\(s\)\. Novos anexos usam a conta com mais espaço livre/,

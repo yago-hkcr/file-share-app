@@ -23,9 +23,9 @@
   <script src="/js/gfx.js?v=20261014p"></script><script src="/js/fx.js?v=20261014a" defer></script>
   <link rel="stylesheet" href="/css/preview.css?v=20261014o">
   <link rel="stylesheet" href="/css/admin-select.css?v=20261014a">
-<link rel="stylesheet" href="/css/admin-storage.css?v=20261031b">
-<link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
-<link rel="stylesheet" href="/css/hacker-ui.css?v=20261014a">
+  <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
+  <link rel="stylesheet" href="/css/hacker-ui.css?v=20261014a">
+  <link rel="stylesheet" href="/css/admin-storage.css?v=20261031c">
 </head>
 <body class="app-page">
   <header class="header">
@@ -105,8 +105,10 @@
         <div class="storage-heading">
           <div><span class="storage-eyebrow">CENTRAL DE CONTROLE</span><h2><i class="fas fa-cloud"></i> Armazenamento</h2>
             <p class="storage-subtitle">Conecte contas do Google Drive para aumentar o armazenamento total disponível para anexos.</p></div>
-          <button id="googleDriveRefresh" class="btn btn-outline storage-refresh" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Atualizar status</button>
-          <a id="googleDriveConnectNew" class="btn btn-green" href="#" onclick="connectNewGoogleDrive(event)" hidden><i class="fab fa-google-drive"></i> Conectar outra conta</a>
+          <div class="storage-heading-actions">
+            <button id="googleDriveRefresh" class="btn btn-outline storage-refresh" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Atualizar status</button>
+            <a id="googleDriveConnectNew" class="btn btn-green" href="#" onclick="connectNewGoogleDrive(event)" hidden><i class="fab fa-google-drive"></i> Conectar outra conta</a>
+          </div>
         </div>
         <section class="storage-provider" aria-labelledby="googleDriveTitle">
           <div class="storage-provider-top">
@@ -366,7 +368,7 @@
           '<button type="button" class="btn btn-sm btn-danger storage-account-card-remove" onclick="disconnectGoogleDriveAccount(\'' + esc(acc.id) + '\')" title="Remover conta"><i class="fas fa-trash-alt"></i></button>' +
           '</div>' +
           '<div class="storage-account-card-quota">' +
-          '<div class="storage-account-card-quota-row"><span>' + esc(acc.accountEmail || 'Conta') + '</span><strong>' + (percent != null ? percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% usado' : '—') + '</strong></div>' +
+          '<div class="storage-account-card-quota-row"><span>Uso da cota</span><strong>' + (percent != null ? percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% usado' : '—') + '</strong></div>' +
           '<div class="storage-account-card-progress" style="--percent:' + (percent ?? 0) + '"><div class="storage-account-card-progress-bar"></div></div>' +
           '<div class="storage-account-card-quota-row"><span>Utilizado</span><strong>' + formatDriveBytes(used) + '</strong></div>' +
           '<div class="storage-account-card-quota-row"><span>Disponível</span><strong>' + (free != null ? formatDriveBytes(free) : '—') + '</strong></div>' +
