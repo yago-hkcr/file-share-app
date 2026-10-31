@@ -1845,7 +1845,34 @@ app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
   const configured = Boolean(process.env.GOOGLE_DRIVE_CLIENT_ID && process.env.GOOGLE_DRIVE_CLIENT_SECRET);
   const connected = Boolean(await getSetting('google_drive_refresh_token_enc', ''));
   res.set('Cache-Control', 'no-store');
-  res.json({ configured, connected, redirect_uri: GOOGLE_DRIVE_REDIRECT_URI, scope: DRIVE_FILE_SCOPE });
+  if (!configured || !connected) {
+    return res.json({ configured, connected, verified: false, checked_at: null, account: null, storage_quota: null });
+  }
+  try {
+    const about = await (await googleDriveStorage()).getAbout();
+    const user = about.user || {};
+    const quota = about.storageQuota || {};
+    return res.json({
+      configured,
+      connected,
+      verified: true,
+      checked_at: new Date().toISOString(),
+      account: {
+        name: typeof user.displayName === 'string' ? user.displayName : '',
+        email: typeof user.emailAddress === 'string' ? user.emailAddress : '',
+        photo_url: typeof user.photoLink === 'string' ? user.photoLink : ''
+      },
+      storage_quota: {
+        limit_bytes: quota.limit == null ? null : quota.limit,
+        used_bytes: quota.usage == null ? null : quota.usage,
+        drive_used_bytes: quota.usageInDrive == null ? null : quota.usageInDrive,
+        trash_used_bytes: quota.usageInDriveTrash == null ? null : quota.usageInDriveTrash
+      }
+    });
+  } catch (error) {
+    return res.json({ configured, connected, verified: false, checked_at: new Date().toISOString(),
+      verification_failed: true, account: null, storage_quota: null });
+  }
 }));
 
 app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) => {

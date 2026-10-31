@@ -2,6 +2,7 @@
 // Uso: node test/regression-google-drive-integration.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,6 +15,10 @@ const libraryUpload = read('public', 'js', 'library.js');
 const dashboard = read('public', 'dashboard.html');
 const admin = read('public', 'admin.html');
 const serviceWorker = read('public', 'sw.js');
+const inlineScripts = [...admin.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
+  .map(match => match[1]).filter(script => script.trim());
+assert.ok(inlineScripts.length > 0, 'o painel deve conter scripts inline');
+inlineScripts.forEach((script, index) => new vm.Script(script, { filename: `admin-inline-${index + 1}.js` }));
 
 assert.match(server, /CREATE TABLE IF NOT EXISTS google_drive_uploads/);
 assert.match(server, /encryptSecret\(sessionUrl, sessionSecret\(\)\)/);
@@ -31,6 +36,11 @@ assert.match(server, /if \(isDriveFileRef\(item\.stored_name\)\)/);
 assert.match(server, /if \(isDriveFileRef\(file\.stored_name\)\)/);
 assert.match(server, /drive_upload_enabled: driveEnabled, blob_upload_enabled: blobsEnabled/);
 assert.match(server, /app\.get\('\/api\/admin\/google-drive\/status', asAdmin/);
+assert.match(server, /verified: true/);
+assert.match(server, /storage_quota:/);
+assert.match(server, /\.getAbout\(\)/);
+assert.match(server, /verification_failed: true/);
+assert.doesNotMatch(server.match(/app\.get\('\/api\/admin\/google-drive\/status',[\s\S]*?\n  \}\)\);/)?.[0] || '', /verification_error:|redirect_uri: GOOGLE_DRIVE_REDIRECT_URI|scope: DRIVE_FILE_SCOPE/);
 assert.match(server, /app\.get\('\/api\/admin\/google-drive\/oauth\/start', asAdmin/);
 assert.match(roomUpload, /\/api\/google-drive\/uploads\/' \+ encodeURIComponent\(session\.upload_id\) \+ '\/chunk/);
 assert.match(libraryUpload, /\/api\/library\/drive-files\/register/);
@@ -40,8 +50,14 @@ assert.match(dmUpload, /if \(driveUploadEnabled\) \{[\s\S]*?\/api\/dm\/' \+ frie
 assert.match(admin, /id="tab-storage"/);
 assert.match(admin, /\/api\/admin\/google-drive\/oauth\/start/);
 assert.match(admin, /loadGoogleDriveStatus\(\)/);
+assert.match(admin, /googleDriveQuotaUsed/);
+assert.match(admin, /googleDriveQuotaFree/);
+assert.match(admin, /googleDriveAccountEmail/);
+assert.match(admin, /Verificar conexão/);
+assert.match(admin, /admin-storage\.css/);
 assert.match(admin, /connect\.href = location\.origin \+ '\/api\/admin\/google-drive\/oauth\/start'/);
-assert.match(admin, /Novos anexos de salas e conversas diretas serão enviados ao Google Drive compartilhado/);
+assert.match(admin, /Conexão confirmada com o Google\. Os novos anexos de salas e conversas diretas serão salvos nesta conta/);
+assert.match(admin, /Não foi possível confirmar o acesso ao Google Drive\. Tente novamente ou reconecte a conta compartilhada/);
 assert.match(dashboard, /upload\.js\?v=20261031b/);
 assert.match(dashboard, /library\.js\?v=20261030e/);
 assert.match(serviceWorker, /upload\.js\?v=20261031b/);

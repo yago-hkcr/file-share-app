@@ -23,6 +23,7 @@
   <script src="/js/gfx.js?v=20261014p"></script><script src="/js/fx.js?v=20261014a" defer></script>
   <link rel="stylesheet" href="/css/preview.css?v=20261014o">
   <link rel="stylesheet" href="/css/admin-select.css?v=20261014a">
+<link rel="stylesheet" href="/css/admin-storage.css?v=20261031a">
 <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
 <link rel="stylesheet" href="/css/hacker-ui.css?v=20261014a">
 </head>
@@ -101,14 +102,35 @@
 
       <!-- Shared storage integration -->
       <div id="tab-storage" class="tab-content">
-        <h2><i class="fas fa-cloud"></i> Armazenamento compartilhado</h2>
-        <div class="card" style="max-width:720px;">
-          <h3><i class="fab fa-google-drive"></i> Google Drive</h3>
-          <p class="text-muted">Os anexos enviados nas salas e conversas diretas serão armazenados na conta compartilhada do Arquive Online quando o Drive estiver conectado. Arquivos existentes não são movidos.</p>
-          <p id="googleDriveStatus" role="status" aria-live="polite">Verificando conexão com o Google Drive…</p>
-          <div id="googleDriveNotConfigured" class="text-muted" hidden>As credenciais OAuth do Google Drive não estão configuradas neste ambiente.</div>
-          <a id="googleDriveConnect" class="btn btn-green" href="https://arquive.online/api/admin/google-drive/oauth/start" hidden><i class="fab fa-google-drive"></i> Conectar conta compartilhada</a>
-          <button id="googleDriveRefresh" class="btn btn-outline" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Atualizar status</button>
+        <div class="storage-heading">
+          <div><span class="storage-eyebrow">CENTRAL DE CONTROLE</span><h2><i class="fas fa-cloud"></i> Armazenamento</h2>
+            <p class="storage-subtitle">Acompanhe a conta compartilhada e o espaço disponível para novos anexos.</p></div>
+          <button id="googleDriveRefresh" class="btn btn-outline storage-refresh" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Verificar conexão</button>
+        </div>
+        <section class="storage-provider" aria-labelledby="googleDriveTitle">
+          <div class="storage-provider-top">
+            <div class="storage-brand"><span class="storage-brand-icon"><i class="fab fa-google-drive"></i></span><div><span class="storage-eyebrow">PROVEDOR CONECTADO</span><h3 id="googleDriveTitle">Google Drive</h3></div></div>
+            <span id="googleDriveBadge" class="storage-status-badge is-loading"><span class="storage-status-dot"></span><span id="googleDriveStatus" role="status" aria-live="polite">Verificando conexão…</span></span>
+          </div>
+          <p id="googleDriveMessage" class="storage-description">Os novos anexos enviados em salas e conversas diretas serão salvos nesta conta. Os arquivos existentes permanecem onde estão.</p>
+          <div id="googleDriveNotConfigured" class="storage-notice" hidden><i class="fas fa-circle-info"></i><span>As credenciais de integração do Google Drive ainda não foram configuradas neste ambiente.</span></div>
+          <div id="googleDriveAccount" class="storage-account" hidden>
+            <div class="storage-avatar" id="googleDriveAvatar"><i class="fas fa-user"></i></div>
+            <div class="storage-account-copy"><span class="storage-eyebrow">CONTA COMPARTILHADA</span><strong id="googleDriveAccountName">—</strong><span id="googleDriveAccountEmail">—</span></div>
+            <span class="storage-account-check"><i class="fas fa-shield-check"></i> Conta verificada</span>
+          </div>
+          <div id="googleDriveQuota" class="storage-quota" hidden>
+            <div class="storage-quota-heading"><div><span class="storage-eyebrow">ESPAÇO DA CONTA</span><h4>Uso do armazenamento</h4></div><span id="googleDriveQuotaPercent" class="storage-quota-percent">—</span></div>
+            <div class="storage-progress-track" role="progressbar" aria-label="Espaço de armazenamento usado" aria-valuemin="0" aria-valuemax="100"><span id="googleDriveQuotaBar" class="storage-progress-bar"></span></div>
+            <div class="storage-metrics">
+              <div class="storage-metric"><span><i class="fas fa-hard-drive"></i> Conta utilizada</span><strong id="googleDriveQuotaUsed">—</strong></div>
+              <div class="storage-metric storage-metric-free"><span><i class="fas fa-circle-check"></i> Disponível</span><strong id="googleDriveQuotaFree">—</strong></div>
+              <div class="storage-metric"><span><i class="fas fa-database"></i> Capacidade total</span><strong id="googleDriveQuotaLimit">—</strong></div>
+            </div>
+            <div class="storage-extra"><span><i class="fas fa-cloud"></i> Em arquivos do Drive <strong id="googleDriveDriveUsed">—</strong></span><span><i class="fas fa-trash-can"></i> Na lixeira <strong id="googleDriveTrashUsed">—</strong></span><span><i class="fas fa-clock"></i> Atualizado <strong id="googleDriveCheckedAt">—</strong></span></div>
+          </div>
+          <div id="googleDriveVerificationError" class="storage-notice storage-notice-error" hidden><i class="fas fa-triangle-exclamation"></i><span id="googleDriveVerificationMessage"></span></div>
+          <div class="storage-actions"><a id="googleDriveConnect" class="btn btn-green" href="https://arquive.online/api/admin/google-drive/oauth/start" hidden><i class="fab fa-google-drive"></i> Conectar conta compartilhada</a></div>
         </div>
       </div>
     </main>
@@ -189,9 +211,29 @@
       const status = document.getElementById('googleDriveStatus');
       const connect = document.getElementById('googleDriveConnect');
       const notConfigured = document.getElementById('googleDriveNotConfigured');
-      status.textContent = 'Verificando conexão com o Google Drive…';
+      const badge = document.getElementById('googleDriveBadge');
+      const refresh = document.getElementById('googleDriveRefresh');
+      const account = document.getElementById('googleDriveAccount');
+      const quotaPanel = document.getElementById('googleDriveQuota');
+      const verificationError = document.getElementById('googleDriveVerificationError');
+      const message = document.getElementById('googleDriveMessage');
+      const fmtBytes = value => {
+        const bytes = Number(value);
+        if (!Number.isFinite(bytes) || bytes < 0) return 'Não informado';
+        if (bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+        const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        return `${(bytes / (1024 ** index)).toLocaleString('pt-BR', { maximumFractionDigits: index > 1 ? 1 : 0 })} ${units[index]}`;
+      };
+      const clearQuota = () => { account.hidden = true; quotaPanel.hidden = true; };
+      status.textContent = 'Verificando…';
+      badge.className = 'storage-status-badge is-loading';
+      refresh.disabled = true;
+      refresh.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando…';
       connect.hidden = true;
       notConfigured.hidden = true;
+      verificationError.hidden = true;
+      clearQuota();
       try {
         const response = await fetch('/api/admin/google-drive/status', { cache: 'no-store' });
         if (response.status === 401 || response.status === 403) { window.location.href = '/'; return; }
@@ -201,16 +243,69 @@
         // state usa domínio compartilhado para o callback canônico sem www.
         connect.href = location.origin + '/api/admin/google-drive/oauth/start';
         if (!data.configured) {
-          status.textContent = 'Integração indisponível neste ambiente.';
+          status.textContent = 'Não configurado';
+          badge.className = 'storage-status-badge is-warning';
+          message.textContent = 'Configure as credenciais OAuth para ativar o armazenamento compartilhado.';
           notConfigured.hidden = false;
-        } else if (data.connected) {
-          status.textContent = 'Conectado. Novos anexos de salas e conversas diretas serão enviados ao Google Drive compartilhado.';
+        } else if (data.connected && data.verified) {
+          status.textContent = 'Conexão ativa';
+          badge.className = 'storage-status-badge is-connected';
+          message.textContent = 'Conexão confirmada com o Google. Os novos anexos de salas e conversas diretas serão salvos nesta conta.';
+          const driveAccount = data.account || {};
+          document.getElementById('googleDriveAccountName').textContent = driveAccount.name || 'Conta Google compartilhada';
+          document.getElementById('googleDriveAccountEmail').textContent = driveAccount.email || 'E-mail não informado pelo Google';
+          const avatar = document.getElementById('googleDriveAvatar');
+          avatar.replaceChildren();
+          let photoUrl = null;
+          try {
+            const candidate = new URL(driveAccount.photo_url);
+            if (candidate.protocol === 'https:') photoUrl = candidate.href;
+          } catch {}
+          if (photoUrl) {
+            const image = document.createElement('img');
+            image.src = photoUrl;
+            image.alt = '';
+            avatar.appendChild(image);
+          } else {
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-user';
+            avatar.appendChild(icon);
+          }
+          account.hidden = false;
+          const quota = data.storage_quota || {};
+          const used = quota.used_bytes == null ? null : Number(quota.used_bytes);
+          const limit = quota.limit_bytes == null ? null : Number(quota.limit_bytes);
+          const free = Number.isFinite(used) && used >= 0 && Number.isFinite(limit) && limit >= used ? limit - used : null;
+          const percent = Number.isFinite(used) && Number.isFinite(limit) && limit > 0 ? Math.min(100, used / limit * 100) : null;
+          document.getElementById('googleDriveQuotaUsed').textContent = fmtBytes(quota.used_bytes);
+          document.getElementById('googleDriveQuotaFree').textContent = free == null ? (limit == null ? 'Sem limite informado' : 'Não informado') : fmtBytes(free);
+          document.getElementById('googleDriveQuotaLimit').textContent = limit == null ? 'Sem limite informado' : fmtBytes(limit);
+          document.getElementById('googleDriveDriveUsed').textContent = fmtBytes(quota.drive_used_bytes);
+          document.getElementById('googleDriveTrashUsed').textContent = fmtBytes(quota.trash_used_bytes);
+          document.getElementById('googleDriveQuotaPercent').textContent = percent == null ? '—' : `${percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% usado`;
+          const progress = document.getElementById('googleDriveQuotaBar');
+          progress.style.width = `${percent ?? 0}%`;
+          progress.classList.toggle('is-near-limit', percent !== null && percent >= 85);
+          document.querySelector('.storage-progress-track').setAttribute('aria-valuenow', String(Math.round(percent ?? 0)));
+          document.getElementById('googleDriveCheckedAt').textContent = data.checked_at ? new Date(data.checked_at).toLocaleString('pt-BR') : 'Agora';
+          quotaPanel.hidden = false;
         } else {
-          status.textContent = 'Ainda não conectado. Autorize a conta compartilhada para habilitar o armazenamento no Drive.';
+          status.textContent = data.connected ? 'Verificação necessária' : 'Ainda não conectado';
+          badge.className = 'storage-status-badge is-warning';
+          message.textContent = data.connected ? 'A credencial está salva, mas não foi possível confirmar o acesso ao Google Drive.' : 'Conecte a conta Google compartilhada para começar a armazenar novos anexos no Drive.';
+          if (data.verification_failed) {
+            document.getElementById('googleDriveVerificationMessage').textContent = 'Não foi possível confirmar o acesso ao Google Drive. Tente novamente ou reconecte a conta compartilhada.';
+            verificationError.hidden = false;
+          }
           connect.hidden = false;
         }
       } catch (error) {
-        status.textContent = error.message || 'Não foi possível consultar o Google Drive.';
+        status.textContent = error.message || 'Erro ao verificar a conexão.';
+        badge.className = 'storage-status-badge is-error';
+        message.textContent = 'Não foi possível consultar o estado do armazenamento. Tente novamente.';
+      } finally {
+        refresh.disabled = false;
+        refresh.innerHTML = '<i class="fas fa-rotate"></i> Verificar conexão';
       }
     }
 
