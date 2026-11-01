@@ -28,6 +28,7 @@ const {
   isDriveFileRef
 } = require('./lib/google-drive-storage');
 const { createGoogleDriveDeletionQueue } = require('./lib/google-drive-deletion');
+const { GOOGLE_DRIVE_DISTRIBUTION_MODES, isGoogleDriveQuotaError, selectGoogleDriveCandidate } = require('./lib/google-drive-distribution');
 const { encryptSecret, decryptSecret } = require('./lib/google-drive-oauth');
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -140,16 +141,8 @@ async function deleteBlobs(pathnames) {
 }
 
 const googleDriveStorageCache = new Map();
-const uploadsInProgressByAccount = new Map();
-function reserveGoogleDriveQuota(accountId, sizeBytes) {
-  uploadsInProgressByAccount.set(accountId, (uploadsInProgressByAccount.get(accountId) || 0) + Number(sizeBytes || 0));
-}
-function releaseGoogleDriveQuota(accountId, sizeBytes) {
-  if (!accountId) return;
-  const remaining = (uploadsInProgressByAccount.get(accountId) || 0) - Number(sizeBytes || 0);
-  if (remaining > 0) uploadsInProgressByAccount.set(accountId, remaining);
-  else uploadsInProgressByAccount.delete(accountId);
-}
+const GOOGLE_DRIVE_DISTRIBUTION_MODE_SETTING = 'google_drive_distribution_mode';
+const GOOGLE_DRIVE_PREFERRED_ACCOUNT_SETTING = 'google_drive_preferred_account_id';
 async function getGoogleDriveStorage(accountId) {
   if (accountId) {
     const cached = googleDriveStorageCache.get(accountId);
@@ -168,7 +161,7 @@ async function getGoogleDriveStorage(accountId) {
   const account = await selectGoogleDriveAccount(0);
   return getGoogleDriveStorage(account.id);
 }
-async function selectGoogleDriveAccount(sizeBytes) {
+async function selectGoogleDriveAccount(sizeBytes, { excludeAccountIds = [] } = {}) {
   const requestedBytes = Number(sizeBytes);
   const accounts = await getGoogleDriveAccounts();
   if (!accounts.length) {
@@ -186,26 +179,32 @@ async function selectGoogleDriveAccount(sizeBytes) {
   await Promise.allSettled(staleAccounts.map(account => refreshGoogleDriveAccountQuota(account.id)));
 
   const refreshed = await getGoogleDriveAccounts();
-  const eligible = refreshed
-    .map(account => {
-      const reservations = uploadsInProgressByAccount.get(account.id) || 0;
-      return { account, freeBytes: account.quotaLimitBytes == null || account.quotaUsedBytes == null
-      ? null
-      : Math.max(0, account.quotaLimitBytes - account.quotaUsedBytes - reservations) };
-    })
-    .filter(({ freeBytes }) => freeBytes === null || freeBytes >= requestedBytes)
-    .sort((a, b) => {
-      if (a.freeBytes === null && b.freeBytes === null) return a.account.connectedAt.localeCompare(b.account.connectedAt);
-      if (a.freeBytes === null) return 1;
-      if (b.freeBytes === null) return -1;
-      return b.freeBytes - a.freeBytes;
-    });
-  if (!eligible.length) {
+  const reservationCutoff = agoTs(7 * 86400000);
+  await q(`UPDATE google_drive_uploads SET status = 'failed', updated_at = $1
+    WHERE status = 'uploading' AND COALESCE(updated_at, created_at) <= $1`, [reservationCutoff]);
+  const reservationRows = await q(`SELECT drive_account_id, COALESCE(SUM(size), 0) AS reserved_bytes
+    FROM google_drive_uploads
+    WHERE status = 'uploading'
+    GROUP BY drive_account_id`);
+  const reservations = new Map(reservationRows.map(row => [row.drive_account_id, Number(row.reserved_bytes) || 0]));
+  const modeValue = await getSetting(GOOGLE_DRIVE_DISTRIBUTION_MODE_SETTING, 'most_free');
+  const mode = GOOGLE_DRIVE_DISTRIBUTION_MODES.includes(modeValue) ? modeValue : 'most_free';
+  let cursor = 0;
+  if (mode === 'round_robin') {
+    const rows = await q(`INSERT INTO settings (key, value) VALUES ('google_drive_distribution_cursor', '1')
+      ON CONFLICT (key) DO UPDATE SET value = CAST(settings.value AS BIGINT) + 1 RETURNING value`);
+    cursor = Math.max(0, (Number(rows[0] && rows[0].value) || 1) - 1);
+  }
+  const preferredAccountId = await getSetting(GOOGLE_DRIVE_PREFERRED_ACCOUNT_SETTING, '');
+  const account = selectGoogleDriveCandidate(refreshed, {
+    reservations, mode, preferredAccountId, cursor, sizeBytes: requestedBytes, excludeAccountIds
+  });
+  if (!account) {
     const error = new Error('Nenhuma conta do Google Drive tem espaço disponível suficiente para este arquivo.');
     error.status = 507;
     throw error;
   }
-  return eligible[0].account;
+  return account;
 }
 async function googleDriveStorage(accountId) {
   if (accountId) return getGoogleDriveStorage(accountId);
@@ -336,19 +335,18 @@ async function retryPendingGoogleDriveDeletions() {
   return { deleted: staged.deleted + queued.deleted, pending: staged.pending + queued.pending };
 }
 
-async function createDriveUploadSession({ userId, destinationType, roomId = null, spaceId = null, bookcaseId = null, name, size, mimeType }) {
+async function createDriveUploadSession({ userId, destinationType, roomId = null, spaceId = null, bookcaseId = null, name, size, mimeType, excludeAccountIds = [] }) {
   const uploadId = uuidv4();
   const normalizedName = String(name || 'arquivo').trim().slice(0, 255) || 'arquivo';
   const normalizedMime = String(mimeType || 'application/octet-stream').trim().slice(0, 100) || 'application/octet-stream';
-  const account = await selectGoogleDriveAccount(size);
+  const account = await selectGoogleDriveAccount(size, { excludeAccountIds });
   const drive = await getGoogleDriveStorage(account.id);
-  // Registra a reserva antes de abrir a sessão remota, para que seleções
-  // concorrentes e outras instâncias a considerem imediatamente.
+  // Registra a reserva no banco antes de abrir a sessão remota, para que as
+  // próximas sessões e instâncias serverless também a considerem.
   await q(`INSERT INTO google_drive_uploads
       (upload_id, user_id, destination_type, room_id, space_id, bookcase_id, drive_account_id, original_name, size, mime_type, session_url_enc, status, created_at)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'','uploading',$11)`,
   [uploadId, userId, destinationType, roomId, spaceId, bookcaseId, account.id, normalizedName, size, normalizedMime, ts()]);
-  reserveGoogleDriveQuota(account.id, size);
   try {
     const sessionUrl = await drive.startResumableUpload({ name: normalizedName, mimeType: normalizedMime, size, uploadId });
     const encryptedSessionUrl = encryptSecret(sessionUrl, sessionSecret());
@@ -356,7 +354,11 @@ async function createDriveUploadSession({ userId, destinationType, roomId = null
       [encryptedSessionUrl, ts(), uploadId, 'uploading']);
   } catch (error) {
     await q("UPDATE google_drive_uploads SET status = 'failed', updated_at = $1 WHERE upload_id = $2 AND status = 'uploading'", [ts(), uploadId]);
-    releaseGoogleDriveQuota(account.id, size);
+    if (isGoogleDriveQuotaError(error)) {
+      await refreshGoogleDriveAccountQuota(account.id).catch(() => {});
+      return createDriveUploadSession({ userId, destinationType, roomId, spaceId, bookcaseId, name, size, mimeType,
+        excludeAccountIds: [...new Set([...excludeAccountIds.map(String), String(account.id)])] });
+    }
     throw error;
   }
   return { upload_id: uploadId, chunk_bytes: 4 * 1024 * 1024, max_bytes: MAX_DIRECT_BYTES };
@@ -375,11 +377,20 @@ function validateDriveFileId(value) {
 }
 
 async function uploadBufferToDrive({ name, mimeType, buffer, uploadId }) {
-  const account = await selectGoogleDriveAccount(buffer.length);
-  const drive = await getGoogleDriveStorage(account.id);
-  const file = await drive.uploadBufferChunked({ name, mimeType, buffer, uploadId });
-  if (!file || !file.id) throw new Error('Google Drive não retornou o identificador do arquivo enviado.');
-  return driveFileRef(file.id, account.id);
+  const excluded = [];
+  while (true) {
+    const account = await selectGoogleDriveAccount(buffer.length, { excludeAccountIds: excluded });
+    const drive = await getGoogleDriveStorage(account.id);
+    try {
+      const file = await drive.uploadBufferChunked({ name, mimeType, buffer, uploadId });
+      if (!file || !file.id) throw new Error('Google Drive não retornou o identificador do arquivo enviado.');
+      return driveFileRef(file.id, account.id);
+    } catch (error) {
+      if (!isGoogleDriveQuotaError(error)) throw error;
+      excluded.push(String(account.id));
+      await refreshGoogleDriveAccountQuota(account.id).catch(() => {});
+    }
+  }
 }
 
 async function pipeDriveFileToResponse(res, storedName, knownSize, range) {
@@ -2217,6 +2228,31 @@ app.get('/api/admin/google-drive/accounts', asAdmin, wrap(async (req, res) => {
   } });
 }));
 
+app.get('/api/admin/google-drive/distribution', asAdmin, wrap(async (req, res) => {
+  const storedMode = await getSetting(GOOGLE_DRIVE_DISTRIBUTION_MODE_SETTING, 'most_free');
+  res.set('Cache-Control', 'no-store');
+  return res.json({
+    mode: GOOGLE_DRIVE_DISTRIBUTION_MODES.includes(storedMode) ? storedMode : 'most_free',
+    preferredAccountId: await getSetting(GOOGLE_DRIVE_PREFERRED_ACCOUNT_SETTING, '')
+  });
+}));
+
+app.post('/api/admin/google-drive/distribution', asAdmin, wrap(async (req, res) => {
+  const mode = String(req.body && req.body.mode || '');
+  const preferredAccountId = String(req.body && req.body.preferredAccountId || '');
+  if (!GOOGLE_DRIVE_DISTRIBUTION_MODES.includes(mode)) {
+    return res.status(400).json({ error: 'Modo de distribuição inválido.' });
+  }
+  if (mode === 'preferred') {
+    const preferred = await one('SELECT id FROM google_drive_accounts WHERE id = $1 AND is_active = 1', [preferredAccountId]);
+    if (!preferred) return res.status(400).json({ error: 'Selecione uma conta ativa para priorizar.' });
+    await setSetting(GOOGLE_DRIVE_PREFERRED_ACCOUNT_SETTING, preferred.id);
+  }
+  await setSetting(GOOGLE_DRIVE_DISTRIBUTION_MODE_SETTING, mode);
+  res.set('Cache-Control', 'no-store');
+  return res.json({ success: true, mode, preferredAccountId: mode === 'preferred' ? preferredAccountId : '' });
+}));
+
 app.delete('/api/admin/google-drive/accounts/:id', asAdmin, wrap(async (req, res) => {
   const accountId = String(req.params.id || '');
   if (!/^[a-zA-Z0-9_-]{8,}$/.test(accountId)) return res.status(400).json({ error: 'ID de conta inválido.' });
@@ -3018,7 +3054,7 @@ app.post('/api/google-drive/uploads/:uploadId/chunk', asMember, express.raw({ ty
   if (total !== num(upload.size) || end - start + 1 !== req.body.length || start < 0 || end >= total || req.body.length > 4 * 1024 * 1024) {
     return res.status(400).json({ error: 'Bloco de upload incompatível com a sessão.' });
   }
-      const { drive, accountId } = await getDriveUploadStorage(upload);
+  const { drive, accountId } = await getDriveUploadStorage(upload);
   let result;
   try {
     result = await drive.uploadChunkFromServer(upload.session_url, total, start, req.body);
@@ -3026,15 +3062,33 @@ app.post('/api/google-drive/uploads/:uploadId/chunk', asMember, express.raw({ ty
     if (error && /HTTP 404|HTTP 410/.test(error.message)) {
       return res.status(410).json({ state: 'upload_session_expired', error: 'A sessão do Google Drive expirou. Selecione o arquivo novamente para reiniciar o envio.' });
     }
+    if (isGoogleDriveQuotaError(error) && accountId) {
+      const oldAccountId = accountId;
+      await q("UPDATE google_drive_uploads SET status = 'failed', updated_at = $1 WHERE upload_id = $2 AND status = 'uploading'", [ts(), upload.upload_id]);
+      await refreshGoogleDriveAccountQuota(oldAccountId).catch(() => {});
+      try {
+        const session = await createDriveUploadSession({
+          userId: req.user.id, destinationType: upload.destination_type, roomId: upload.room_id,
+          spaceId: upload.space_id, bookcaseId: upload.bookcase_id, name: upload.original_name,
+          size: num(upload.size), mimeType: upload.mime_type, excludeAccountIds: [oldAccountId]
+        });
+        return res.status(409).json({ state: 'account_changed', error: 'A conta selecionada ficou sem espaço. O envio será reiniciado em outra conta.', session });
+      } catch (replacementError) {
+        if (Number(replacementError && replacementError.status) === 507) {
+          return res.status(507).json({ error: 'As outras contas conectadas também não têm espaço suficiente para este arquivo.' });
+        }
+        throw replacementError;
+      }
+    }
     throw error;
   }
   if (result.complete) {
     if (!validateDriveFileId(result.file && result.file.id)) return res.status(502).json({ error: 'O Drive não confirmou o arquivo enviado.' });
     await q(`UPDATE google_drive_uploads SET status = 'complete', file_id = $1, drive_account_id = $2, session_url_enc = '', updated_at = $3
       WHERE upload_id = $4 AND user_id = $5 AND status = 'uploading'`, [result.file.id, accountId, ts(), upload.upload_id, req.user.id]);
-    releaseGoogleDriveQuota(accountId, upload.size);
     return res.json({ complete: true, next_offset: total });
   }
+  await q(`UPDATE google_drive_uploads SET updated_at = $1 WHERE upload_id = $2 AND status = 'uploading'`, [ts(), upload.upload_id]);
   res.json({ complete: false, next_offset: result.nextOffset });
 }));
 
@@ -4964,6 +5018,9 @@ app.use((err, req, res, next) => {
   console.error('Erro em', req.method, safePath, '-', err && err.stack || err);
   if (res.headersSent) return next(err);
   if (isBlobStoreSuspended(err) && req.path.startsWith('/api/')) return res.status(503).json({ error: blobStoreSuspendedMessage });
+  if (req.path.startsWith('/api/') && Number(err && err.status) === 507) {
+    return res.status(507).json({ error: err.message || 'Nenhuma conta do Google Drive tem espaço suficiente.' });
+  }
   const message = 'Erro interno do servidor. Tente novamente.';
   if (req.originalUrl.startsWith('/api/')) return res.status(500).json({ error: message });
   res.status(500).send(message);

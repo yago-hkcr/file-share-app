@@ -16,6 +16,7 @@ const dashboard = read('public', 'dashboard.html');
 const admin = read('public', 'admin.html');
 const adminStorageCss = read('public', 'css', 'admin-storage.css');
 const serviceWorker = read('public', 'sw.js');
+const distribution = read('lib', 'google-drive-distribution.js');
 const inlineScripts = [...admin.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
   .map(match => match[1]).filter(script => script.trim());
 assert.ok(inlineScripts.length > 0, 'o painel deve conter scripts inline');
@@ -41,14 +42,26 @@ assert.match(server, /verified: verifiedOk/);
 assert.match(server, /getGoogleDriveAccounts\(\{ includeInactive: true \}\)/);
 assert.match(server, /driveFileRef\(upload\.file_id, accountId\)/);
 assert.match(server, /ALTER TABLE google_drive_uploads ADD COLUMN IF NOT EXISTS drive_account_id TEXT/);
-assert.match(server, /uploadsInProgressByAccount/);
+assert.match(server, /const reservationRows = await q\([\s\S]*?FROM google_drive_uploads[\s\S]*?WHERE status = 'uploading'/);
+assert.match(server, /SET status = 'failed',[\s\S]*?COALESCE\(updated_at, created_at\) <= \$1/);
+assert.match(server, /app\.get\('\/api\/admin\/google-drive\/distribution'/);
+assert.match(server, /app\.post\('\/api\/admin\/google-drive\/distribution'/);
+assert.match(server, /status\(409\)\.json\(\{ state: 'account_changed'/);
+assert.match(server, /FROM google_drive_uploads[\s\S]*?WHERE status = 'uploading'/);
+assert.match(server, /selectGoogleDriveCandidate\(refreshed/);
+assert.match(distribution, /most_free.*round_robin.*preferred/);
+assert.match(distribution, /storageQuotaExceeded/);
 assert.match(server, /storage_quota:/);
 assert.match(server, /\.getAbout\(\)/);
 assert.match(server, /verification_failed: true/);
 assert.doesNotMatch(server.match(/app\.get\('\/api\/admin\/google-drive\/status',[\s\S]*?\n  \}\)\);/)?.[0] || '', /verification_error:|redirect_uri: GOOGLE_DRIVE_REDIRECT_URI|scope: DRIVE_FILE_SCOPE/);
 assert.match(server, /app\.get\('\/api\/admin\/google-drive\/oauth\/start', asAdmin/);
 assert.match(roomUpload, /\/api\/google-drive\/uploads\/' \+ encodeURIComponent\(session\.upload_id\) \+ '\/chunk/);
+assert.match(roomUpload, /state === 'account_changed'[\s\S]*?onSessionChange\(session\)/);
+assert.match(roomUpload, /driveSession\.upload_id/);
 assert.match(libraryUpload, /\/api\/library\/drive-files\/register/);
+assert.match(libraryUpload, /state === 'account_changed'[\s\S]*?onSessionChange\(session\)/);
+assert.match(libraryUpload, /driveSession\.upload_id/);
 assert.match(libraryUpload, /if \(driveUploadEnabled\) \{[\s\S]*?drive-upload-session[\s\S]*?if \(file\.size > 100 \* 1024 \* 1024 && blobUploadEnabled\)/);
 assert.match(roomUpload, /if \(driveUploadEnabled\) \{[\s\S]*?drive-upload-session[\s\S]*?else if \(file\.size > 100 \* 1024 \* 1024 && blobUploadEnabled\)/);
 assert.match(dmUpload, /if \(driveUploadEnabled\) \{[\s\S]*?\/api\/dm\/' \+ friendId \+ '\/drive-upload-session[\s\S]*?\/api\/dm\/' \+ friendId \+ '\/drive-files\/register/);
@@ -69,8 +82,8 @@ assert.match(admin, /get\('drive_connected'\) === '1'/);
 assert.match(server, /res\.redirect\(302, `\$\{safeReturnOrigin\}\/admin\?drive_connected=1#storage`\)/);
 assert.match(server, /app\.delete\('\/api\/admin\/google-drive\/connection', asAdmin/);
 assert.match(admin, /admin-storage\.css/);
-assert.match(admin, /admin-storage\.css\?v=20261031c/, 'mudanças de layout invalidam o CSS antigo em cache');
-assert.match(admin, /hacker-ui\.css\?v=[^"']+"[^>]*>\s*<link rel="stylesheet" href="\/css\/admin-storage\.css\?v=20261031c"/,
+assert.match(admin, /admin-storage\.css\?v=20261031d/, 'mudanças de layout invalidam o CSS antigo em cache');
+assert.match(admin, /hacker-ui\.css\?v=[^"']+"[^>]*>\s*<link rel="stylesheet" href="\/css\/admin-storage\.css\?v=20261031d"/,
   'o CSS do painel é carregado depois dos estilos globais');
 assert.match(admin, /<span>Uso da cota<\/span>/, 'o cartão não repete o e-mail na linha de percentual');
 assert.match(adminStorageCss, /\.storage-account-card\{[^}]*display:grid/,
@@ -85,13 +98,16 @@ assert.match(adminStorageCss, /\.storage-heading-actions>\.btn\{[^}]*width:100%/
   'os botões do painel ocupam igualmente a linha disponível');
 assert.match(admin, /async function connectNewGoogleDrive\(event\)[\s\S]*?window\.location\.href = location\.origin \+ '\/api\/admin\/google-drive\/oauth\/start'/,
   'o painel inicia a conexão OAuth para adicionar outra conta');
-assert.match(admin, /conta\(s\) do Google Drive conectada\(s\)\. Novos anexos usam a conta com mais espaço livre/,
-  'o painel informa o estado agregado das contas conectadas');
+assert.match(admin, /googleDriveDistributionMode/);
+assert.match(admin, /Alternar entre contas/);
+assert.match(admin, /Priorizar uma conta/);
+assert.match(admin, /loadGoogleDriveDistribution\(accounts\)/);
+assert.match(admin, /saveGoogleDriveDistribution\(\)/);
 assert.match(admin, /O painel tentará verificar novamente automaticamente\./,
   'falhas temporárias mantêm a autorização e orientam uma nova verificação');
-assert.match(dashboard, /upload\.js\?v=20261031b/);
-assert.match(dashboard, /library\.js\?v=20261030e/);
-assert.match(serviceWorker, /upload\.js\?v=20261031b/);
-assert.match(serviceWorker, /library\.js\?v=20261030e/);
+assert.match(dashboard, /upload\.js\?v=20261031c/);
+assert.match(dashboard, /library\.js\?v=20261031a/);
+assert.match(serviceWorker, /upload\.js\?v=20261031c/);
+assert.match(serviceWorker, /library\.js\?v=20261031a/);
 
 console.log('Todas as asserções da integração Google Drive passaram.');

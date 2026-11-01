@@ -362,7 +362,7 @@
       xhr.onerror = () => reject(new Error('Falha de rede durante o envio'));
       xhr.send(file);
     });
-    const uploadDriveInChunks = async (session, file, onProgress) => {
+    const uploadDriveInChunks = async (session, file, onProgress, onSessionChange) => {
       const chunkSize = Number(session.chunk_bytes) || 4 * 1024 * 1024;
       let offset = 0;
       while (offset < file.size) {
@@ -373,6 +373,13 @@
           body: file.slice(offset, end)
         });
         const result = await response.json().catch(() => ({}));
+        if (response.status === 409 && result.state === 'account_changed' && result.session && result.session.upload_id) {
+          session = result.session;
+          offset = 0;
+          if (typeof onSessionChange === 'function') onSessionChange(session);
+          if (onProgress) onProgress(0);
+          continue;
+        }
         if (!response.ok) throw new Error(result.error || 'Falha ao enviar bloco ao Google Drive.');
         offset = Number(result.next_offset);
         if (!Number.isSafeInteger(offset) || offset <= 0 || offset > file.size) throw new Error('O Google Drive retornou uma posição de envio inválida.');
@@ -399,8 +406,9 @@
       if (driveUploadEnabled) {
         const prep = await postJson('/api/library/drive-upload-session', { name: file.name, size: file.size, mime: file.type, space_id: space.id, bookcase_id: bookcaseId });
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
-        await uploadDriveInChunks(prep.data, file, progress);
-        const done = await postJson('/api/library/drive-files/register', { upload_id: prep.data.upload_id });
+        let driveSession = prep.data;
+        await uploadDriveInChunks(driveSession, file, progress, session => { driveSession = session; });
+        const done = await postJson('/api/library/drive-files/register', { upload_id: driveSession.upload_id });
         if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
         return done.data;
       }

@@ -25,7 +25,7 @@
   <link rel="stylesheet" href="/css/admin-select.css?v=20261014a">
   <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
   <link rel="stylesheet" href="/css/hacker-ui.css?v=20261014a">
-  <link rel="stylesheet" href="/css/admin-storage.css?v=20261031c">
+  <link rel="stylesheet" href="/css/admin-storage.css?v=20261031d">
 </head>
 <body class="app-page">
   <header class="header">
@@ -115,7 +115,17 @@
             <div class="storage-brand"><span class="storage-brand-icon"><i class="fab fa-google-drive"></i></span><div><span class="storage-eyebrow">CONTAS DO GOOGLE DRIVE</span><h3 id="googleDriveTitle">Contas conectadas</h3></div></div>
             <span id="googleDriveBadge" class="storage-status-badge is-loading"><span class="storage-status-dot"></span><span id="googleDriveStatus" role="status" aria-live="polite">Verificando conexões…</span></span>
           </div>
-          <p id="googleDriveMessage" class="storage-description">Cada conta conectada contribui com seu próprio espaço. Os novos anexos são enviados para a conta com mais espaço livre disponível.</p>
+          <p id="googleDriveMessage" class="storage-description">Cada conta conectada contribui com seu próprio espaço. Configure abaixo como distribuir os novos anexos entre as contas.</p>
+          <div class="storage-distribution-controls">
+            <label class="storage-description" for="googleDriveDistributionMode"><strong>Distribuição dos novos envios</strong></label>
+            <select id="googleDriveDistributionMode" class="btn btn-outline" onchange="saveGoogleDriveDistribution()">
+              <option value="most_free">Mais espaço livre (padrão)</option>
+              <option value="round_robin">Alternar entre contas</option>
+              <option value="preferred">Priorizar uma conta</option>
+            </select>
+            <select id="googleDrivePreferredAccount" class="btn btn-outline" aria-label="Conta principal" onchange="saveGoogleDriveDistribution()" hidden></select>
+            <span id="googleDriveDistributionStatus" class="storage-description" role="status" aria-live="polite"></span>
+          </div>
           <div id="googleDriveNotConfigured" class="storage-notice" hidden><i class="fas fa-circle-info"></i><span>As credenciais de integração do Google Drive ainda não foram configuradas neste ambiente.</span></div>
           <div id="googleDriveAccountsList"></div>
           <div id="googleDriveTotalQuota" class="storage-quota" hidden>
@@ -240,6 +250,82 @@
       return `${(bytes / (1024 ** index)).toLocaleString('pt-BR', { maximumFractionDigits: index > 1 ? 1 : 0 })} ${units[index]}`;
     }
 
+    let driveDistributionState = { mode: 'most_free', preferredAccountId: '' };
+    function updateGoogleDriveDistributionMessage(accountCount) {
+      if (!accountCount) return;
+      const descriptions = { most_free: 'Mais espaço livre', round_robin: 'Alternar entre contas', preferred: 'Priorizar uma conta' };
+      document.getElementById('googleDriveMessage').textContent = accountCount + ' conta(s) do Google Drive conectada(s). Distribuição: ' + (descriptions[driveDistributionState.mode] || descriptions.most_free) + '.';
+    }
+    async function loadGoogleDriveDistribution(accounts = []) {
+      const modeSelect = document.getElementById('googleDriveDistributionMode');
+      const preferredSelect = document.getElementById('googleDrivePreferredAccount');
+      preferredSelect.replaceChildren();
+      for (const account of accounts) {
+        const option = document.createElement('option');
+        option.value = account.id;
+        option.textContent = account.accountEmail || account.accountName || 'Conta sem nome';
+        preferredSelect.appendChild(option);
+      }
+      try {
+        const response = await fetch('/api/admin/google-drive/distribution', { cache: 'no-store' });
+        if (!response.ok) throw new Error('Não foi possível carregar a preferência de distribuição.');
+        const data = await response.json();
+        driveDistributionState = {
+          mode: ['most_free', 'round_robin', 'preferred'].includes(data.mode) ? data.mode : 'most_free',
+          preferredAccountId: String(data.preferredAccountId || '')
+        };
+        if (driveDistributionState.mode === 'preferred' && !accounts.some(account => account.id === driveDistributionState.preferredAccountId)) {
+          driveDistributionState.mode = 'most_free';
+        }
+        modeSelect.value = driveDistributionState.mode;
+        if (accounts.length) preferredSelect.value = accounts.some(account => account.id === driveDistributionState.preferredAccountId)
+          ? driveDistributionState.preferredAccountId : accounts[0].id;
+        preferredSelect.hidden = driveDistributionState.mode !== 'preferred' || accounts.length === 0;
+        modeSelect.disabled = accounts.length === 0;
+        document.getElementById('googleDriveDistributionStatus').textContent = '';
+        updateGoogleDriveDistributionMessage(accounts.length);
+      } catch (error) {
+        document.getElementById('googleDriveDistributionStatus').textContent = error.message || 'Falha ao carregar distribuição.';
+      }
+    }
+
+    async function saveGoogleDriveDistribution() {
+      const modeSelect = document.getElementById('googleDriveDistributionMode');
+      const preferredSelect = document.getElementById('googleDrivePreferredAccount');
+      const status = document.getElementById('googleDriveDistributionStatus');
+      const mode = modeSelect.value;
+      const preferredAccountId = preferredSelect.value;
+      preferredSelect.hidden = mode !== 'preferred' || !preferredAccountId;
+      if (mode === 'preferred' && !preferredAccountId) {
+        status.textContent = 'Conecte uma conta antes de escolher a conta principal.';
+        return;
+      }
+      modeSelect.disabled = true;
+      preferredSelect.disabled = true;
+      status.textContent = 'Salvando…';
+      try {
+        const response = await fetch('/api/admin/google-drive/distribution', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ mode, preferredAccountId })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 401) { window.location.href = '/'; return; }
+        if (!response.ok) throw new Error(data.error || 'Não foi possível salvar a distribuição.');
+        driveDistributionState = { mode, preferredAccountId };
+        status.textContent = 'Preferência salva.';
+        const currentCount = (document.getElementById('googleDriveStatus').textContent.match(/\d+/) || [0])[0];
+        updateGoogleDriveDistributionMessage(Number(currentCount));
+      } catch (error) {
+        status.textContent = error.message || 'Não foi possível salvar a distribuição.';
+        modeSelect.value = driveDistributionState.mode;
+        if (driveDistributionState.preferredAccountId) preferredSelect.value = driveDistributionState.preferredAccountId;
+        preferredSelect.hidden = driveDistributionState.mode !== 'preferred';
+      } finally {
+        modeSelect.disabled = preferredSelect.options.length === 0;
+        preferredSelect.disabled = false;
+      }
+    }
+
     async function loadGoogleDriveStatus() {
       const badge = document.getElementById('googleDriveBadge');
       const refresh = document.getElementById('googleDriveRefresh');
@@ -311,10 +397,11 @@
 
       renderGoogleDriveAccounts(accounts, data.total);
       renderGoogleDriveTotalQuota(data.total);
+      loadGoogleDriveDistribution(accounts);
       document.getElementById('googleDriveConnectNew').hidden = false;
       const verificationFailed = Boolean(data.verification_failed || accounts.some(account => account.verificationFailed));
       setGoogleDriveNoticeState({ connected: true, failed: verificationFailed });
-      document.getElementById('googleDriveMessage').textContent = accounts.length + ' conta(s) do Google Drive conectada(s). Novos anexos usam a conta com mais espaço livre.';
+      updateGoogleDriveDistributionMessage(accounts.length);
       if (verificationFailed) {
         document.getElementById('googleDriveVerificationMessage').textContent = 'Algumas contas não puderam ser verificadas no momento. A autorização continua salva.';
       }
@@ -329,6 +416,7 @@
       accountsList.innerHTML = '';
       totalPanel.hidden = true;
       connectNew.hidden = true;
+      loadGoogleDriveDistribution([]);
       setGoogleDriveNoticeState({ configured: Boolean(data.configured), connected: false });
       if (!data.configured) {
         document.getElementById('googleDriveStatus').textContent = 'Integração indisponível';
