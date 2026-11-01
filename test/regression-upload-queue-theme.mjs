@@ -33,10 +33,10 @@ check(collectionUpload.includes('FileShareUploadQueue.run') && collectionUpload.
 check(library.includes('FileShareUploadQueue.run') && library.includes('putWithProgress'),
   'envios diretos à Biblioteca exibem progresso individual');
 check(dashboard.includes('/js/upload-queue.js?v=20261031b') && dashboard.includes('/css/upload-queue.css?v=20261031b') &&
-  dashboard.includes('/js/upload.js?v=20261031b') && dashboard.includes('/js/library.js?v=20261030e') && dashboard.includes('/css/collections.css?v=20261030d'),
+  dashboard.includes('/js/upload.js?v=20261031d') && dashboard.includes('/js/library.js?v=20261031b') && dashboard.includes('/css/collections.css?v=20261030d'),
   'dashboard carrega os assets atualizados de upload, fila e Coletas');
 check(sw.includes("'/js/upload-queue.js?v=20261031b'") && sw.includes("'/css/upload-queue.css?v=20261031b'") &&
-  sw.includes("'/js/upload.js?v=20261031b'") && sw.includes("'/js/library.js?v=20261030e'") && sw.includes("'/css/collections.css?v=20261030d'") &&
+  sw.includes("'/js/upload.js?v=20261031d'") && sw.includes("'/js/library.js?v=20261031b'") &&
   sw.includes("'/js/collection-upload.js?v=20261030c'") && sw.includes("'/js/collections.js?v=20261031a'"),
   'Service Worker inclui os assets atualizados de upload, fila e Coletas');
 check(queue.includes('IDLE_MINIMIZE_MS = 5000') && queue.includes('setTimeout(() => setOpen(false, true), IDLE_MINIMIZE_MS)') &&
@@ -49,7 +49,7 @@ check(server.includes('isBlobStoreSuspended') && server.includes('blobStoreSuspe
 check(upload.includes("'/api/dm/' + friendId + '/drive-upload-session'") &&
   upload.includes("'/api/dm/' + friendId + '/drive-files/register'") &&
   upload.includes('if (driveUploadEnabled) {') &&
-  upload.includes('await uploadDriveInChunks(prep.data, file, reportProgress, options.signal);'),
+  upload.includes('await uploadDriveInChunks(driveSession, file, reportProgress, options.signal,'),
   'conversas diretas reutilizam o envio resumível pelo Google Drive quando conectado');
 check(queue.includes("task.cancelable = task.cancelAllowed && phase === 'uploading' && task.canCancel") &&
   queue.includes("['failed', 'cancelled'].includes(task.state)"),
@@ -60,7 +60,7 @@ check(upload.includes('onPhase, onCancelable') && upload.includes("onPhase('fina
 const dmUpload = upload.slice(upload.indexOf('async function uploadToDmDirect'), upload.indexOf('async function uploadWithQueue'));
 check(dmUpload.includes('onCancelable(false);') && dmUpload.includes('onCancelable(true);') &&
   dmUpload.includes('await putWithProgress(prep.data.presignedUrl, file, reportProgress, options.signal);') &&
-  dmUpload.includes('await uploadDriveInChunks(prep.data, file, reportProgress, options.signal);') &&
+  dmUpload.includes('await uploadDriveInChunks(driveSession, file, reportProgress, options.signal,') &&
   dmUpload.indexOf('onCancelable(false);', dmUpload.indexOf('await putWithProgress')) < dmUpload.indexOf("onPhase('finalizing')", dmUpload.indexOf('await putWithProgress')) &&
   dmUpload.indexOf('onCancelable(false);', dmUpload.indexOf('await uploadDriveInChunks')) < dmUpload.indexOf("onPhase('finalizing')", dmUpload.indexOf('await uploadDriveInChunks')),
   'mensagem direta só permite cancelar o PUT direto e bloqueia cancelamento durante registro');

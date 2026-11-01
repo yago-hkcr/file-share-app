@@ -26,6 +26,15 @@
   let pendingLibraryEditor = null;
   let driveUploadEnabled = false;
   let blobUploadEnabled = false;
+  let driveTransportPromise = null;
+
+  function loadGoogleDriveTransport() {
+    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261031b').catch(error => {
+      driveTransportPromise = null;
+      throw error;
+    });
+    return driveTransportPromise;
+  }
 
   function normalize(value) {
     return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
@@ -363,28 +372,8 @@
       xhr.send(file);
     });
     const uploadDriveInChunks = async (session, file, onProgress, onSessionChange) => {
-      const chunkSize = Number(session.chunk_bytes) || 4 * 1024 * 1024;
-      let offset = 0;
-      while (offset < file.size) {
-        const end = Math.min(offset + chunkSize, file.size);
-        const response = await fetch('/api/google-drive/uploads/' + encodeURIComponent(session.upload_id) + '/chunk', {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/octet-stream', 'Content-Range': 'bytes ' + offset + '-' + (end - 1) + '/' + file.size },
-          body: file.slice(offset, end)
-        });
-        const result = await response.json().catch(() => ({}));
-        if (response.status === 409 && result.state === 'account_changed' && result.session && result.session.upload_id) {
-          session = result.session;
-          offset = 0;
-          if (typeof onSessionChange === 'function') onSessionChange(session);
-          if (onProgress) onProgress(0);
-          continue;
-        }
-        if (!response.ok) throw new Error(result.error || 'Falha ao enviar bloco ao Google Drive.');
-        offset = Number(result.next_offset);
-        if (!Number.isSafeInteger(offset) || offset <= 0 || offset > file.size) throw new Error('O Google Drive retornou uma posição de envio inválida.');
-        if (onProgress) onProgress(Math.round(offset / file.size * 100));
-      }
+      const transport = await loadGoogleDriveTransport();
+      await transport.uploadDriveFile(session, file, { onProgress, onSessionChange });
     };
     const postJson = async (url, body) => {
       const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
