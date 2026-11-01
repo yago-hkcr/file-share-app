@@ -25,8 +25,15 @@
   // Conversas diretas entre amigos.
   const dm = modal('directMessagesSheet', '<i class="fas fa-message"></i> Conversas', 'direct-sheet');
   dm.querySelector('.modal-content').classList.add('direct-modal-content');
-  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread" id="directThread"><div id="directDropNotice" class="direct-drop-notice" hidden><i class="fas fa-cloud-arrow-up" aria-hidden="true"></i><span>Solte para enviar na conversa</span></div><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><textarea id="directMessageInput" rows="1" placeholder="Mensagem…" aria-label="Mensagem. Enter envia; Shift+Enter quebra linha." title="Enter envia; Shift+Enter quebra linha" disabled required></textarea><input id="directFileInput" type="file" multiple hidden><input id="directOcrFileInput" type="file" accept="image/*" hidden><button class="btn btn-outline attach-button" type="button" id="directAttachFileBtn" title="Anexar arquivos" aria-label="Anexar arquivos"><i class="fas fa-paperclip"></i></button><button class="btn btn-outline ocr-button" type="button" id="directOcrButton" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
+  dm.querySelector('.modal-body').innerHTML = '<div class="direct-layout"><aside class="direct-sidebar"><div class="personal-subtitle">Amigos</div><div id="directFriendList" class="direct-friend-list"><div class="soc-empty">Carregando amigos…</div></div></aside><section class="direct-thread" id="directThread"><div id="directDropNotice" class="direct-drop-notice" hidden><i class="fas fa-cloud-arrow-up" aria-hidden="true"></i><span>Solte para enviar na conversa</span></div><div id="directThreadHeading" class="direct-thread-heading"><span class="soc-empty">Escolha um amigo para começar uma conversa.</span></div><div class="chat-conversation-controls direct-chat-controls" id="directChatControls" hidden><label for="directExpirationSetting"><i class="fas fa-hourglass-half" aria-hidden="true"></i> Apagar mensagens novas:</label><select id="directExpirationSetting" aria-label="Prazo de expiração das mensagens novas"><option value="0">Desativado</option><option value="86400">24 horas</option><option value="604800">7 dias</option><option value="7776000">90 dias</option></select><button class="btn btn-sm btn-outline btn-danger" id="clearDirectChatBtn" type="button"><i class="fas fa-trash-can" aria-hidden="true"></i> Limpar conversa</button><span id="directChatSettingStatus" class="chat-setting-status" role="status" aria-live="polite"></span></div><div id="directMessageList" class="direct-message-list" aria-live="polite"></div><div id="directReplyPreview" class="reply-preview" hidden><span><b>Respondendo a <span id="directReplyName"></span></b><span id="directReplyText"></span></span><button class="btn btn-outline" type="button" id="directReplyCancel" aria-label="Cancelar resposta"><i class="fas fa-xmark"></i></button></div><form id="directMessageForm" class="chat-compose direct-compose" autocomplete="off"><textarea id="directMessageInput" rows="1" placeholder="Mensagem…" aria-label="Mensagem. Enter envia; Shift+Enter quebra linha." title="Enter envia; Shift+Enter quebra linha" disabled required></textarea><input id="directFileInput" type="file" multiple hidden><input id="directOcrFileInput" type="file" accept="image/*" hidden><button class="btn btn-outline attach-button" type="button" id="directAttachFileBtn" title="Anexar arquivos" aria-label="Anexar arquivos"><i class="fas fa-paperclip"></i></button><button class="btn btn-outline ocr-button" type="button" id="directOcrButton" title="Copiar texto da imagem" aria-label="Copiar texto da imagem"><i class="fas fa-file-image"></i></button><button class="btn btn-primary chat-send" type="submit" aria-label="Enviar mensagem" disabled><i class="fas fa-paper-plane"></i></button></form></section></div>';
   let dmFriends = [], activeFriend = null, lastDmSig = '', dmReply = null, initialDm = true, dmAvatarsLoaded = false;
+  let dmFriendsRequest = null, dmSettingsRequest = null, dmSettingsRequestId = 0;
+  const dmMessageRequests = new Map();
+  const dmMessageVersions = new Map();
+  const dmClearingChats = new Set();
+  let dmPollBusy = false, lastDmFriendsRefresh = 0;
+  const directExpiryOptions = [0, 86400, 604800, 7776000];
+  const dmSavedSettings = new Map();
   const renderDmFriends = conversations => {
     const host = $('directFriendList');
     if (!conversations.length) { host.innerHTML = '<div class="soc-empty">Adicione alguém pelo botão Amigos para iniciar uma conversa.</div>'; return; }
@@ -34,9 +41,15 @@
   };
   async function loadDmFriends() {
     if (dm.style.display === 'none') return;
+    if (dmFriendsRequest) return dmFriendsRequest;
+    dmFriendsRequest = loadDmFriendsRequest();
+    try { await dmFriendsRequest; } finally { dmFriendsRequest = null; }
+  }
+  async function loadDmFriendsRequest() {
     try {
       const [friendData, conversations] = await Promise.all([api('/api/friends' + (dmAvatarsLoaded ? '' : '?avatars=1')), api('/api/dm/conversations')]);
       if (!dmAvatarsLoaded) dmAvatarsLoaded = true;
+      lastDmFriendsRefresh = Date.now();
       const cachedAvatars = new Map(dmFriends.map(friend => [friend.id, friend.avatar_image]));
       dmFriends = friendData.friends.map(friend => {
         const conversation = conversations.find(item => item.id === friend.user_id) || {};
@@ -57,9 +70,29 @@
   }
   function renderDmHeading() {
     const title = $('directThreadHeading'), input = $('directMessageInput'), sendButton = $('directMessageForm').querySelector('button[type=submit]');
-    if (!activeFriend) { title.innerHTML = '<span class="soc-empty">Escolha um amigo para começar uma conversa.</span>'; input.disabled = true; sendButton.disabled = true; return; }
+    const controls = $('directChatControls');
+    if (!activeFriend) { title.innerHTML = '<span class="soc-empty">Escolha um amigo para começar uma conversa.</span>'; input.disabled = true; sendButton.disabled = true; controls.hidden = true; return; }
     title.innerHTML = avatar(activeFriend) + '<span><b>' + escHtml(activeFriend.username) + '</b><small>Conversa privada entre amigos</small></span>';
+    controls.hidden = false;
     input.disabled = false; sendButton.disabled = false;
+  }
+  function loadDirectChatSettings(friendId) {
+    const requestId = ++dmSettingsRequestId;
+    $('directChatSettingStatus').textContent = 'Carregando configurações…';
+    dmSettingsRequest = api('/api/dm/' + encodeURIComponent(friendId) + '/chat-settings')
+      .then(settings => {
+        if (requestId !== dmSettingsRequestId || !activeFriend || activeFriend.id !== friendId) return;
+        const expiration = directExpiryOptions.includes(Number(settings.expiration_seconds)) ? Number(settings.expiration_seconds) : 0;
+        dmSavedSettings.set(friendId, expiration);
+        $('directExpirationSetting').value = String(expiration);
+        $('directExpirationSetting').dataset.savedValue = String(expiration);
+        $('directExpirationSetting').disabled = false;
+        $('directChatSettingStatus').textContent = '';
+      })
+      .catch(error => {
+        if (requestId === dmSettingsRequestId && activeFriend && activeFriend.id === friendId) { $('directExpirationSetting').disabled = false; $('directChatSettingStatus').textContent = error.message || 'Não foi possível carregar as configurações.'; }
+      });
+    return dmSettingsRequest;
   }
   function showDmReply() {
     const box = $('directReplyPreview'); if (!box) return;
@@ -95,15 +128,70 @@
   async function loadDmMessages() {
     if (!activeFriend || dm.style.display === 'none') return;
     const id = activeFriend.id;
-    try { const messages = await api('/api/dm/' + encodeURIComponent(id) + '/messages'); if (activeFriend && activeFriend.id === id) paintDmMessages(messages); }
-    catch (error) { $('directMessageList').innerHTML = '<div class="soc-empty">' + escHtml(error.message) + '</div>'; }
+    if (dmClearingChats.has(id)) return;
+    if (dmMessageRequests.has(id)) return dmMessageRequests.get(id);
+    const requestId = dmMessageVersions.get(id) || 0;
+    const request = api('/api/dm/' + encodeURIComponent(id) + '/messages')
+      .then(messages => { if (requestId === (dmMessageVersions.get(id) || 0) && activeFriend && activeFriend.id === id) paintDmMessages(messages); })
+      .catch(error => { if (requestId === (dmMessageVersions.get(id) || 0) && activeFriend && activeFriend.id === id) $('directMessageList').innerHTML = '<div class="soc-empty">' + escHtml(error.message) + '</div>'; })
+      .finally(() => { if (dmMessageRequests.get(id) === request) dmMessageRequests.delete(id); });
+    dmMessageRequests.set(id, request);
+    return request;
   }
   function selectFriend(id) {
+    dmSettingsRequestId++;
+    $('directExpirationSetting').disabled = false;
     activeFriend = dmFriends.find(friend => friend.id === id) || null; lastDmSig = ''; initialDm = true; clearDmReply(); renderDmFriends(dmFriends); renderDmHeading();
+    $('directChatSettingStatus').textContent = '';
+    $('directExpirationSetting').value = '0';
+    $('directExpirationSetting').dataset.savedValue = '0';
+    $('directExpirationSetting').disabled = true;
+    $('clearDirectChatBtn').disabled = !!(activeFriend && dmClearingChats.has(activeFriend.id));
+    if (activeFriend && dmClearingChats.has(activeFriend.id)) $('directChatSettingStatus').textContent = 'Limpando conversa…';
     $('directMessageList').innerHTML = '<div class="chat-empty"><i class="fas fa-spinner fa-spin"></i><span>Carregando conversa…</span></div>';
-    if (activeFriend) loadDmMessages();
+    if (activeFriend) { loadDirectChatSettings(activeFriend.id); loadDmMessages(); }
   }
   dm.querySelector('#directFriendList').addEventListener('click', event => { const row = event.target.closest('[data-user-id]'); if (row) selectFriend(row.dataset.userId); });
+  $('directExpirationSetting').addEventListener('change', async event => {
+    if (!activeFriend) return;
+    const friendId = activeFriend.id, requestId = ++dmSettingsRequestId, select = event.currentTarget, previous = String(dmSavedSettings.get(friendId) ?? 0);
+    const expirationSeconds = Number(select.value);
+    if (!directExpiryOptions.includes(expirationSeconds)) { select.value = previous; return; }
+    select.disabled = true; $('directChatSettingStatus').textContent = 'Salvando…';
+    try {
+      await post('/api/dm/' + encodeURIComponent(friendId) + '/chat-settings', { expiration_seconds: expirationSeconds }, 'PUT');
+      if (requestId !== dmSettingsRequestId || !activeFriend || activeFriend.id !== friendId) return;
+      dmSavedSettings.set(friendId, expirationSeconds);
+      select.dataset.savedValue = String(expirationSeconds);
+      $('directChatSettingStatus').textContent = 'Aplicado às mensagens novas.';
+    } catch (error) {
+      if (requestId === dmSettingsRequestId && activeFriend && activeFriend.id === friendId) { select.value = previous; $('directChatSettingStatus').textContent = error.message || 'Não foi possível salvar.'; }
+    } finally { if (requestId === dmSettingsRequestId && activeFriend && activeFriend.id === friendId) select.disabled = false; }
+  });
+  $('clearDirectChatBtn').addEventListener('click', async () => {
+    if (!activeFriend || dmClearingChats.has(activeFriend.id)) return;
+    const friendId = activeFriend.id, friendName = activeFriend.username;
+    if (!confirm('Limpar esta conversa com ' + friendName + ' para você e para a outra pessoa? As mensagens e os anexos do chat serão removidos.')) return;
+    const requestId = (dmMessageVersions.get(friendId) || 0) + 1;
+    dmMessageVersions.set(friendId, requestId);
+    dmMessageRequests.delete(friendId);
+    dmClearingChats.add(friendId);
+    const button = $('clearDirectChatBtn'); button.disabled = true; $('directChatSettingStatus').textContent = 'Limpando conversa…';
+    try {
+      const result = await api('/api/dm/' + encodeURIComponent(friendId) + '/messages', { method: 'DELETE' });
+      if (!activeFriend || activeFriend.id !== friendId) return;
+      lastDmSig = ''; initialDm = true; clearDmReply(); $('directMessageList').innerHTML = '<div class="chat-empty"><i class="fas fa-comment-dots"></i><span>Esta conversa está começando. Envie a primeira mensagem.</span></div>';
+      $('directChatSettingStatus').textContent = 'Conversa limpa (' + Number(result.messages || 0) + ' mensagens, ' + Number(result.files || 0) + ' anexos).' + (result.drivePending ? ' ' + Number(result.drivePending) + ' arquivo(s) aguardam exclusão no Google Drive.' : '');
+      await loadDmFriends();
+    } catch (error) { $('directChatSettingStatus').textContent = error.message || 'Não foi possível limpar a conversa.'; toast(error.message || 'Não foi possível limpar a conversa.', 'error'); }
+    finally {
+      dmClearingChats.delete(friendId);
+      if (activeFriend && activeFriend.id === friendId && requestId === dmMessageVersions.get(friendId)) {
+        button.disabled = false;
+        loadDmMessages();
+      }
+    }
+  });
   dm.querySelector('#directMessageList').addEventListener('click', event => {
     const sendText = event.target.closest('[data-send-text-id]');
     if (sendText) {
@@ -448,6 +536,16 @@
   $('chooseAvatar').addEventListener('click', () => $('avatarFile').click());
   document.addEventListener('keydown', event => { if (event.key === 'Escape') [dm, notices, settings].forEach(item => { item.style.display = 'none'; }); });
 
-  loadPreferences(); pollNotices();
-  setInterval(() => { pollNotices(); if (dm.style.display !== 'none') { loadDmFriends(); loadDmMessages(); } }, 5000);
+  async function pollPersonalPanels() {
+    if (document.hidden || dmPollBusy) return;
+    dmPollBusy = true;
+    try {
+      await pollNotices();
+      if (dm.style.display === 'none') return;
+      await loadDmMessages();
+      if (Date.now() - lastDmFriendsRefresh >= 15000) await loadDmFriends();
+    } finally { dmPollBusy = false; }
+  }
+  loadPreferences();
+  setInterval(pollPersonalPanels, 2000);
 })();

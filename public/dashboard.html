@@ -18,7 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014o">
   <link rel="stylesheet" href="/css/style.css?v=20261014c"><link rel="stylesheet" href="/css/onboarding.css?v=20261014c">
-  <link rel="stylesheet" href="/css/social.css?v=20261031a">
+  <link rel="stylesheet" href="/css/social.css?v=20261101a">
   <link rel="stylesheet" href="/css/upload-queue.css?v=20261031b">
   <link rel="stylesheet" href="/css/collections.css?v=20261030d">
   <link rel="stylesheet" href="/css/library.css?v=20261026a">
@@ -252,6 +252,14 @@
         <div class="section-title"><i class="fas fa-folder-open"></i> Arquivos <span id="fileCount" class="section-count"></span></div>
         <div id="roomFiles" class="file-list"></div>
         <div class="section-title"><i class="fas fa-comments"></i> Chat da sala</div>
+        <div class="chat-conversation-controls" id="roomChatControls">
+          <label for="roomExpirationSetting"><i class="fas fa-hourglass-half" aria-hidden="true"></i> Apagar mensagens novas:</label>
+          <select id="roomExpirationSetting" aria-label="Prazo de expiração das mensagens novas">
+            <option value="0">Desativado</option><option value="86400">24 horas</option><option value="604800">7 dias</option><option value="7776000">90 dias</option>
+          </select>
+          <button class="btn btn-sm btn-outline btn-danger" id="clearRoomChatBtn" type="button"><i class="fas fa-trash-can" aria-hidden="true"></i> Limpar chat</button>
+          <span id="roomChatSettingStatus" class="chat-setting-status" role="status" aria-live="polite"></span>
+        </div>
         <div id="typingIndicator" class="typing-indicator" aria-live="polite" aria-atomic="true" hidden></div>
         <div class="chat-box">
           <div id="chatList" class="chat-list" role="log" aria-live="polite" aria-relevant="additions"></div>
@@ -404,6 +412,8 @@
       if (currentRoom && currentRoom !== id) stopRoomTyping();
       if (typingTimer) clearTimeout(typingTimer); typingTimer = null; typingActive = false; typingRoomId = null; typingLastSentAt = 0; lastTypingSig = '';
       currentRoom = id; lastFilesSig = ''; lastChatSig = ''; chatSeenIds = new Set();
+      roomMessagesRequestId++; roomMessagesRequest = null; roomChatSettingsRequestId++; roomSettingsSaveId++;
+      document.getElementById('roomExpirationSetting').disabled = false;
       cancelRoomReply();
       const modal = document.getElementById('roomModal'), content = modal.querySelector('.modal-content');
       const rect = sourceCard && sourceCard.getBoundingClientRect ? sourceCard.getBoundingClientRect() : null;
@@ -413,17 +423,71 @@
       const canMorph = !!(roomOrigin && content.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches);
       if (canMorph) modal.classList.add('room-morph-active');
       document.getElementById('roomModalTitle').textContent = name; modal.style.display = 'flex';
+      document.getElementById('roomExpirationSetting').value = '0';
+      document.getElementById('roomExpirationSetting').dataset.savedValue = '0';
+      document.getElementById('roomChatSettingStatus').textContent = 'Carregando configurações…';
+      loadRoomChatSettings(id);
       const lb = document.getElementById('leaveRoomBtn'); if (lb) lb.style.display = (me && me.role === 'admin') ? 'none' : '';
       if (canMorph) requestAnimationFrame(() => { if (token === roomTransition && currentRoom === id) playRoomMorph(roomOrigin, content.getBoundingClientRect(), token, false); });
       try { await Promise.all([loadFiles(), loadMessages(), loadTyping()]); } catch (error) { toast(error.message, 'error'); }
     }
     async function leaveCurrentRoom() { if (!currentRoom) return; if (!confirm('Sair desta sala?')) return; try { await api(`/api/rooms/${currentRoom}/leave`, { method:'POST' }); toast('Você saiu da sala'); closeRoom(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
+    let roomChatSettingsRequestId = 0, roomMessagesRequest = null, roomMessagesRequestId = 0, roomSettingsSaveId = 0;
+    const roomMessageRequests = new Map();
+    const roomExpirationOptions = [0, 86400, 604800, 7776000];
+    async function loadRoomChatSettings(roomId) {
+      const requestId = ++roomChatSettingsRequestId, select = document.getElementById('roomExpirationSetting');
+      try {
+        const settings = await api('/api/rooms/' + encodeURIComponent(roomId) + '/chat-settings');
+        if (requestId !== roomChatSettingsRequestId || roomId !== currentRoom) return;
+        select.value = String(roomExpirationOptions.includes(Number(settings.expiration_seconds)) ? Number(settings.expiration_seconds) : 0);
+        select.dataset.savedValue = select.value;
+        document.getElementById('roomChatSettingStatus').textContent = '';
+      } catch (error) {
+        if (requestId === roomChatSettingsRequestId && roomId === currentRoom) document.getElementById('roomChatSettingStatus').textContent = error.message || 'Não foi possível carregar as configurações.';
+      }
+    }
+    document.getElementById('roomExpirationSetting').addEventListener('change', async event => {
+      const roomId = currentRoom, select = event.currentTarget;
+      if (!roomId) return;
+      const requestId = ++roomSettingsSaveId, expirationSeconds = Number(select.value), previous = select.dataset.savedValue || '0';
+      if (!roomExpirationOptions.includes(expirationSeconds)) { select.value = previous; return; }
+      select.disabled = true; document.getElementById('roomChatSettingStatus').textContent = 'Salvando…';
+      try {
+        await api('/api/rooms/' + encodeURIComponent(roomId) + '/chat-settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ expiration_seconds:expirationSeconds }) });
+        if (requestId !== roomSettingsSaveId || roomId !== currentRoom) return;
+        select.dataset.savedValue = String(expirationSeconds);
+        document.getElementById('roomChatSettingStatus').textContent = 'Aplicado às mensagens novas.';
+      } catch (error) {
+        if (requestId === roomSettingsSaveId && roomId === currentRoom) { select.value = previous; document.getElementById('roomChatSettingStatus').textContent = error.message || 'Não foi possível salvar.'; }
+      } finally { if (requestId === roomSettingsSaveId && roomId === currentRoom) select.disabled = false; }
+    });
+    document.getElementById('clearRoomChatBtn').addEventListener('click', async () => {
+      const roomId = currentRoom;
+      if (!roomId || !confirm('Limpar todas as mensagens e anexos do chat desta sala para todos os participantes? Os arquivos compartilhados fora do chat serão mantidos.')) return;
+      const requestId = ++roomMessagesRequestId, button = document.getElementById('clearRoomChatBtn');
+      roomMessagesRequest = null;
+      button.disabled = true; document.getElementById('roomChatSettingStatus').textContent = 'Limpando chat…';
+      try {
+        const result = await api('/api/rooms/' + encodeURIComponent(roomId) + '/messages', { method:'DELETE' });
+        if (roomId !== currentRoom || requestId !== roomMessagesRequestId) return;
+        lastChatSig = ''; chatSeenIds = new Set();
+        document.getElementById('chatList').innerHTML = '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
+        cancelRoomReply();
+        document.getElementById('roomChatSettingStatus').textContent = 'Chat limpo (' + Number(result.messages || 0) + ' mensagens, ' + Number(result.files || 0) + ' anexos).' + (result.drivePending ? ' ' + Number(result.drivePending) + ' arquivo(s) aguardam exclusão no Google Drive.' : '');
+      } catch (error) {
+        document.getElementById('roomChatSettingStatus').textContent = error.message || 'Não foi possível limpar o chat.';
+        toast(error.message || 'Não foi possível limpar o chat.', 'error');
+      } finally { if (roomId === currentRoom && requestId === roomMessagesRequestId) button.disabled = false; }
+    });
     document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (document.querySelector('.rename-modal')) return; ['createRoomModal','passwordModal'].forEach(id => { const m = document.getElementById(id); if (m && m.style.display !== 'none') m.style.display = 'none'; }); if (currentRoom) closeRoom(); });
     function closeRoom() {
       const modal = document.getElementById('roomModal'), content = modal.querySelector('.modal-content');
       if (modal.style.display === 'none' && !currentRoom) return; if (roomClosePending) return;
       const startRect = content.getBoundingClientRect(), closingRoom = currentRoom, destination = roomOrigin;
       if (closingRoom) stopRoomTyping(closingRoom); currentRoom = null; filesRequestId++; lastRoomsSig = '';
+      roomMessagesRequestId++; roomMessagesRequest = null; roomChatSettingsRequestId++; roomSettingsSaveId++;
+      document.getElementById('roomExpirationSetting').disabled = false;
       const token = ++roomTransition; cancelRoomAnimation();
       const finish = () => { if (token !== roomTransition) return; modal.style.display = 'none'; modal.classList.remove('room-morph-active'); content.style.transformOrigin = ''; content.style.transform = ''; roomOrigin = null; roomClosePending = false; };
       if (destination && playRoomMorph(startRect, destination, token, true, finish)) roomClosePending = true; else finish();
@@ -502,7 +566,10 @@
     }
     async function loadMessages(forceBottom = false) {
       const roomId = currentRoom; if (!roomId) return;
-      const messages = await api('/api/rooms/' + roomId + '/messages'); if (roomId !== currentRoom) return;
+      if (roomMessageRequests.has(roomId)) return roomMessageRequests.get(roomId);
+      const requestId = ++roomMessagesRequestId;
+      const request = api('/api/rooms/' + encodeURIComponent(roomId) + '/messages').then(messages => {
+      if (requestId !== roomMessagesRequestId || roomId !== currentRoom) return;
       const sig = JSON.stringify(messages); if (sig === lastChatSig) return;
       const first = lastChatSig === ''; lastChatSig = sig;
       const box = document.getElementById('chatList');
@@ -521,6 +588,10 @@
       }).join('') : '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
       window.setMessageTextExportBatch('room', messages);
       if (first || forceBottom || atBottom) scroller.scrollTop = scroller.scrollHeight;
+      }).finally(() => { if (roomMessageRequests.get(roomId) === request) roomMessageRequests.delete(roomId); if (roomMessagesRequest === request) roomMessagesRequest = null; });
+      roomMessageRequests.set(roomId, request);
+      roomMessagesRequest = request;
+      return roomMessagesRequest;
     }
     function setRoomReply(id, name, content) {
       roomReplyTo = { id, name, content };
@@ -716,17 +787,22 @@
 
     // Atualização automática a cada 2 s (sem recarregar a página, para não atrapalhar quem está digitando)
     let refreshing = false;
+    let refreshSeconds = 2, lastRoomMessagesRefresh = 0, lastRoomFilesRefresh = 0, lastRoomTypingRefresh = 0, lastRoomsRefresh = 0;
     async function autoRefresh() {
       if (document.hidden || refreshing) return;
       refreshing = true;
       try {
-        if (currentRoom) await Promise.all([loadFiles(), loadMessages(), loadTyping()]);
-        else await loadRooms();
+        const now = Date.now();
+        if (currentRoom) {
+          if (now - lastRoomMessagesRefresh >= refreshSeconds * 1000) { lastRoomMessagesRefresh = now; await loadMessages(); }
+          if (now - lastRoomTypingRefresh >= 5000) { lastRoomTypingRefresh = now; await loadTyping(); }
+          if (now - lastRoomFilesRefresh >= 10000) { lastRoomFilesRefresh = now; await loadFiles(); }
+        } else if (now - lastRoomsRefresh >= 15000) { lastRoomsRefresh = now; await loadRooms(); }
       } catch (error) { /* tenta de novo no próximo ciclo */ }
       finally { refreshing = false; }
     }
-    window.dashboardRefreshTimer = setInterval(autoRefresh, 2000);
-    window.setDashboardRefresh = seconds => { clearInterval(window.dashboardRefreshTimer); window.dashboardRefreshTimer = setInterval(autoRefresh, Math.max(2, Number(seconds) || 2) * 1000); };
+    window.dashboardRefreshTimer = setInterval(autoRefresh, 1000);
+    window.setDashboardRefresh = seconds => { refreshSeconds = Math.max(2, Number(seconds) || 2); };
     document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
     window.addEventListener('fileshare:background-upload-complete', () => {
       loadRooms();
@@ -734,7 +810,7 @@
     });
   </script>
   <script src="/js/social.js?v=20261014o"></script>
-  <script src="/js/personal.js?v=20261031a"></script>
+  <script src="/js/personal.js?v=20261101a"></script>
   <script src="/js/cursor.js?v=20261014o"></script>
   <script src="/js/preview.js?v=20261014o"></script>
   <script src="/js/collections.js?v=20261031a"></script>
@@ -744,7 +820,7 @@
 <script src="/js/cyber.js?v=20261014o"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js?v=20261030c').then(reg => {
+    navigator.serviceWorker.register('/sw.js?v=20261101a').then(reg => {
       console.log('[SW] Registrado:', reg.scope);
     }).catch(err => console.warn('[SW] Falha ao registrar:', err));
   }
