@@ -16,6 +16,11 @@
 .storage-status-badge.is-connected.is-stale{color:#a16207;background:rgba(234,179,8,.09);border-color:rgba(234,179,8,.3)}
 .storage-status-badge.is-warning{color:#a16207;background:rgba(234,179,8,.09);border-color:rgba(234,179,8,.3)}.storage-status-badge.is-error{color:#b42318;background:rgba(220,38,38,.06);border-color:rgba(220,38,38,.2)}
 .storage-description{max-width:680px;margin:20px 0 22px;color:var(--storage-muted);font-size:14px;line-height:1.7}
+.storage-distribution-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.8fr) minmax(200px,.7fr);align-items:center;gap:10px 14px;margin:0 0 22px;padding:16px;border:1px solid var(--storage-line);background:var(--storage-panel)}
+.storage-distribution-controls .storage-description{margin:0}
+.storage-distribution-controls select{min-width:0;min-height:42px;padding:8px 12px;background:var(--storage-panel);color:var(--storage-ink)}
+.storage-distribution-controls select[hidden]{display:none}
+#googleDriveDistributionStatus{grid-column:1/-1;margin:0;font-size:12px}
 .storage-account{gap:14px;margin:0 0 24px;padding:15px 17px;border:1px solid var(--storage-line);background:var(--storage-panel)}
 .storage-avatar{display:grid;width:44px;height:44px;flex:0 0 44px;overflow:hidden;place-items:center;border-radius:50%;background:rgba(34,197,94,.12);color:#15803d;font-size:17px}
 .storage-avatar img{width:100%;height:100%;object-fit:cover}.storage-account-copy{display:grid;gap:3px;min-width:0}.storage-account-copy strong{overflow:hidden;color:var(--storage-ink);text-overflow:ellipsis}.storage-account-copy>span:last-child{color:var(--storage-muted);font-size:12px;overflow-wrap:anywhere}
@@ -55,5 +60,6 @@ html[data-theme="dark"] .storage-account-card-email{color:#a5b1a9}
 html[data-theme="dark"] .storage-account-card-status{color:#4ade80}
 html[data-theme="dark"] .storage-account-card-remove:hover{background:rgba(248,113,113,.15)}
 @media(max-width:760px){.storage-account-card{grid-template-columns:minmax(0,1fr)}.storage-account-card-header{padding-bottom:10px}.storage-account-card-quota{padding:4px 18px 16px}.storage-account-card-remove{margin-left:auto}}
+@media(max-width:760px){.storage-distribution-controls{grid-template-columns:1fr}.storage-distribution-controls select{width:100%}.storage-distribution-controls select[hidden]{display:none}}
 @media(max-width:650px){.storage-heading>div{min-width:0}.storage-account-card-header{gap:10px}.storage-account-card-quota{padding-right:14px;padding-left:14px}.storage-account-card-quota-row{font-size:12px}}
 @media(max-width:380px){.storage-account-card-header{padding-right:12px;padding-left:12px}.storage-account-card-avatar{width:38px;height:38px;flex-basis:38px}.storage-account-card-quota-row{gap:6px;font-size:11px}}

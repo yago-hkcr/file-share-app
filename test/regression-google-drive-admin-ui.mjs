@@ -9,18 +9,19 @@ const start = html.indexOf('    // Tabs');
 const end = html.indexOf('    // Stats', start);
 assert.ok(start >= 0 && end > start, 'handlers do painel de armazenamento devem existir');
 const setupStart = html.indexOf('    const DRIVE_STATUS_STORAGE_KEY');
-const statusStart = html.indexOf('function formatDriveBytes(');
+const formatStart = html.indexOf('function formatDriveBytes(');
 const setupSource = html.slice(setupStart, start);
-const statusSource = html.slice(statusStart, end);
+const statusSource = html.slice(formatStart, start);
 const source = html.slice(start, end);
 
 function createElement() {
   return {
     hidden: false, disabled: false, textContent: '', innerHTML: '', className: '',
     href: '', src: '', attributes: {}, children: [], style: {},
+    options: [], value: '',
     classList: { active: false, contains(name) { return name === 'active' && this.active; }, toggle(name, enabled) { this[name] = enabled; } },
-    replaceChildren(...children) { this.children = children; },
-    appendChild(child) { this.children.push(child); return child; },
+    replaceChildren(...children) { this.children = children; if (this.tagName === 'select') this.options = children; },
+    appendChild(child) { this.children.push(child); if (this.tagName === 'select') this.options.push(child); return child; },
     setAttribute(name, value) { this.attributes[name] = value; },
     querySelector(selector) { return selector === 'button' ? this.children.find(child => child.tagName === 'BUTTON') || null : null; },
     focus() { this.focused = true; },
@@ -34,7 +35,8 @@ async function createHarness(payload, fetchError = null, cachedStatus = null) {
     'googleDriveRefresh', 'googleDriveConnectNew', 'googleDriveAccountsList', 'googleDriveTotalQuota',
     'googleDriveTotalQuotaUsed', 'googleDriveTotalQuotaFree', 'googleDriveTotalQuotaLimit', 'googleDriveTotalQuotaPercent',
     'googleDriveTotalQuotaBar', 'googleDriveAccountCount', 'googleDriveVerificationError',
-    'googleDriveMessage', 'googleDriveVerificationMessage', 'googleDriveAutoUpdate', 'tab-storage', 'notifPanel', 'notifBtn', 'notifBadge', 'notifList',
+    'googleDriveMessage', 'googleDriveVerificationMessage', 'googleDriveAutoUpdate', 'googleDriveDistributionMode',
+    'googleDrivePreferredAccount', 'googleDriveDistributionStatus', 'tab-storage', 'notifPanel', 'notifBtn', 'notifBadge', 'notifList',
     'tab-users', 'tab-rooms', 'markNotifsRead'
   ];
   const elements = Object.fromEntries(ids.map(id => [id, createElement()]));
@@ -52,6 +54,7 @@ async function createHarness(payload, fetchError = null, cachedStatus = null) {
     querySelectorAll: selector => selector === '#googleDriveTotalQuota .storage-progress-track' ? [storageTrack] : [],
     createElement: tagName => {
       const element = { ...createElement(), tagName };
+      if (tagName === 'select') element.options = [];
       if (tagName === 'div') Object.defineProperty(element, 'innerHTML', {
         get() {
           return this._innerHTML ?? String(this.textContent).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -77,8 +80,9 @@ async function createHarness(payload, fetchError = null, cachedStatus = null) {
     showToast: () => {},
     fetch: async (url, options = {}) => {
       requests.push({ url, options });
-      if (fetchError) throw fetchError;
-      return { status: 200, ok: true, json: async () => payload };
+      if (fetchError && url !== '/api/admin/google-drive/distribution') throw fetchError;
+      return { status: 200, ok: true, json: async () => url === '/api/admin/google-drive/distribution'
+        ? { mode: 'most_free', preferredAccountId: '' } : payload };
     }
   };
   vm.runInNewContext(`let driveStatusRequest = null, driveStatusSequence = 0, lastDriveStatus = null;\n${setupSource}\n${statusSource}\n${source}\nconst saved = restoreDriveStatusFromStorage(); if (saved) { lastDriveStatus = saved; renderGoogleDriveStatus(saved); } loadGoogleDriveStatus();`, context);
@@ -99,6 +103,8 @@ assert.equal(connected.elements.googleDriveTotalQuotaFree.textContent, '700 B');
 assert.equal(connected.elements.googleDriveTotalQuotaPercent.textContent, '30% usado');
 assert.equal(connected.progressTrack.attributes['aria-valuenow'], '30');
 assert.equal(connected.elements.googleDriveConnectNew.hidden, false, 'permite conectar mais contas');
+assert.equal(connected.elements.googleDriveDistributionMode.disabled, false);
+assert.equal(connected.elements.googleDriveMessage.textContent.includes('Mais espaço livre'), true);
 
 const noQuota = await createHarness({
   configured: true, connected: true, verified: true,
