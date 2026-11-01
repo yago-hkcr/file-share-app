@@ -30,6 +30,7 @@ const {
 const { createGoogleDriveDeletionQueue } = require('./lib/google-drive-deletion');
 const { GOOGLE_DRIVE_DISTRIBUTION_MODES, isGoogleDriveQuotaError, selectGoogleDriveCandidate } = require('./lib/google-drive-distribution');
 const { encryptSecret, decryptSecret } = require('./lib/google-drive-oauth');
+const { DISAPPEARING_MESSAGE_DURATIONS, createChatMessageCleanup, directConversationKey, expirationTimestamp } = require('./lib/chat-messages');
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
 
@@ -125,19 +126,26 @@ async function isGoogleDriveStoredFile(storedName) {
 }
 async function deleteBlobs(pathnames) {
   const list = pathnames.filter(isBlobPath);
+  let blobDeleted = 0;
+  let blobFailed = false;
   if (list.length) {
     try {
       const { del } = await blobSdk();
       await del(list);
+      blobDeleted = list.length;
     } catch (e) {
       console.error('Falha ao apagar do Blob:', e && e.message);
+      blobFailed = true;
     }
   }
   const driveFiles = [];
   for (const storedName of pathnames) {
-    if (await isGoogleDriveStoredFile(storedName)) driveFiles.push(storedName);
+    if (!isBlobPath(storedName) && await isGoogleDriveStoredFile(storedName)) driveFiles.push(storedName);
   }
-  if (driveFiles.length) await googleDriveDeletionQueue().enqueueAndDelete(driveFiles);
+  const driveResult = driveFiles.length && !blobFailed
+    ? await googleDriveDeletionQueue().enqueueAndDelete(driveFiles)
+    : { deleted: 0, pending: 0 };
+  return { deleted: blobDeleted + Number(driveResult.deleted || 0), pending: Number(driveResult.pending || 0), failed: blobFailed };
 }
 
 const googleDriveStorageCache = new Map();
@@ -332,7 +340,25 @@ async function retryPendingGoogleDriveDeletions() {
   lastGoogleDriveDeletionRetry = Date.now();
   const staged = await retryDeletingCollectionUploads(10);
   const queued = await googleDriveDeletionQueue().retryPending(10);
+  try {
+    const expired = await chatMessageCleanup().purgeExpiredMessages(25);
+    if (expired.messages && console.info) console.info(`Mensagens temporárias expiradas: ${expired.messages} removida(s), ${expired.drivePending} arquivo(s) do Google Drive pendente(s).`);
+  } catch (error) {
+    console.error('Falha ao remover mensagens temporárias expiradas:', error && error.message);
+  }
   return { deleted: staged.deleted + queued.deleted, pending: staged.pending + queued.pending };
+}
+
+let cachedChatMessageCleanup = null;
+function chatMessageCleanup() {
+  if (!cachedChatMessageCleanup) {
+    cachedChatMessageCleanup = createChatMessageCleanup({
+      query: q,
+      transaction: withTransaction,
+      deleteBlobs: (paths, options) => deleteBlobs(paths, options)
+    });
+  }
+  return cachedChatMessageCleanup;
 }
 
 async function createDriveUploadSession({ userId, destinationType, roomId = null, spaceId = null, bookcaseId = null, name, size, mimeType, excludeAccountIds = [] }) {
@@ -510,6 +536,32 @@ async function q(text, params = []) {
   if (!sql) throw new Error('Banco de dados não configurado (DATABASE_URL ausente)');
   const result = await sql.query(text, params);
   return result.rows;
+}
+async function withTransaction(work) {
+  if (typeof work !== 'function') throw new TypeError('A operação da transação é obrigatória.');
+  if (LOCAL_MODE) {
+    const db = await localDatabase();
+    return db.transaction(async tx => work(async (text, params = []) => {
+      const result = await tx.query(text, params);
+      return result.rows;
+    }));
+  }
+  if (!sql) throw new Error('Banco de dados não configurado (DATABASE_URL ausente)');
+  const client = await sql.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work(async (text, params = []) => {
+      const response = await client.query(text, params);
+      return response.rows;
+    });
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 async function one(text, params = []) {
   const rows = await q(text, params);
@@ -870,7 +922,8 @@ async function createTables() {
       user_id TEXT NOT NULL,
       content TEXT NOT NULL,
       reply_to_id TEXT,
-      created_at TEXT
+      created_at TEXT,
+      expires_at TEXT
     )`),
     q(`CREATE TABLE IF NOT EXISTS direct_messages (
       id TEXT PRIMARY KEY,
@@ -878,7 +931,13 @@ async function createTables() {
       recipient_id TEXT NOT NULL,
       content TEXT NOT NULL,
       reply_to_id TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      expires_at TEXT
+    )`),
+    q(`CREATE TABLE IF NOT EXISTS chat_settings (
+      conversation_id TEXT PRIMARY KEY,
+      expiration_seconds INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
     )`),
     q(`CREATE TABLE IF NOT EXISTS user_preferences (
       user_id TEXT PRIMARY KEY,
@@ -967,7 +1026,11 @@ async function createTables() {
   await migratePersonalLibraryHierarchy();
   await q('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS expires_at TEXT');
   await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_change_required INTEGER DEFAULT 0');
-await q('ALTER TABLE files ADD COLUMN IF NOT EXISTS chat_only INTEGER DEFAULT 0');
+  await q('ALTER TABLE files ADD COLUMN IF NOT EXISTS chat_only INTEGER DEFAULT 0');
+  await q('ALTER TABLE messages ADD COLUMN IF NOT EXISTS expires_at TEXT');
+  await q('ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS expires_at TEXT');
+  await q('CREATE INDEX IF NOT EXISTS idx_messages_expires_at ON messages (expires_at) WHERE expires_at IS NOT NULL');
+  await q('CREATE INDEX IF NOT EXISTS idx_direct_messages_expires_at ON direct_messages (expires_at) WHERE expires_at IS NOT NULL');
   await q(`CREATE TABLE IF NOT EXISTS file_collections (
     id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, room_id TEXT, destination_type TEXT DEFAULT 'room',
     library_space_id TEXT, library_bookcase_id TEXT, title TEXT NOT NULL,
@@ -2142,7 +2205,7 @@ app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const hasStoredAccounts = await hasGoogleDriveAccounts();
   if (!configured || !hasStoredAccounts) {
-    return res.json({ configured, connected, verified: false, checked_at: null, accounts: [], total: null });
+    return res.json({ configured, connected, verified: false, checked_at: null, accounts: [], storage_quota: null, total: null });
   }
   try {
     // Atualiza a quota conta a conta; uma falha isolada não esconde as demais.
@@ -4333,24 +4396,60 @@ app.post('/api/rooms/:id/typing', asMember, wrap(async (req, res) => {
 // =================== MENSAGENS ===================
 app.get('/api/rooms/:id/messages', requireAuth, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Sem permissão' });
+  await chatMessageCleanup().purgeExpiredMessages(25);
   const msgs = await q(`SELECT m.*, u.username, u.avatar_color, u.avatar_image, u.role, parent.content AS reply_content, parent_user.username AS reply_username
-    FROM messages m JOIN users u ON m.user_id = u.id LEFT JOIN messages parent ON parent.id = m.reply_to_id
-    LEFT JOIN users parent_user ON parent_user.id = parent.user_id WHERE m.room_id = $1 ORDER BY m.created_at DESC LIMIT 200`, [req.params.id]);
+    FROM messages m JOIN users u ON m.user_id = u.id LEFT JOIN messages parent
+      ON parent.id = m.reply_to_id AND (parent.expires_at IS NULL OR parent.expires_at > $2)
+    LEFT JOIN users parent_user ON parent_user.id = parent.user_id
+    WHERE m.room_id = $1 AND (m.expires_at IS NULL OR m.expires_at > $2)
+    ORDER BY m.created_at DESC LIMIT 200`, [req.params.id, ts()]);
   res.json(msgs.reverse());
 }));
 
 app.post('/api/rooms/:id/messages', asMember, wrap(async (req, res) => {
   if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Entre na sala para enviar mensagens' });
+  await chatMessageCleanup().purgeExpiredMessages(25);
   const content = messageContent(req.body);
   if (!content.trim()) return res.status(400).json({ error: 'Mensagem vazia' });
   const replyTo = String((req.body && req.body.reply_to_id) || '').trim() || null;
-  if (replyTo && !(await one('SELECT id FROM messages WHERE id = $1 AND room_id = $2', [replyTo, req.params.id]))) return res.status(400).json({ error: 'A mensagem escolhida para responder não está mais disponível.' });
+  if (replyTo && !(await one(`SELECT id FROM messages WHERE id = $1 AND room_id = $2
+    AND (expires_at IS NULL OR expires_at > $3)`, [replyTo, req.params.id, ts()]))) return res.status(400).json({ error: 'A mensagem escolhida para responder não está mais disponível.' });
+  const settings = await one('SELECT expiration_seconds FROM chat_settings WHERE conversation_id = $1', [req.params.id]);
+  const expiresAt = expirationTimestamp(settings && settings.expiration_seconds);
   const id = uuidv4();
-  await q('INSERT INTO messages (id, room_id, user_id, content, reply_to_id, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-    [id, req.params.id, req.user.id, content, replyTo, ts()]);
+  await q('INSERT INTO messages (id, room_id, user_id, content, reply_to_id, created_at, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [id, req.params.id, req.user.id, content, replyTo, ts(), expiresAt]);
   res.json(await one(`SELECT m.*, u.username, u.avatar_color, u.role, parent.content AS reply_content, parent_user.username AS reply_username
-    FROM messages m JOIN users u ON m.user_id = u.id LEFT JOIN messages parent ON parent.id = m.reply_to_id
-    LEFT JOIN users parent_user ON parent_user.id = parent.user_id WHERE m.id = $1`, [id]));
+    FROM messages m JOIN users u ON m.user_id = u.id LEFT JOIN messages parent
+      ON parent.id = m.reply_to_id AND (parent.expires_at IS NULL OR parent.expires_at > $2)
+    LEFT JOIN users parent_user ON parent_user.id = parent.user_id WHERE m.id = $1`, [id, ts()]));
+}));
+
+app.get('/api/rooms/:id/chat-settings', asMember, wrap(async (req, res) => {
+  if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Entre na sala para ver as configurações da conversa.' });
+  const settings = await one('SELECT expiration_seconds FROM chat_settings WHERE conversation_id = $1', [req.params.id]);
+  res.json({ expiration_seconds: Number(settings && settings.expiration_seconds) || 0 });
+}));
+
+app.put('/api/rooms/:id/chat-settings', asMember, wrap(async (req, res) => {
+  if (!(await canUseRoom(req.user, req.params.id))) return res.status(403).json({ error: 'Entre na sala para alterar as configurações da conversa.' });
+  const expirationSeconds = Number(req.body && req.body.expiration_seconds);
+  if (!DISAPPEARING_MESSAGE_DURATIONS.includes(expirationSeconds)) return res.status(400).json({ error: 'Escolha uma duração válida para as mensagens temporárias.' });
+  await q(`INSERT INTO chat_settings (conversation_id, expiration_seconds, updated_at) VALUES ($1,$2,$3)
+    ON CONFLICT (conversation_id) DO UPDATE SET expiration_seconds = EXCLUDED.expiration_seconds, updated_at = EXCLUDED.updated_at`,
+    [req.params.id, expirationSeconds, ts()]);
+  res.json({ success: true, expiration_seconds: expirationSeconds });
+}));
+
+app.delete('/api/rooms/:id/messages', asMember, wrap(async (req, res) => {
+  const room = await one('SELECT id, name FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada.' });
+  if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Entre na sala para limpar a conversa.' });
+  const result = await chatMessageCleanup().clearRoomChat(room.id);
+  lastGoogleDriveDeletionRetry = 0;
+  const deletionRetry = await retryPendingGoogleDriveDeletions();
+  await logAct(req, 'chat_limpo', `${room.name} (${result.messages} mensagens, ${result.files} arquivos)`);
+  res.json({ success: true, ...result, drivePending: Math.max(result.drivePending || 0, deletionRetry.pending || 0) });
 }));
 
 // =================== NOTIFICAÇÕES ===================
@@ -4558,13 +4657,15 @@ async function directFriend(req, res) {
 
 app.get('/api/dm/conversations', asMember, wrap(async (req, res) => {
   const me = req.user.id;
+  await chatMessageCleanup().purgeExpiredMessages(25);
   const friends = await q(`SELECT u.id, u.username, u.role, u.avatar_color, u.avatar_image FROM friendships f
     JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
     WHERE (f.requester_id = $1 OR f.addressee_id = $1) AND f.status = 'accepted' ORDER BY u.username`, [me]);
   const latestRows = await q(`SELECT id, sender_id, recipient_id, content, created_at FROM (
     SELECT dm.*, ROW_NUMBER() OVER (PARTITION BY CASE WHEN dm.sender_id = $1 THEN dm.recipient_id ELSE dm.sender_id END ORDER BY dm.created_at DESC, dm.id DESC) AS rn
-    FROM direct_messages dm WHERE dm.sender_id = $1 OR dm.recipient_id = $1
-  ) latest WHERE rn = 1`, [me]);
+    FROM direct_messages dm WHERE (dm.sender_id = $1 OR dm.recipient_id = $1)
+      AND (dm.expires_at IS NULL OR dm.expires_at > $2)
+  ) latest WHERE rn = 1`, [me, ts()]);
   const latestByFriend = new Map(latestRows.map(row => [row.sender_id === me ? row.recipient_id : row.sender_id, row]));
   const conversations = [];
   for (const friend of friends) {
@@ -4581,34 +4682,69 @@ app.get('/api/dm/conversations', asMember, wrap(async (req, res) => {
 
 app.get('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
   const friend = await directFriend(req, res); if (!friend) return;
+  await chatMessageCleanup().purgeExpiredMessages(25);
   const me = req.user.id;
-  const msgs = await q(`SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.content, m.reply_to_id, m.created_at,
+  const msgs = await q(`SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.content, m.reply_to_id, m.created_at, m.expires_at,
     u.username, u.avatar_color, u.avatar_image, u.role, parent.content AS reply_content, parent_user.username AS reply_username
-    FROM direct_messages m JOIN users u ON u.id = m.sender_id LEFT JOIN direct_messages parent ON parent.id = m.reply_to_id
+    FROM direct_messages m JOIN users u ON u.id = m.sender_id LEFT JOIN direct_messages parent
+      ON parent.id = m.reply_to_id AND (parent.expires_at IS NULL OR parent.expires_at > $3)
     LEFT JOIN users parent_user ON parent_user.id = parent.sender_id
-    WHERE (m.sender_id = $1 AND m.recipient_id = $2) OR (m.sender_id = $2 AND m.recipient_id = $1)
-    ORDER BY m.created_at DESC LIMIT 150`, [me, friend.id]);
+    WHERE ((m.sender_id = $1 AND m.recipient_id = $2) OR (m.sender_id = $2 AND m.recipient_id = $1))
+      AND (m.expires_at IS NULL OR m.expires_at > $3)
+    ORDER BY m.created_at DESC LIMIT 150`, [me, friend.id, ts()]);
   res.json(msgs.reverse());
 }));
 
 app.post('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
   const friend = await directFriend(req, res); if (!friend) return;
+  await chatMessageCleanup().purgeExpiredMessages(25);
   const content = messageContent(req.body);
   if (!content.trim()) return res.status(400).json({ error: 'Mensagem vazia.' });
   const me = req.user.id;
   const replyTo = String((req.body && req.body.reply_to_id) || '').trim() || null;
   if (replyTo && !(await one(`SELECT id FROM direct_messages WHERE id = $1 AND
-    ((sender_id = $2 AND recipient_id = $3) OR (sender_id = $3 AND recipient_id = $2))`, [replyTo, me, friend.id]))) {
+    ((sender_id = $2 AND recipient_id = $3) OR (sender_id = $3 AND recipient_id = $2))
+    AND (expires_at IS NULL OR expires_at > $4)`, [replyTo, me, friend.id, ts()]))) {
     return res.status(400).json({ error: 'A mensagem escolhida para responder não está mais disponível.' });
   }
+  const conversationId = directConversationKey(me, friend.id);
+  const settings = await one('SELECT expiration_seconds FROM chat_settings WHERE conversation_id = $1', [conversationId]);
+  const expiresAt = expirationTimestamp(settings && settings.expiration_seconds);
   const id = uuidv4(), createdAt = ts();
-  await q('INSERT INTO direct_messages (id, sender_id, recipient_id, content, reply_to_id, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-    [id, me, friend.id, content, replyTo, createdAt]);
+  await q('INSERT INTO direct_messages (id, sender_id, recipient_id, content, reply_to_id, created_at, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [id, me, friend.id, content, replyTo, createdAt, expiresAt]);
   // Não cria notificação quando o usuário envia mensagem para si mesmo ("eu mesmo").
   if (friend.id !== me) {
     await notify(friend.id, 'Nova mensagem de ' + req.user.username, content.slice(0, 140), 'info');
   }
   res.json({ success: true, id, created_at: createdAt });
+}));
+
+app.get('/api/dm/:id/chat-settings', asMember, wrap(async (req, res) => {
+  const friend = await directFriend(req, res); if (!friend) return;
+  const conversationId = directConversationKey(req.user.id, friend.id);
+  const settings = await one('SELECT expiration_seconds FROM chat_settings WHERE conversation_id = $1', [conversationId]);
+  res.json({ expiration_seconds: Number(settings && settings.expiration_seconds) || 0 });
+}));
+
+app.put('/api/dm/:id/chat-settings', asMember, wrap(async (req, res) => {
+  const friend = await directFriend(req, res); if (!friend) return;
+  const expirationSeconds = Number(req.body && req.body.expiration_seconds);
+  if (!DISAPPEARING_MESSAGE_DURATIONS.includes(expirationSeconds)) return res.status(400).json({ error: 'Escolha uma duração válida para as mensagens temporárias.' });
+  const conversationId = directConversationKey(req.user.id, friend.id);
+  await q(`INSERT INTO chat_settings (conversation_id, expiration_seconds, updated_at) VALUES ($1,$2,$3)
+    ON CONFLICT (conversation_id) DO UPDATE SET expiration_seconds = EXCLUDED.expiration_seconds, updated_at = EXCLUDED.updated_at`,
+    [conversationId, expirationSeconds, ts()]);
+  res.json({ success: true, expiration_seconds: expirationSeconds });
+}));
+
+app.delete('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
+  const friend = await directFriend(req, res); if (!friend) return;
+  const result = await chatMessageCleanup().clearDirectChat(req.user.id, friend.id);
+  lastGoogleDriveDeletionRetry = 0;
+  const deletionRetry = await retryPendingGoogleDriveDeletions();
+  await logAct(req, 'conversa_direta_limpa', `${friend.username} (${result.messages} mensagens, ${result.files} arquivos)`);
+  res.json({ success: true, ...result, drivePending: Math.max(result.drivePending || 0, deletionRetry.pending || 0) });
 }));
 
 app.post('/api/dm/:id/upload-url', asMember, wrap(async (req, res) => {
