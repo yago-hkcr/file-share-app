@@ -347,8 +347,9 @@ async function createDriveUploadSession({ userId, destinationType, roomId = null
       (upload_id, user_id, destination_type, room_id, space_id, bookcase_id, drive_account_id, original_name, size, mime_type, session_url_enc, status, created_at)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'','uploading',$11)`,
   [uploadId, userId, destinationType, roomId, spaceId, bookcaseId, account.id, normalizedName, size, normalizedMime, ts()]);
+  let sessionUrl;
   try {
-    const sessionUrl = await drive.startResumableUpload({ name: normalizedName, mimeType: normalizedMime, size, uploadId });
+    sessionUrl = await drive.startResumableUpload({ name: normalizedName, mimeType: normalizedMime, size, uploadId });
     const encryptedSessionUrl = encryptSecret(sessionUrl, sessionSecret());
     await q('UPDATE google_drive_uploads SET session_url_enc = $1, updated_at = $2 WHERE upload_id = $3 AND status = $4',
       [encryptedSessionUrl, ts(), uploadId, 'uploading']);
@@ -361,7 +362,8 @@ async function createDriveUploadSession({ userId, destinationType, roomId = null
     }
     throw error;
   }
-  return { upload_id: uploadId, chunk_bytes: 4 * 1024 * 1024, max_bytes: MAX_DIRECT_BYTES };
+  // session_url é uma credencial bearer; mantenha-a exclusivamente no servidor.
+  return { upload_id: uploadId, chunk_bytes: 4 * 1024 * 1024, max_bytes: MAX_BLOB_UPLOAD_BYTES };
 }
 
 async function getDriveUploadSession(uploadId, userId) {
@@ -1371,6 +1373,7 @@ async function canUseRoom(user, roomId) {
   if (rid.startsWith('dm:')) {
     const parts = rid.slice(3).split(':');
     if (parts.length !== 2 || !parts.includes(String(user.id))) return false;
+    if (parts[0] === parts[1]) return parts[0] === String(user.id);
     return await areFriends(parts[0], parts[1]);
   }
   return isRoomMember(roomId, user.id);
@@ -3019,6 +3022,7 @@ app.post('/api/rooms/:id/drive-upload-session', asMember, wrap(async (req, res) 
   const size = Number(req.body && req.body.size);
   if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio' });
   if (size > MAX_BLOB_UPLOAD_BYTES) return res.status(413).json({ error: 'Arquivo grande demais (máximo 10 GiB).' });
+  res.set('Cache-Control', 'no-store');
   res.json(await createDriveUploadSession({
     userId: req.user.id, destinationType: 'room', roomId: room.id,
     name: req.body.name, size, mimeType: req.body.mime
@@ -3032,21 +3036,77 @@ app.post('/api/library/drive-upload-session', asMember, wrap(async (req, res) =>
   const size = Number(req.body && req.body.size);
   if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio' });
   if (size > MAX_BLOB_UPLOAD_BYTES) return res.status(413).json({ error: 'Arquivo grande demais (máximo 10 GiB).' });
+  res.set('Cache-Control', 'no-store');
   res.json(await createDriveUploadSession({
     userId: req.user.id, destinationType: 'library', spaceId: location.space.id, bookcaseId: location.bookcase.id,
     name: req.body.name, size, mimeType: req.body.mime
   }));
 }));
 
-app.post('/api/google-drive/uploads/:uploadId/chunk', asMember, express.raw({ type: 'application/octet-stream', limit: '4mb' }), wrap(async (req, res) => {
+app.post('/api/google-drive/uploads/:uploadId/status', asMember, wrap(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const upload = await getDriveUploadSession(req.params.uploadId, req.user.id);
   if (!upload) return res.status(404).json({ error: 'Sessão de upload não encontrada.' });
-  if (upload.status === 'complete' || upload.status === 'registered') return res.json({ complete: true, next_offset: num(upload.size) });
+  if (['room', 'dm'].includes(upload.destination_type) && !(await canUseRoom(req.user, upload.room_id))) {
+    return res.status(403).json({ error: 'Você não tem mais acesso a este destino.' });
+  }
+  if (upload.destination_type === 'library' && !(await resolvePersonalLibraryLocation(req.user.id, { space_id: upload.space_id, bookcase_id: upload.bookcase_id }))) {
+    return res.status(403).json({ error: 'A prateleira desta sessão não está mais disponível.' });
+  }
+  if (['complete', 'registered'].includes(upload.status)) return res.json({ complete: true, next_offset: num(upload.size) });
   if (upload.status !== 'uploading') return res.status(409).json({ error: 'Esta sessão de upload foi encerrada.' });
+  try {
+    const { drive, accountId } = await getDriveUploadStorage(upload);
+    const state = await drive.queryResumableUpload(upload.session_url, num(upload.size));
+    if (state.complete) {
+      if (!validateDriveFileId(state.file && state.file.id)) return res.status(502).json({ error: 'O Drive não confirmou o arquivo enviado.' });
+      const completed = await q(`UPDATE google_drive_uploads SET status = 'complete', file_id = $1, drive_account_id = $2, session_url_enc = '', updated_at = $3
+        WHERE upload_id = $4 AND user_id = $5 AND status = 'uploading' AND drive_account_id = $2 RETURNING upload_id`, [state.file.id, accountId, ts(), upload.upload_id, req.user.id]);
+      if (!completed.length) return res.status(409).json({ error: 'A sessão mudou durante a confirmação do upload.' });
+      return res.json({ complete: true, next_offset: num(upload.size) });
+    }
+    const refreshed = await q("UPDATE google_drive_uploads SET updated_at = $1 WHERE upload_id = $2 AND user_id = $3 AND status = 'uploading' AND drive_account_id = $4 RETURNING upload_id", [ts(), upload.upload_id, req.user.id, accountId]);
+    if (!refreshed.length) return res.status(409).json({ error: 'A sessão mudou durante a consulta. Consulte o estado novamente.' });
+    return res.json({ complete: false, next_offset: state.nextOffset });
+  } catch (error) {
+    if (isGoogleDriveQuotaError(error) && upload.drive_account_id) {
+      const oldAccountId = upload.drive_account_id;
+      const claimed = await q("UPDATE google_drive_uploads SET status = 'failed', updated_at = $1 WHERE upload_id = $2 AND user_id = $3 AND status = 'uploading' AND drive_account_id = $4 RETURNING upload_id", [ts(), upload.upload_id, req.user.id, oldAccountId]);
+      if (!claimed.length) return res.status(409).json({ error: 'A sessão mudou enquanto o Google Drive processava o envio. Consulte o estado novamente.' });
+      await refreshGoogleDriveAccountQuota(oldAccountId).catch(() => {});
+      try {
+        const session = await createDriveUploadSession({
+          userId: req.user.id, destinationType: upload.destination_type, roomId: upload.room_id,
+          spaceId: upload.space_id, bookcaseId: upload.bookcase_id, name: upload.original_name,
+          size: num(upload.size), mimeType: upload.mime_type, excludeAccountIds: [oldAccountId]
+        });
+        return res.status(409).json({ state: 'account_changed', session });
+      } catch (replacementError) {
+        if (Number(replacementError && replacementError.status) === 507) {
+          return res.status(507).json({ error: 'As outras contas conectadas também não têm espaço suficiente para este arquivo.' });
+        }
+        throw replacementError;
+      }
+    }
+    if (Number(error && error.status) === 404 || Number(error && error.status) === 410 || (error && /HTTP 404|HTTP 410/.test(error.message))) {
+      const expired = await q("UPDATE google_drive_uploads SET status = 'failed', session_url_enc = '', updated_at = $1 WHERE upload_id = $2 AND user_id = $3 AND status = 'uploading' AND drive_account_id = $4 RETURNING upload_id", [ts(), upload.upload_id, req.user.id, upload.drive_account_id]);
+      if (!expired.length) return res.status(409).json({ error: 'A sessão mudou enquanto o Google Drive verificava o envio. Consulte o estado novamente.' });
+      return res.status(410).json({ state: 'upload_session_expired', error: 'A sessão do Google Drive expirou. Selecione o arquivo novamente para reiniciar o envio.' });
+    }
+    throw error;
+  }
+}));
+
+app.post('/api/google-drive/uploads/:uploadId/chunk', asMember, express.raw({ type: 'application/octet-stream', limit: '4mb' }), wrap(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const upload = await getDriveUploadSession(req.params.uploadId, req.user.id);
+  if (!upload) return res.status(404).json({ error: 'Sessão de upload não encontrada.' });
   if (['room', 'dm'].includes(upload.destination_type) && !(await canUseRoom(req.user, upload.room_id))) return res.status(403).json({ error: 'Você não tem mais acesso a este destino.' });
   if (upload.destination_type === 'library' && !(await resolvePersonalLibraryLocation(req.user.id, { space_id: upload.space_id, bookcase_id: upload.bookcase_id }))) {
     return res.status(403).json({ error: 'A prateleira desta sessão não está mais disponível.' });
   }
+  if (upload.status === 'complete' || upload.status === 'registered') return res.json({ complete: true, next_offset: num(upload.size) });
+  if (upload.status !== 'uploading') return res.status(409).json({ error: 'Esta sessão de upload foi encerrada.' });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'Bloco de upload vazio.' });
   const match = String(req.get('Content-Range') || '').match(/^bytes (\d+)-(\d+)\/(\d+)$/);
   if (!match) return res.status(400).json({ error: 'Content-Range inválido.' });
@@ -3059,12 +3119,15 @@ app.post('/api/google-drive/uploads/:uploadId/chunk', asMember, express.raw({ ty
   try {
     result = await drive.uploadChunkFromServer(upload.session_url, total, start, req.body);
   } catch (error) {
-    if (error && /HTTP 404|HTTP 410/.test(error.message)) {
+    if (Number(error && error.status) === 404 || Number(error && error.status) === 410 || (error && /HTTP 404|HTTP 410/.test(error.message))) {
+      const expired = await q("UPDATE google_drive_uploads SET status = 'failed', session_url_enc = '', updated_at = $1 WHERE upload_id = $2 AND user_id = $3 AND status = 'uploading' AND drive_account_id = $4 RETURNING upload_id", [ts(), upload.upload_id, req.user.id, accountId]);
+      if (!expired.length) return res.status(409).json({ error: 'A sessão mudou enquanto o Google Drive processava o envio. Consulte o estado novamente.' });
       return res.status(410).json({ state: 'upload_session_expired', error: 'A sessão do Google Drive expirou. Selecione o arquivo novamente para reiniciar o envio.' });
     }
     if (isGoogleDriveQuotaError(error) && accountId) {
       const oldAccountId = accountId;
-      await q("UPDATE google_drive_uploads SET status = 'failed', updated_at = $1 WHERE upload_id = $2 AND status = 'uploading'", [ts(), upload.upload_id]);
+      const claimed = await q("UPDATE google_drive_uploads SET status = 'failed', updated_at = $1 WHERE upload_id = $2 AND user_id = $3 AND status = 'uploading' AND drive_account_id = $4 RETURNING upload_id", [ts(), upload.upload_id, req.user.id, oldAccountId]);
+      if (!claimed.length) return res.status(409).json({ error: 'A sessão mudou enquanto o Google Drive processava o envio. Consulte o estado novamente.' });
       await refreshGoogleDriveAccountQuota(oldAccountId).catch(() => {});
       try {
         const session = await createDriveUploadSession({
@@ -3084,11 +3147,14 @@ app.post('/api/google-drive/uploads/:uploadId/chunk', asMember, express.raw({ ty
   }
   if (result.complete) {
     if (!validateDriveFileId(result.file && result.file.id)) return res.status(502).json({ error: 'O Drive não confirmou o arquivo enviado.' });
-    await q(`UPDATE google_drive_uploads SET status = 'complete', file_id = $1, drive_account_id = $2, session_url_enc = '', updated_at = $3
-      WHERE upload_id = $4 AND user_id = $5 AND status = 'uploading'`, [result.file.id, accountId, ts(), upload.upload_id, req.user.id]);
+    const completed = await q(`UPDATE google_drive_uploads SET status = 'complete', file_id = $1, drive_account_id = $2, session_url_enc = '', updated_at = $3
+      WHERE upload_id = $4 AND user_id = $5 AND status = 'uploading' AND drive_account_id = $2 RETURNING upload_id`, [result.file.id, accountId, ts(), upload.upload_id, req.user.id]);
+    if (!completed.length) return res.status(409).json({ error: 'A sessão mudou durante a confirmação do upload.' });
     return res.json({ complete: true, next_offset: total });
   }
-  await q(`UPDATE google_drive_uploads SET updated_at = $1 WHERE upload_id = $2 AND status = 'uploading'`, [ts(), upload.upload_id]);
+  const advanced = await q(`UPDATE google_drive_uploads SET updated_at = $1
+    WHERE upload_id = $2 AND user_id = $3 AND status = 'uploading' AND drive_account_id = $4 RETURNING upload_id`, [ts(), upload.upload_id, req.user.id, accountId]);
+  if (!advanced.length) return res.status(409).json({ error: 'A sessão mudou enquanto o Google Drive processava o envio. Consulte o estado novamente.' });
   res.json({ complete: false, next_offset: result.nextOffset });
 }));
 
@@ -3219,6 +3285,7 @@ app.post('/api/dm/:id/drive-upload-session', asMember, wrap(async (req, res) => 
   const size = Number(req.body && req.body.size);
   if (!Number.isSafeInteger(size) || size <= 0) return res.status(400).json({ error: 'Tamanho de arquivo inválido ou arquivo vazio' });
   if (size > MAX_BLOB_UPLOAD_BYTES) return res.status(413).json({ error: 'Arquivo grande demais (máximo 10 GiB).' });
+  res.set('Cache-Control', 'no-store');
   const conversationKey = 'dm:' + [req.user.id, friend.id].sort().join(':');
   res.json(await createDriveUploadSession({
     userId: req.user.id, destinationType: 'dm', roomId: conversationKey,

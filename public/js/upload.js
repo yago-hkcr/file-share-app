@@ -7,6 +7,7 @@
   let currentUserId = '';
   let driveUploadEnabled = false;
   let blobUploadEnabled = false;
+  let driveTransportPromise = null;
   const sizeLabel = b => {
     const gb = b / (1024 ** 3);
     if (gb >= 1) return (Number.isInteger(gb) ? gb : gb.toFixed(1)) + ' GB';
@@ -27,6 +28,14 @@
     const error = new Error('Envio cancelado.');
     error.name = 'AbortError';
     return error;
+  }
+
+  function loadGoogleDriveTransport() {
+    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261031b').catch(error => {
+      driveTransportPromise = null;
+      throw error;
+    });
+    return driveTransportPromise;
   }
 
   function putWithProgress(url, file, onProgress, signal) {
@@ -60,28 +69,8 @@
   }
 
   async function uploadDriveInChunks(session, file, onProgress, signal, onSessionChange) {
-    const chunkSize = Number(session.chunk_bytes) || driveChunkSize;
-    let offset = 0;
-    while (offset < file.size) {
-      if (signal && signal.aborted) throw uploadAbortError();
-      const end = Math.min(offset + chunkSize, file.size);
-      const chunk = file.slice(offset, end);
-      const response = await fetch('/api/google-drive/uploads/' + encodeURIComponent(session.upload_id) + '/chunk', {
-        method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'Content-Range': 'bytes ' + offset + '-' + (end - 1) + '/' + file.size }, body: chunk, signal
-      });
-      const result = await response.json().catch(() => ({}));
-      if (response.status === 409 && result.state === 'account_changed' && result.session && result.session.upload_id) {
-        session = result.session;
-        offset = 0;
-        if (typeof onSessionChange === 'function') onSessionChange(session);
-        if (onProgress) onProgress(0);
-        continue;
-      }
-      if (!response.ok) throw new Error(result.error || 'Falha ao enviar bloco ao Google Drive.');
-      offset = Number(result.next_offset);
-      if (!Number.isSafeInteger(offset) || offset <= 0 || offset > file.size) throw new Error('O Google Drive retornou uma posição de envio inválida.');
-      if (onProgress) onProgress(Math.round(offset / file.size * 100));
-    }
+    const transport = await loadGoogleDriveTransport();
+    await transport.uploadDriveFile(session, file, { onProgress, signal, onSessionChange });
   }
 
   function postFormWithProgress(url, form, onProgress, signal) {
