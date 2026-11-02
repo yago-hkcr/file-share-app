@@ -35,6 +35,9 @@ const check = (ok, label) => { console.log(`${ok ? 'PASSOU' : 'FALHOU'} - ${labe
 const child = startServer();
 const BASE = `http://127.0.0.1:${PORT}`;
 const ORIGIN = { origin: BASE };
+let serverLog = '';
+child.stdout.on('data', chunk => { serverLog += chunk.toString(); });
+child.stderr.on('data', chunk => { serverLog += chunk.toString(); });
 try {
   await waitHealthy();
   const versionedAsset = await fetch(`${BASE}/js/common.js?v=cache-regression`);
@@ -69,15 +72,18 @@ try {
     body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD })
   });
   if (!res.ok) console.error('login resposta:', res.status, (await res.text()).slice(0, 300));
-  const cookies = (res.headers.getSetCookie ? res.headers.getSetCookie() : [res.headers.get('set-cookie')])
+  let cookies = (res.headers.getSetCookie ? res.headers.getSetCookie() : [res.headers.get('set-cookie')])
     .filter(Boolean).map(c => c.split(';')[0]).join('; ');
   check(res.ok, 'login do admin local');
+  check(cookies.includes('fs_device='), 'login cria uma credencial persistente vinculada ao dispositivo');
+  const csrfCookies = Object.fromEntries(cookies.split('; ').map(part => { const index = part.indexOf('='); return [part.slice(0, index), part.slice(index + 1)]; }));
   const adminPage = await fetch(`${BASE}/admin`, { headers: { cookie: cookies, ...ORIGIN } });
   const adminHtml = await adminPage.text();
   check(adminPage.ok && adminHtml.includes('id="tab-storage"') && adminHtml.includes('loadGoogleDriveStatus()'),
     'painel administrativo oferece estado e conexão do Google Drive compartilhado');
   const driveStatusResponse = await fetch(`${BASE}/api/admin/google-drive/status`, { headers: { cookie: cookies, ...ORIGIN } });
   const driveStatus = await driveStatusResponse.json();
+  if (!driveStatusResponse.ok || driveStatus.configured !== false) console.log('  [debug drive status]', driveStatusResponse.status, driveStatus);
   check(driveStatusResponse.ok && driveStatus.configured === false && driveStatus.connected === false && driveStatus.verified === false && driveStatus.storage_quota === null,
     'status do Drive informa com segurança quando OAuth não está configurado no modo local');
   check(!Object.hasOwn(driveStatus, 'scope') && !Object.hasOwn(driveStatus, 'redirect_uri') && !Object.hasOwn(driveStatus, 'verification_error'),
@@ -85,6 +91,69 @@ try {
   const driveStatusAnonymous = await fetch(`${BASE}/api/admin/google-drive/status`, { headers: ORIGIN });
   check(driveStatusAnonymous.status === 401,
     'status da conexão do Drive continua restrito ao administrador autenticado');
+  const deviceManagementPage = await fetch(`${BASE}/admin/devices`, { headers: { cookie: cookies, ...ORIGIN } });
+  check(deviceManagementPage.ok && (await deviceManagementPage.text()).includes('Dispositivos vinculados'), 'painel ADM inclui página de gerenciamento de dispositivos');
+  const deviceListResponse = await fetch(`${BASE}/api/devices`, { headers: { cookie: cookies, ...ORIGIN } });
+  const deviceList = await deviceListResponse.json();
+  if (!deviceListResponse.ok) console.log('  [debug devices]', deviceListResponse.status, deviceList);
+  check(deviceListResponse.ok && deviceList.is_primary && deviceList.devices.some(device => device.is_primary && device.is_current),
+    'primeiro aparelho aprovado é principal e aparece na gestão de dispositivos');
+  const secondDeviceLogin = await fetch(`${BASE}/api/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN, cookie: `fs_device=${'0'.repeat(64)}`, 'user-agent': 'Chrome/120.0 (Windows NT 10.0)' },
+    body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD })
+  });
+  const pendingDevice = await secondDeviceLogin.json();
+  const secondCookies = (secondDeviceLogin.headers.getSetCookie ? secondDeviceLogin.headers.getSetCookie() : [secondDeviceLogin.headers.get('set-cookie')])
+    .filter(Boolean).map(c => c.split(';')[0]).join('; ');
+  const pendingCookieValues = Object.fromEntries(secondCookies.split('; ').map(part => { const index = part.indexOf('='); return [part.slice(0, index), part.slice(index + 1)]; }));
+  check(secondDeviceLogin.status === 202 && pendingDevice.state === 'device_pending' && secondCookies.includes('fs_device='),
+    'novo aparelho entra em espera até aprovação e recebe identidade própria');
+  const pendingList = await (await fetch(`${BASE}/api/devices`, { headers: { cookie: cookies, ...ORIGIN } })).json();
+  if (!pendingList.devices) console.log('  [debug pending devices]', pendingList);
+  if (!pendingList.devices) throw new Error('Falha ao carregar a lista de dispositivos. Log do servidor:\n' + serverLog.slice(-8000));
+  const pending = pendingList.devices.find(device => device.status === 'pending');
+  check(Boolean(pending), 'principal visualiza solicitação pendente');
+  if (pending) {
+    const noPasswordApproval = await fetch(`${BASE}/api/devices/${pending.id}/approve`, { method: 'POST', headers: { cookie: cookies, ...ORIGIN } });
+    check(noPasswordApproval.status === 401, 'aprovação exige confirmação recente da senha');
+    const approveResponse = await fetch(`${BASE}/api/devices/${pending.id}/approve`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN }, body: JSON.stringify({ confirmationPassword: ADMIN_PASSWORD }) });
+    const afterApproval = await fetch(`${BASE}/api/devices/pending-status`, { headers: { cookie: 'fs_device=' + pendingCookieValues.fs_device, ...ORIGIN } });
+    check(approveResponse.ok && (await afterApproval.json()).state === 'approved', 'aprovação libera o novo aparelho');
+    const secondaryLogin = await fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN, cookie: 'fs_device=' + pendingCookieValues.fs_device }, body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD }) });
+    const secondaryLoginBody = await secondaryLogin.json();
+    const secondarySessionCookies = ['fs_device=' + pendingCookieValues.fs_device, ...(secondaryLogin.headers.getSetCookie ? secondaryLogin.headers.getSetCookie() : [secondaryLogin.headers.get('set-cookie')]).filter(Boolean).map(c => c.split(';')[0])].join('; ');
+    if (!secondaryLogin.ok) console.log('  [debug secondary login]', secondaryLogin.status, secondaryLoginBody, secondarySessionCookies);
+    const secondaryListResponse = await fetch(`${BASE}/api/devices`, { headers: { cookie: secondarySessionCookies, ...ORIGIN } });
+    if (secondaryListResponse.status !== 403) console.log('  [debug secondary devices]', secondaryListResponse.status, await secondaryListResponse.text());
+    check(secondaryListResponse.status === 403, 'dispositivo aprovado não principal não pode gerenciar dispositivos');
+    const avatarResponse = await fetch(`${BASE}/api/profile/avatar`, { method: 'PUT', headers: { 'content-type': 'application/json', cookie: secondarySessionCookies, ...ORIGIN }, body: JSON.stringify({ image: null }) });
+    if (avatarResponse.status !== 403) console.log('  [debug secondary avatar]', avatarResponse.status, await avatarResponse.text());
+    check(avatarResponse.status === 403, 'dispositivo secundário não pode alterar dados pessoais do perfil');
+    const revokeResponse = await fetch(`${BASE}/api/devices/${pending.id}`, { method: 'DELETE', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN }, body: JSON.stringify({ confirmationPassword: ADMIN_PASSWORD }) });
+    const revokedLogin = await fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN, cookie: 'fs_device=' + pendingCookieValues.fs_device }, body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD }) });
+    check(revokeResponse.ok && revokedLogin.status === 202, 'revogação imediata impede renovar sessão no aparelho removido');
+    const revokedApiAccess = await fetch(`${BASE}/api/me`, { headers: { cookie: secondarySessionCookies, ...ORIGIN } });
+    check(revokedApiAccess.status === 401, 'revogação imediata bloqueia a sessão ativa do aparelho removido');
+  }
+  const recoveryDeviceLogin = await fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN, 'user-agent': 'Firefox/130.0 (Linux)' }, body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD }) });
+  const recoveryDeviceLoginBody = await recoveryDeviceLogin.json();
+  const recoveryDeviceCookies = (recoveryDeviceLogin.headers.getSetCookie ? recoveryDeviceLogin.headers.getSetCookie() : [recoveryDeviceLogin.headers.get('set-cookie')]).filter(Boolean).map(cookie => cookie.split(';')[0]).join('; ');
+  const recoveryRequest = await fetch(`${BASE}/api/devices/recovery/request`, { method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN }, body: JSON.stringify({ email: 'admin@fileshare.com' }) });
+  const recoveryRequestBody = await recoveryRequest.json();
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const recoveryToken = (serverLog.match(/\/device-recovery\?token=([a-f0-9]{64})/) || [])[1];
+  const recoveryClaim = await fetch(`${BASE}/api/devices/recovery/claim`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: recoveryDeviceCookies, ...ORIGIN }, body: JSON.stringify({ token: recoveryToken, password: ADMIN_PASSWORD }) });
+  check(recoveryDeviceLogin.status === 202 && recoveryDeviceLoginBody.state === 'device_pending' && recoveryRequest.ok && recoveryRequestBody.success && Boolean(recoveryToken) && recoveryClaim.ok,
+    'recuperação por e-mail, senha atual e token de uso único transferem o principal');
+  const recoveryReplay = await fetch(`${BASE}/api/devices/recovery/claim`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: 'fs_device=' + (recoveryDeviceCookies.match(/fs_device=([^;]+)/) || [])[1], ...ORIGIN }, body: JSON.stringify({ token: recoveryToken, password: ADMIN_PASSWORD }) });
+  check(recoveryReplay.status === 400, 'link de recuperação do principal só pode ser usado uma vez');
+  const oldPrimaryRequest = await fetch(`${BASE}/api/devices`, { headers: { cookie: cookies, ...ORIGIN } });
+  check(oldPrimaryRequest.status === 401, 'recuperação encerra imediatamente as sessões do principal anterior');
+  const recoveryLogin = await fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN, cookie: 'fs_device=' + (recoveryDeviceCookies.match(/fs_device=([^;]+)/) || [])[1] }, body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD }) });
+  const recoveryCookies = ['fs_device=' + (recoveryDeviceCookies.match(/fs_device=([^;]+)/) || [])[1], ...(recoveryLogin.headers.getSetCookie ? recoveryLogin.headers.getSetCookie() : [recoveryLogin.headers.get('set-cookie')]).filter(Boolean).map(cookie => cookie.split(';')[0])].join('; ');
+  const recoveryDevices = await fetch(`${BASE}/api/devices`, { headers: { cookie: recoveryCookies, ...ORIGIN } });
+  check(recoveryLogin.ok && recoveryDevices.ok, 'o aparelho recuperado pode entrar como novo dispositivo principal');
+  cookies = recoveryCookies;
   // 2) cria sala
   res = await fetch(`${BASE}/api/rooms`, {
     method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },

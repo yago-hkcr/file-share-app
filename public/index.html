@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
+  <meta name="referrer" content="no-referrer">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <meta charset="UTF-8">
@@ -52,6 +53,11 @@
           <input type="password" id="password" placeholder="sua senha" autocomplete="current-password" maxlength="1024" required>
         </div>
         <div id="errorMsg" class="alert alert-error" style="display:none;"></div>
+        <section id="pendingDeviceRecovery" class="alert" style="display:none;" aria-live="polite">
+          <p id="pendingDeviceMessage">Este aparelho aguarda aprovação do dispositivo principal.</p>
+          <button id="retryPendingLogin" class="btn btn-primary" type="button" hidden>Já aprovei — entrar</button>
+          <button id="requestDeviceRecovery" class="btn btn-outline" type="button">Perdi o dispositivo principal</button>
+        </section>
         <button type="submit" class="btn btn-primary btn-full btn-auth"><i class="fas fa-sign-in-alt"></i> ENTRAR</button>
       </form>
       <div class="auth-footer">
@@ -85,6 +91,7 @@
       e.preventDefault();
       const err = document.getElementById('errorMsg');
       err.style.display = 'none';
+      document.getElementById('pendingDeviceRecovery').style.display = 'none';
       try {
         const res = await fetch('/api/login', {
           method: 'POST',
@@ -95,16 +102,46 @@
           })
         });
         const data = await res.json();
-        if (res.ok) {
+        if (res.status === 202 && data.state === 'device_pending') {
+          const message = document.getElementById('pendingDeviceMessage');
+          message.textContent = data.message + ' Após a aprovação, toque em “Já aprovei — entrar”.';
+          document.getElementById('pendingDeviceRecovery').style.display = 'block';
+          const retry = document.getElementById('retryPendingLogin');
+          retry.hidden = true;
+          if (window.pendingDevicePoll) clearInterval(window.pendingDevicePoll);
+          window.pendingDevicePoll = setInterval(async () => {
+            try {
+              const check = await fetch('/api/devices/pending-status', { cache: 'no-store' });
+              const state = await check.json();
+              if (state.state === 'approved') { clearInterval(window.pendingDevicePoll); retry.hidden = false; message.textContent = 'Dispositivo aprovado pelo principal. Você já pode entrar.'; }
+              else if (state.state === 'revoked' || state.state === 'unknown') { clearInterval(window.pendingDevicePoll); message.textContent = 'A solicitação foi recusada ou expirou. Entre novamente para solicitar aprovação.'; retry.hidden = false; }
+            } catch (error) {}
+          }, 2500);
+          err.style.display = 'none';
+          return;
+        }
+        if (res.ok && data.success) {
           window.location.href = data.password_change_required ? '/change-password' : data.role === 'admin' ? '/admin' : '/dashboard';
         } else {
           err.textContent = data.error;
           err.style.display = 'block';
         }
       } catch (e) {
+        if (window.pendingDevicePoll) clearInterval(window.pendingDevicePoll);
         err.textContent = 'Erro de conexão';
         err.style.display = 'block';
       }
+    });
+    document.getElementById('retryPendingLogin').addEventListener('click', () => document.getElementById('loginForm').requestSubmit());
+    document.getElementById('requestDeviceRecovery').addEventListener('click', async () => {
+      const email = document.getElementById('username').value.trim();
+      const status = document.getElementById('pendingDeviceMessage');
+      if (!email.includes('@')) { status.textContent = 'Informe o e-mail da conta no campo Usuário ou Email antes de solicitar a recuperação.'; return; }
+      try {
+        const response = await fetch('/api/devices/recovery/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+        const data = await response.json();
+        status.textContent = data.message || data.error;
+      } catch (error) { status.textContent = 'Não foi possível solicitar a recuperação. Tente novamente.'; }
     });
   </script>
   <script src="/js/cursor.js?v=20261014a"></script>

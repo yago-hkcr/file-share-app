@@ -383,6 +383,19 @@
   const settings = modal('personalSettingsSheet', '<i class="fas fa-sliders"></i> Configurações', 'settings-sheet');
   settings.querySelector('.modal-body').innerHTML = '<form id="personalSettingsForm" class="settings-sections"><section class="settings-card"><div><h4><i class="fas fa-palette"></i> Aparência</h4><p>Use o tema do dispositivo ou escolha um visual fixo.</p></div><label class="settings-field">Tema<select id="prefTheme"><option value="system">Automático (dispositivo)</option><option value="dark">Escuro</option><option value="light">Claro</option></select></label><label class="settings-switch"><input id="prefCompact" type="checkbox"><span><b>Visual compacto</b><small>Mostra mais salas e conversas na tela.</small></span></label></section><section class="settings-card settings-card-wide"><div><h4><i class="fas fa-wand-magic-sparkles"></i> Gráficos e desempenho visual</h4><p>Quanto mais baixo, mais leve e rápido o site fica. A detecção automática escolhe o ideal para este aparelho.</p></div><div class="gfx-options settings-gfx-options"><button class="gfx-option" type="button" data-gfx-option="high" aria-pressed="true"><i class="fas fa-wand-magic-sparkles"></i><span><strong>Alto — tudo ligado</strong><small>Partículas, brilhos e animações completas. Para aparelhos fortes.</small></span></button><button class="gfx-option" type="button" data-gfx-option="medium" aria-pressed="false"><i class="fas fa-gauge-high"></i><span><strong>Médio — equilibrado</strong><small>Menos brilhos, partículas suaves. Bom para a maioria.</small></span></button><button class="gfx-option" type="button" data-gfx-option="low" aria-pressed="false"><i class="fas fa-feather"></i><span><strong>Baixo — bem leve</strong><small>Sem efeitos nem animações. Ideal para celular simples ou internet lenta.</small></span></button><button class="gfx-option" type="button" data-gfx-option="basic" aria-pressed="false"><i class="fas fa-battery-quarter"></i><span><strong>Básico — muito leve</strong><small>Sem efeitos, animações nem transições. Para aparelhos simples.</small></span></button><button class="gfx-option" type="button" data-gfx-option="minimal" aria-pressed="false"><i class="fas fa-battery-empty"></i><span><strong>Mínimo — essencial</strong><small>Sem efeitos, transições nem sombras. Máxima economia.</small></span></button></div></section><section class="settings-card"><div><h4><i class="fas fa-gauge-high"></i> Desempenho</h4><p>Defina a frequência de atualização automática.</p></div><label class="settings-field">Atualizar a cada<select id="prefRefresh"><option value="2">2 segundos</option><option value="5">5 segundos</option><option value="10">10 segundos</option></select></label><label class="settings-switch"><input id="prefMotion" type="checkbox"><span><b>Reduzir animações</b><small>Ajuda a evitar movimento visual excessivo.</small></span></label></section><section class="settings-card"><div><h4><i class="fas fa-bell"></i> Notificações</h4><p>Controle os avisos deste navegador.</p></div><label class="settings-switch"><input id="prefBrowserNotifications" type="checkbox"><span><b>Notificações do navegador</b><small>Receba avisos enquanto o FileShare estiver aberto.</small></span></label><button id="requestNotificationPermission" class="btn btn-outline" type="button"><i class="fas fa-bell"></i> Permitir neste navegador</button><p id="notificationPermissionStatus" class="settings-hint" aria-live="polite"></p></section><section class="settings-card"><div><h4><i class="fas fa-shield-halved"></i> Segurança</h4><p>Altere sua senha de acesso.</p></div><button id="settingsPassword" class="btn btn-outline" type="button"><i class="fas fa-key"></i> Alterar senha</button></section><section class="settings-card"><div><h4><i class="fas fa-user-circle"></i> Foto de perfil</h4><p>JPG, PNG ou WebP. A imagem será reduzida para caber no seu perfil.</p></div><div class="avatar-editor"><span id="settingsAvatarPreview" class="personal-avatar personal-avatar-large"></span><button id="chooseAvatar" class="btn btn-outline avatar-upload-button" type="button"><i class="fas fa-camera"></i> Escolher foto</button><input id="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" hidden><button id="removeAvatar" class="btn btn-outline btn-danger" type="button">Remover foto</button></div><p id="avatarStatus" class="settings-hint" aria-live="polite"></p></section><section class="settings-card"><div><h4><i class="fas fa-keyboard"></i> Atalhos e ajuda</h4><p>Maneiras rápidas de circular pelo painel.</p></div><ul class="settings-shortcuts"><li><kbd>Esc</kbd><span>Fecha janelas e menus abertos</span></li><li><kbd>Enter</kbd><span>Ativa o botão ou aba em foco</span></li><li><kbd>Tab</kbd><span>Vai para o próximo campo ou botão</span></li></ul><div class="settings-actions"><button class="btn btn-outline" type="button" id="settingsTutorialBtn"><i class="fas fa-compass"></i> Rever o tutorial</button></div></section><div class="settings-actions"><button class="btn btn-primary" type="submit"><i class="fas fa-floppy-disk"></i> Salvar configurações</button></div></form>';
 
+  const deviceCard = document.createElement('section');
+  deviceCard.className = 'settings-card settings-card-wide';
+  deviceCard.innerHTML = '<div><h4><i class="fas fa-mobile-screen-button"></i> Dispositivos vinculados</h4><p>Somente o aparelho principal pode aprovar, recusar ou encerrar outros dispositivos.</p></div><div id="accountDevicesOwnerOnly"><div id="accountDevicesList" class="settings-device-list"></div></div>';
+  settings.querySelector('.settings-sections').appendChild(deviceCard);
+  $('accountDevicesOwnerOnly').hidden = !(typeof me !== 'undefined' && me && me.is_primary_device);
+  if (typeof me !== 'undefined' && me && !me.is_primary_device) {
+    $('settingsPassword').disabled = true;
+    $('settingsPassword').title = 'Somente o dispositivo principal pode alterar a senha.';
+    $('chooseAvatar').disabled = true;
+    $('removeAvatar').disabled = true;
+    $('avatarStatus').textContent = 'Somente o dispositivo principal pode alterar a foto de perfil.';
+  }
+
   // Editor de enquadramento da foto de perfil.
   const avatarCrop = modal('avatarCropSheet', '<i class="fas fa-crop-simple"></i> Enquadrar foto', 'avatar-crop-sheet');
   avatarCrop.querySelector('.modal-body').innerHTML = '<div class="avatar-crop-copy">Arraste a foto para posicionar e use o zoom para deixar o enquadramento perfeito.</div><div class="avatar-crop-stage"><canvas id="avatarCropCanvas" width="320" height="320"></canvas></div><label class="avatar-crop-zoom"><span><i class="fas fa-magnifying-glass-minus"></i> Zoom</span><input id="avatarCropZoom" type="range" min="1" max="3" step="0.01" value="1"><i class="fas fa-magnifying-glass-plus"></i></label><div class="avatar-crop-actions"><button id="avatarCropCancel" class="btn btn-outline" type="button">Cancelar</button><button id="avatarCropApply" class="btn btn-primary" type="button"><i class="fas fa-check"></i> Usar foto</button></div>';
@@ -478,8 +491,52 @@
     const host = $('userAvatar'); if (!host || typeof me === 'undefined' || !me) return;
     host.style.background = me.avatar_color || '#35f28b'; host.innerHTML = currentAvatar();
   }
-  $('personalSettingsBtn')?.addEventListener('click', async () => { open(settings); await loadPreferences(); paintAvatarPreview(); });
-  $('settingsPassword').addEventListener('click', () => { settings.style.display = 'none'; if (typeof showPasswordModal === 'function') showPasswordModal(); });
+  $('personalSettingsBtn')?.addEventListener('click', async () => { open(settings); await loadPreferences(); paintAvatarPreview(); await loadDevices(); });
+  async function loadDevices() {
+    const host = $('accountDevicesList');
+    if (!host) return;
+    host.innerHTML = '<p class="settings-hint">Carregando dispositivos…</p>';
+    try {
+      const currentUser = await api('/api/me');
+      me = currentUser;
+      const isPrimary = !!currentUser.is_primary_device;
+      $('settingsPassword').disabled = !isPrimary;
+      $('settingsPassword').title = isPrimary ? '' : 'Somente o dispositivo principal pode alterar a senha.';
+      $('chooseAvatar').disabled = !isPrimary;
+      $('removeAvatar').disabled = !isPrimary;
+      $('avatarStatus').textContent = isPrimary ? '' : 'Somente o dispositivo principal pode alterar a foto de perfil.';
+      $('accountDevicesOwnerOnly').hidden = !isPrimary;
+      paintAvatarPreview();
+      const result = await api('/api/devices');
+      const current = Array.isArray(result.devices) ? result.devices : [];
+      host.innerHTML = current.length ? current.map(device => {
+        const title = device.is_primary ? 'Principal' : device.status === 'pending' ? 'Aguardando aprovação' : 'Aprovado';
+        const actions = device.is_current ? '<small>Este aparelho</small>' : device.status === 'pending'
+          ? '<button type="button" class="btn btn-primary btn-sm" data-device-action="approve" data-device-id="' + escHtml(device.id) + '">Aprovar</button><button type="button" class="btn btn-outline btn-sm" data-device-action="deny" data-device-id="' + escHtml(device.id) + '">Recusar</button>'
+          : '<button type="button" class="btn btn-outline btn-sm" data-device-action="primary" data-device-id="' + escHtml(device.id) + '">Tornar principal</button><button type="button" class="btn btn-outline btn-danger btn-sm" data-device-action="revoke" data-device-id="' + escHtml(device.id) + '">Encerrar sessão</button>';
+        return '<article class="settings-device"><span><b>' + escHtml(device.name) + '</b><small>' + title + ' · visto em ' + escHtml(humanTime(device.last_seen)) + '</small></span><span class="settings-device-actions">' + actions + '</span></article>';
+      }).join('') : '<p class="settings-hint">Nenhum dispositivo cadastrado.</p>';
+      host.querySelectorAll('[data-device-action]').forEach(button => button.addEventListener('click', async () => {
+        const action = button.dataset.deviceAction, id = button.dataset.deviceId;
+        const labels = { approve: 'aprovar este aparelho', deny: 'recusar este aparelho', primary: 'transferir o dispositivo principal', revoke: 'encerrar esta sessão' };
+        if (!window.confirm('Confirma ' + labels[action] + '?')) return;
+        const confirmationPassword = window.prompt('Digite a senha atual da conta para confirmar:');
+        if (confirmationPassword === null) return;
+        try {
+          if (action === 'revoke') await post('/api/devices/' + encodeURIComponent(id), { confirmationPassword }, 'DELETE');
+          else await post('/api/devices/' + encodeURIComponent(id) + '/' + action, { confirmationPassword });
+          toast(action === 'approve' ? 'Dispositivo aprovado' : action === 'deny' ? 'Solicitação recusada' : action === 'primary' ? 'Dispositivo principal transferido' : 'Sessão encerrada');
+          await loadDevices();
+        } catch (error) { toast(error.message, 'error'); }
+      }));
+    } catch (error) {
+      host.innerHTML = '<p class="settings-hint">' + escHtml(error.message || 'Não foi possível carregar os dispositivos.') + '</p>';
+    }
+  }
+  $('settingsPassword').addEventListener('click', () => {
+    if (typeof me !== 'undefined' && me && !me.is_primary_device) { toast('Somente o dispositivo principal pode alterar a senha.', 'error'); return; }
+    settings.style.display = 'none'; if (typeof showPasswordModal === 'function') showPasswordModal();
+  });
   // "Gráficos e desempenho": no painel não existe o modal de gráficos (ele é do
   // login), então alternamos direto entre completo e leve.
   // Sincroniza o destaque do nivel de graficos ativo no painel.
