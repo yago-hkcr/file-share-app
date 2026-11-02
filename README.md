@@ -46,6 +46,14 @@ Depois do deploy com essas variáveis, entre como ADM e abra **Armazenamento** n
 
 Defina `SESSION_SECRET` em producao. Nunca publique `.env`, `data/database.sqlite` ou arquivos enviados.
 
+## Dispositivos vinculados
+
+O primeiro dispositivo autenticado de uma conta passa a ser o **principal**. Ele pode aprovar ou recusar novos dispositivos e encerrar sessões aprovadas; essas ações pedem novamente a senha atual. Os dispositivos existentes com login persistente são migrados e continuam aprovados. Novos aparelhos aguardam aprovação antes de acessar o conteúdo da conta.
+
+Todos os dispositivos aprovados podem usar os recursos comuns da conta. Apenas o principal pode alterar a senha e a foto de perfil. Os dispositivos são identificados por uma credencial de navegador protegida com cookie `HttpOnly`; limpar os cookies ou os dados do navegador pode fazer o mesmo aparelho aparecer como novo e pedir aprovação novamente.
+
+Se o principal for perdido, no aparelho que deseja promover, solicite recuperação no login usando o e-mail cadastrado. O link enviado expira em 15 minutos, exige também a senha atual, funciona uma vez e encerra os acessos dos outros dispositivos. O envio por e-mail requer `RESEND_API_KEY` e `MAIL_FROM`; no modo local sem envio configurado, o link é escrito no log do servidor.
+
 ## Sala local sem internet
 
 Um computador da sala hospeda o FileShare, enquanto os demais entram pelo navegador na mesma rede Wi-Fi ou cabeada. O acesso pela rede começa desligado e só uma conta ADM pode ativá-lo no painel.
