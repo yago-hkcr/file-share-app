@@ -1092,7 +1092,7 @@ async function createTables() {
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_uploads_submission ON file_collection_uploads (submission_id)');
   await q('CREATE INDEX IF NOT EXISTS idx_google_drive_deletion_queue_next_attempt ON google_drive_deletion_queue (next_attempt_at, created_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_submissions_collection ON file_collection_submissions (collection_id, submitted_at)');
-  for (const col of ['last_login', 'last_seen', 'last_ip', 'force_logout_at', 'avatar_image', 'primary_device_id']) await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col} TEXT`);
+  for (const col of ['last_login', 'last_seen', 'last_ip', 'force_logout_at', 'avatar_image']) await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col} TEXT`);
   await q('ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id TEXT');
   await q('CREATE INDEX IF NOT EXISTS idx_dm_pair_created ON direct_messages (sender_id, recipient_id, created_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_dm_recipient_created ON direct_messages (recipient_id, sender_id, created_at)');
@@ -1159,8 +1159,6 @@ async function createTables() {
     ) WHERE drive_account_id IS NULL AND status IN ('uploading', 'complete', 'registered')
       AND (SELECT COUNT(*) FROM google_drive_accounts) = 1`);
   await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen INTEGER DEFAULT 0');
-  await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_device_id TEXT');
-  await q('ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_recovery_required INTEGER DEFAULT 0');
   const onboardingMigration = await one("SELECT value FROM settings WHERE key = 'onboarding_migration_v1'");
   if (!onboardingMigration) {
     await q("UPDATE users SET onboarding_seen = 1 WHERE onboarding_seen = 0 OR onboarding_seen IS NULL");
@@ -1175,52 +1173,8 @@ async function createTables() {
     user_id TEXT NOT NULL,
     created_at TEXT,
     expires_at TEXT NOT NULL,
-    user_agent TEXT,
-    device_id TEXT
+    user_agent TEXT
   )`);
-  await q(`CREATE TABLE IF NOT EXISTS account_devices (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    device_key_hash TEXT UNIQUE,
-    name TEXT NOT NULL,
-    user_agent TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT NOT NULL,
-    last_seen TEXT NOT NULL,
-    approved_at TEXT
-  )`);
-  await q(`CREATE TABLE IF NOT EXISTS device_recovery_tokens (
-    token_hash TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    expires_at TEXT NOT NULL,
-    used_at TEXT
-  )`);
-  await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_device_recovery_one_active ON device_recovery_tokens (user_id) WHERE used_at IS NULL');
-  await q('ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS device_id TEXT');
-  await q('CREATE INDEX IF NOT EXISTS idx_account_devices_user_status ON account_devices (user_id, status, created_at)');
-  await q('CREATE INDEX IF NOT EXISTS idx_auth_tokens_device ON auth_tokens (device_id)');
-  const deviceMigration = await one("SELECT value FROM settings WHERE key = 'account_devices_migration_v1'");
-  if (!deviceMigration) {
-    const legacyTokens = await q(`SELECT a.token_hash, a.user_id, a.user_agent, a.created_at, a.expires_at
-      FROM auth_tokens a WHERE a.device_id IS NULL AND a.expires_at > $1
-      ORDER BY a.created_at DESC`, [ts()]);
-    const firstDeviceByUser = new Map();
-    for (const token of legacyTokens) {
-      const deviceId = uuidv4();
-      const createdAt = token.created_at || ts();
-      await q(`INSERT INTO account_devices (id, user_id, device_key_hash, name, user_agent, status, created_at, last_seen, approved_at)
-        VALUES ($1,$2,$3,$4,$5,'approved',$6,$6,$6) ON CONFLICT (device_key_hash) DO NOTHING`,
-      [deviceId, token.user_id, token.token_hash, deviceName(token.user_agent), String(token.user_agent || '').slice(0, 200), createdAt]);
-      const device = await one('SELECT id FROM account_devices WHERE device_key_hash = $1', [token.token_hash]);
-      if (!device) continue;
-      await q('UPDATE auth_tokens SET device_id = $1 WHERE token_hash = $2 AND device_id IS NULL', [device.id, token.token_hash]);
-      if (!firstDeviceByUser.has(token.user_id)) firstDeviceByUser.set(token.user_id, device.id);
-    }
-    for (const [userId, deviceId] of firstDeviceByUser) {
-      await q(`UPDATE users SET primary_device_id = $1 WHERE id = $2 AND primary_device_id IS NULL`, [deviceId, userId]);
-    }
-    await q("INSERT INTO settings (key, value) VALUES ('account_devices_migration_v1', '1') ON CONFLICT (key) DO UPDATE SET value = '1'");
-  }
   await q(`CREATE TABLE IF NOT EXISTS auth_rate_limits (
     bucket_hash TEXT PRIMARY KEY,
     attempt_count INTEGER NOT NULL,
@@ -1271,7 +1225,6 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 
 const SESSION_COOKIE = IS_VERCEL ? '__Host-fileshare_session' : 'fileshare_session';
 const REMEMBER_COOKIE = IS_VERCEL ? '__Host-fs_remember' : 'fs_remember';
-const DEVICE_COOKIE = IS_VERCEL ? '__Host-fs_device' : 'fs_device';
 const GOOGLE_DRIVE_RETURN_COOKIE = 'fs_google_drive_return_origin';
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -1289,8 +1242,7 @@ const CONTENT_SECURITY_POLICY = [
   "worker-src 'self' blob: https://cdn.jsdelivr.net"
 ].join('; ') + (IS_VERCEL ? '; upgrade-insecure-requests' : '');
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/') || ['/admin', '/admin/devices', '/dashboard', '/change-password', '/device-recovery', '/device-recovery.html'].includes(req.path) || req.path.startsWith('/sala/') || req.path.startsWith('/enviar/')) {
-    if (req.path.startsWith('/device-recovery')) res.set('Referrer-Policy', 'no-referrer');
+  if (req.path.startsWith('/api/') || ['/admin', '/dashboard', '/change-password'].includes(req.path) || req.path.startsWith('/sala/') || req.path.startsWith('/enviar/')) {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -1323,8 +1275,7 @@ app.use((req, res, next) => {
       requestPath = decoded;
     }
   } catch (error) { return res.status(400).end(); }
-  if (requestPath === '/device-management.html') return res.redirect(302, '/admin/devices');
-  if (/\.html?$/i.test(requestPath) && !['/device-recovery.html', '/device-management.html'].includes(requestPath)) return res.status(404).end();
+  if (/\.html?$/i.test(requestPath)) return res.status(404).end();
   next();
 });
 // Assets com query de versão são imutáveis: o HTML troca o identificador quando
@@ -1359,55 +1310,6 @@ app.use(wrap(async (req, res, next) => { await ensureDatabase(); next(); }));
 // 365 dias: depois de entrar uma vez, o usuário só volta ao login se sair (logout) — navegadores limitam cookies a 400 dias.
 const REMEMBER_DAYS = 365;
 const hashToken = t => crypto.createHash('sha256').update(String(t)).digest('hex');
-function deviceName(userAgent) {
-  const ua = String(userAgent || '');
-  const browser = /Edg\//i.test(ua) ? 'Microsoft Edge' : /Firefox\//i.test(ua) ? 'Firefox' : /Chrome\//i.test(ua) ? 'Chrome' : /Safari\//i.test(ua) ? 'Safari' : 'Navegador';
-  const platform = /Android/i.test(ua) ? 'Android' : /iPhone|iPad|iPod/i.test(ua) ? 'iPhone/iPad' : /Windows/i.test(ua) ? 'Windows' : /Macintosh|Mac OS/i.test(ua) ? 'Mac' : /Linux/i.test(ua) ? 'Linux' : 'dispositivo';
-  return `${browser} · ${platform}`.slice(0, 100);
-}
-function deviceCookieOpts(maxAgeMs) {
-  return { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
-}
-async function getOrCreateDevice(user, req, res, { approve = false, forceNew = false } = {}) {
-  const presented = readCookie(req, DEVICE_COOKIE);
-  const deviceKeyHash = presented && /^[a-f0-9]{64}$/i.test(presented) ? hashToken(presented) : '';
-  let device = !forceNew && deviceKeyHash
-    ? await one('SELECT id, user_id, status FROM account_devices WHERE user_id = $1 AND device_key_hash = $2', [user.id, deviceKeyHash])
-    : null;
-  if (!device) {
-    const id = uuidv4(), key = crypto.randomBytes(32).toString('hex'), createdAt = ts();
-    let isPrimary = false;
-    await q(`INSERT INTO account_devices (id, user_id, device_key_hash, name, user_agent, status, created_at, last_seen, approved_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8)`,
-    [id, user.id, hashToken(key), deviceName(req.headers['user-agent']), String(req.headers['user-agent'] || '').slice(0, 200), 'pending', createdAt, null]);
-    if (approve && !user.primary_device_id) {
-      const claimed = await q('UPDATE users SET primary_device_id = $1 WHERE id = $2 AND primary_device_id IS NULL RETURNING id', [id, user.id]);
-      if (claimed.length) {
-        isPrimary = true;
-        await q("UPDATE account_devices SET status = 'approved', approved_at = $1 WHERE id = $2", [createdAt, id]);
-      }
-    }
-    device = { id, user_id: user.id, status: isPrimary ? 'approved' : 'pending' };
-    res.cookie(DEVICE_COOKIE, key, deviceCookieOpts(10 * 365 * 86400000));
-  } else if (device.status === 'revoked' && !forceNew) {
-    const key = crypto.randomBytes(32).toString('hex');
-    device.id = uuidv4();
-    device.status = 'pending';
-    let approvedAt = null;
-    if (approve && !user.primary_device_id) {
-      const claimed = await q('UPDATE users SET primary_device_id = $1 WHERE id = $2 AND primary_device_id IS NULL RETURNING id', [device.id, user.id]);
-      if (claimed.length) { device.status = 'approved'; approvedAt = ts(); }
-    }
-    await q(`INSERT INTO account_devices (id, user_id, device_key_hash, name, user_agent, status, created_at, last_seen, approved_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8)`,
-    [device.id, user.id, hashToken(key), deviceName(req.headers['user-agent']), String(req.headers['user-agent'] || '').slice(0, 200), device.status, ts(), approvedAt]);
-    res.cookie(DEVICE_COOKIE, key, deviceCookieOpts(10 * 365 * 86400000));
-  } else if (device && approve && device.status === 'approved' && !user.primary_device_id) {
-    const claimed = await q('UPDATE users SET primary_device_id = $1 WHERE id = $2 AND primary_device_id IS NULL RETURNING id', [device.id, user.id]);
-    if (claimed.length) device.isPrimary = true;
-  }
-  return device;
-}
 function readCookie(req, name) {
   const raw = req.headers.cookie || '';
   for (const part of raw.split(';')) {
@@ -1416,21 +1318,13 @@ function readCookie(req, name) {
   }
   return '';
 }
-function setRequestCookie(req, name, value) {
-  const cookies = String(req.headers.cookie || '').split(';').map(part => part.trim()).filter(Boolean)
-    .filter(part => part.slice(0, part.indexOf('=')) !== name);
-  cookies.push(`${name}=${encodeURIComponent(value)}`);
-  req.headers.cookie = cookies.join('; ');
-}
 function remCookieOpts(maxAgeMs) {
   return { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
 }
 async function issueRememberToken(req, res, userId) {
-  const deviceId = req.session && req.session.deviceId;
-  if (!deviceId) throw new Error('Sessão sem dispositivo vinculado.');
   const token = crypto.randomBytes(32).toString('hex');
   const exp = new Date(Date.now() + REMEMBER_DAYS * 86400000).toISOString().slice(0, 19).replace('T', ' ');
-  await q('INSERT INTO auth_tokens (token_hash, user_id, created_at, expires_at, user_agent, device_id) VALUES ($1,$2,$3,$4,$5,$6)', [hashToken(token), userId, ts(), exp, String(req.headers['user-agent'] || '').slice(0, 200), deviceId]);
+  await q('INSERT INTO auth_tokens (token_hash, user_id, created_at, expires_at, user_agent) VALUES ($1,$2,$3,$4,$5)', [hashToken(token), userId, ts(), exp, String(req.headers['user-agent'] || '').slice(0, 200)]);
   res.cookie(REMEMBER_COOKIE, token, remCookieOpts(REMEMBER_DAYS * 86400000));
 }
 app.use(wrap(async (req, res, next) => {
@@ -1439,73 +1333,21 @@ app.use(wrap(async (req, res, next) => {
     catch (e) { console.error('Fila de exclusão do Google Drive:', e && e.message); }
   }
   if (req.method === 'GET' && /\.(css|js|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(req.path)) return next();
-  if (req.session && req.session.userId && !req.session.deviceId) {
-    const legacyToken = readCookie(req, REMEMBER_COOKIE);
-    if (legacyToken && /^[a-f0-9]{64}$/i.test(legacyToken)) {
-      const legacy = await one('SELECT user_id, device_id FROM auth_tokens WHERE token_hash = $1 AND expires_at > $2', [hashToken(legacyToken), ts()]);
-      if (legacy && legacy.user_id === req.session.userId && legacy.device_id) {
-        req.session.deviceId = legacy.device_id;
-        res.cookie(DEVICE_COOKIE, legacyToken, deviceCookieOpts(10 * 365 * 86400000));
-      }
-    }
-    if (!req.session.deviceId) req.session = null;
-  }
+  if (req.session && req.session.userId) return next();
   const token = readCookie(req, REMEMBER_COOKIE);
   if (token && /^[a-f0-9]{64}$/.test(token)) {
     try {
-      const row = await one('SELECT a.user_id, a.device_id, a.created_at, a.expires_at, u.username, u.role, u.status, u.force_logout_at, d.device_key_hash, d.status AS device_status FROM auth_tokens a JOIN users u ON u.id = a.user_id LEFT JOIN account_devices d ON d.id = a.device_id WHERE a.token_hash = $1', [hashToken(token)]);
+      const row = await one('SELECT a.user_id, a.created_at, a.expires_at, u.username, u.role, u.status FROM auth_tokens a JOIN users u ON u.id = a.user_id WHERE a.token_hash = $1', [hashToken(token)]);
       const issuedAt = row && Date.parse(String(row.created_at || '').replace(' ', 'T') + 'Z');
       const rememberIsFresh = Number.isFinite(issuedAt) && Date.now() - issuedAt < REMEMBER_DAYS * 86400000;
-      const rememberIsCurrent = row && (!row.force_logout_at || issuedAt > Number(row.force_logout_at));
-      if (row && row.expires_at > ts() && rememberIsFresh && rememberIsCurrent && row.status !== 'rejected' && row.status !== 'banned' && row.device_id) {
+      if (row && row.expires_at > ts() && rememberIsFresh && row.status !== 'rejected' && row.status !== 'banned') {
         req.session.at = Date.now();
-        req.session.userId = row.user_id; req.session.username = row.username; req.session.role = row.role; req.session.status = row.status; req.session.deviceId = row.device_id;
-        if (row.device_key_hash === hashToken(token)) {
-          res.cookie(DEVICE_COOKIE, token, deviceCookieOpts(10 * 365 * 86400000));
-        } else if (row.device_status === 'approved') {
-          const deviceKey = readCookie(req, DEVICE_COOKIE);
-          const deviceKeyHash = /^[a-f0-9]{64}$/i.test(deviceKey) ? hashToken(deviceKey) : '';
-          // Preserve a chave válida já vinculada. Se ela sumiu ou ficou
-          // inconsistente, o token "lembrar de mim" restaura o aparelho aprovado.
-          if (deviceKeyHash !== row.device_key_hash) {
-            const restoredKey = crypto.randomBytes(32).toString('hex');
-            const restoredHash = hashToken(restoredKey);
-            if (row.device_key_hash !== restoredHash) {
-              const restored = await q(`UPDATE account_devices SET device_key_hash = $1
-                WHERE id = $2 AND user_id = $3 AND status = 'approved' AND device_key_hash = $4 RETURNING id`,
-              [restoredHash, row.device_id, row.user_id, row.device_key_hash]);
-              if (!restored.length) {
-                const current = await one("SELECT device_key_hash FROM account_devices WHERE id = $1 AND user_id = $2 AND status = 'approved'", [row.device_id, row.user_id]);
-                if (current && current.device_key_hash !== deviceKeyHash) return next();
-              }
-            }
-            res.cookie(DEVICE_COOKIE, restoredKey, deviceCookieOpts(10 * 365 * 86400000));
-            setRequestCookie(req, DEVICE_COOKIE, restoredKey);
-          }
-        }
+        req.session.userId = row.user_id; req.session.username = row.username; req.session.role = row.role; req.session.status = row.status;
       } else {
         if (row) await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]);
         res.clearCookie(REMEMBER_COOKIE, { path: '/' });
       }
     } catch (e) { console.error('remember:', e && e.message); }
-  }
-  if (req.session && req.session.userId && req.session.deviceId) {
-    const deviceKey = readCookie(req, DEVICE_COOKIE);
-    const linked = /^[a-f0-9]{64}$/i.test(deviceKey)
-      ? await one('SELECT id, device_key_hash, status FROM account_devices WHERE id = $1 AND user_id = $2', [req.session.deviceId, req.session.userId])
-      : null;
-    const keyHash = /^[a-f0-9]{64}$/i.test(deviceKey) ? hashToken(deviceKey) : '';
-    const keyMatches = Boolean(linked && linked.device_key_hash && linked.device_key_hash.length === keyHash.length
-      && crypto.timingSafeEqual(Buffer.from(linked.device_key_hash), Buffer.from(keyHash)));
-    if (linked && keyMatches && linked.status === 'approved') next();
-    else {
-      if (!linked || linked.status !== 'pending') {
-        req.session = null;
-        res.clearCookie(REMEMBER_COOKIE, { path: '/' });
-      }
-      next();
-    }
-    return;
   }
   next();
 }));
@@ -1559,30 +1401,15 @@ const libraryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSi
 // ---------------------------------------------------------------------------
 const requireAuth = wrap(async (req, res, next) => {
   if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
-  const user = await one('SELECT id, username, role, status, last_seen, force_logout_at, password_change_required, primary_device_id FROM users WHERE id = $1', [req.session.userId]);
+  const user = await one('SELECT id, username, role, status, last_seen, force_logout_at, password_change_required FROM users WHERE id = $1', [req.session.userId]);
   if (!user) { req.session = null; return res.status(401).json({ error: 'Não autorizado' }); }
   if (user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
     req.session = null; res.clearCookie(REMEMBER_COOKIE, { path: '/' });
     return res.status(401).json({ error: user.status === 'banned' ? 'Conta suspensa' : user.status === 'rejected' ? 'Conta sem acesso' : 'Sessão encerrada pelo administrador' });
   }
-  const presentedDeviceKey = readCookie(req, DEVICE_COOKIE);
-  const device = req.session.deviceId && await one('SELECT id, name, status, device_key_hash FROM account_devices WHERE id = $1 AND user_id = $2', [req.session.deviceId, user.id]);
-  const presentedDeviceHash = /^[a-f0-9]{64}$/i.test(presentedDeviceKey) ? hashToken(presentedDeviceKey) : '';
-  const deviceKeyMatches = Boolean(device && device.device_key_hash && presentedDeviceHash
-    && device.device_key_hash.length === presentedDeviceHash.length
-    && crypto.timingSafeEqual(Buffer.from(device.device_key_hash), Buffer.from(presentedDeviceHash)));
-  if (!device || device.status !== 'approved' || !deviceKeyMatches) {
-    if (!device || device.status !== 'pending') {
-      req.session = null;
-      res.clearCookie(REMEMBER_COOKIE, { path: '/' });
-    }
-    return res.status(403).json({ state: device && device.status === 'pending' ? 'device_pending' : 'device_revoked', error: device && device.status === 'pending' ? 'Este dispositivo aguarda aprovação do dispositivo principal.' : 'Este dispositivo não está autorizado neste aparelho.' });
-  }
-  req.device = { ...device, isPrimary: user.primary_device_id === device.id };
   if (Number(user.password_change_required) && !['/api/change-password', '/api/logout'].includes(req.path)) {
     return res.status(428).json({ state: 'password_change_required', error: 'Atualize sua senha para continuar.' });
   }
-  q('UPDATE account_devices SET last_seen = $1 WHERE id = $2 AND last_seen < $3', [ts(), device.id, agoTs(30000)]).catch(() => {});
   if (!user.last_seen || user.last_seen < agoTs(45000)) { q('UPDATE users SET last_seen = $1 WHERE id = $2', [ts(), user.id]).catch(() => {}); }
   req.user = user;
   next();
@@ -1596,49 +1423,6 @@ function requireApproved(req, res, next) {
 function requireAdmin(req, res, next) {
   if (isAdmin(req.user)) return next();
   res.status(403).json({ error: 'Acesso restrito ao administrador' });
-}
-function requirePrimaryDevice(req, res, next) {
-  if (req.device && req.device.isPrimary) return next();
-  res.status(403).json({ error: 'Somente o dispositivo principal pode alterar a senha ou os dados pessoais da conta.' });
-}
-async function verifyPrimaryConfirmation(req, res) {
-  const password = String(req.body && req.body.confirmationPassword || '');
-  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES || await consumeRateLimit('primary-confirmation:' + req.user.id, 10, 15 * 60 * 1000)) {
-    res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
-    return false;
-  }
-  const user = await one('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
-  if (!user || !(await verifyPassword(password, user.password_hash)).matches) {
-    res.status(401).json({ error: 'Confirme com a senha atual para concluir esta ação.' });
-    return false;
-  }
-  return true;
-}
-function deviceIdentityFromRequest(req) {
-  const key = readCookie(req, DEVICE_COOKIE);
-  return /^[a-f0-9]{64}$/i.test(key) ? hashToken(key) : '';
-}
-async function requireDeviceSession(req, res) {
-  if (!req.session || !req.session.userId || !req.session.deviceId) {
-    res.status(401).json({ error: 'Não autorizado' });
-    return false;
-  }
-  const keyHash = deviceIdentityFromRequest(req);
-  if (!keyHash) {
-    res.status(401).json({ error: 'Dispositivo não identificado.' });
-    return false;
-  }
-  const authorized = await one(`SELECT d.id FROM account_devices d JOIN users u ON u.id = d.user_id
-    WHERE d.id = $1 AND d.user_id = $2 AND u.id = $2 AND d.device_key_hash = $3 AND d.status = 'approved'
-      AND (u.force_logout_at IS NULL OR CAST($4 AS BIGINT) > CAST(u.force_logout_at AS BIGINT))`,
-  [req.session.deviceId, req.session.userId, keyHash, String(req.session.at || 0)]);
-  if (!authorized) {
-    req.session = null;
-    res.clearCookie(REMEMBER_COOKIE, { path: '/' });
-    res.status(401).json({ error: 'Esta sessão não pertence a um dispositivo aprovado.' });
-    return false;
-  }
-  return true;
 }
 const asAdmin = [requireAuth, requireAdmin];
 const asMember = [requireAuth, requireApproved];
@@ -2142,13 +1926,6 @@ app.use((req, res, next) => {
 
 // =================== PÁGINAS ===================
 const page = name => path.join(__dirname, 'public', name);
-async function hasAuthorizedPageDevice(req, userId) {
-  const deviceId = req.session && req.session.deviceId;
-  const key = readCookie(req, DEVICE_COOKIE);
-  if (!deviceId || !/^[a-f0-9]{64}$/i.test(key)) return false;
-  const device = await one("SELECT id, device_key_hash FROM account_devices WHERE id = $1 AND user_id = $2 AND status = 'approved'", [deviceId, userId]);
-  return Boolean(device && device.device_key_hash && crypto.timingSafeEqual(Buffer.from(device.device_key_hash), Buffer.from(hashToken(key))));
-}
 
 // Endpoint simples para monitoramento: só responde depois que o banco foi inicializado.
 app.get('/health', (req, res) => {
@@ -2160,7 +1937,7 @@ app.get('/health', (req, res) => {
 app.get('/', wrap(async (req, res) => {
   if (req.session && req.session.userId) {
     const user = await one('SELECT role FROM users WHERE id = $1', [req.session.userId]);
-    if (user && await hasAuthorizedPageDevice(req, req.session.userId)) return res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
+    if (user) return res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
     req.session = null;
   }
   res.sendFile(page('index.html'));
@@ -2168,21 +1945,10 @@ app.get('/', wrap(async (req, res) => {
 app.get('/register', (req, res) => res.sendFile(page('register.html')));
 app.get('/forgot-password', (req, res) => res.sendFile(page('forgot-password.html')));
 app.get('/reset-password', (req, res) => res.sendFile(page('reset-password.html')));
-app.get('/device-recovery', (req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(page('device-recovery.html')); });
 // Compatibilidade: o login fica na raiz ("/"); /login apenas redireciona para lá.
 app.get('/login', (req, res) => res.redirect('/'));
-app.get('/admin/devices', wrap(async (req, res) => {
-  if (!req.session || !req.session.userId || !await hasAuthorizedPageDevice(req, req.session.userId)) return res.redirect('/');
-  const user = await one('SELECT role, status, password_change_required, force_logout_at, primary_device_id FROM users WHERE id = $1', [req.session.userId]);
-  if (!user || user.role !== 'admin' || user.status === 'banned' || user.status === 'rejected'
-    || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) return res.redirect('/');
-  if (user.primary_device_id !== req.session.deviceId) return res.redirect('/admin');
-  res.set('Cache-Control', 'no-store');
-  res.sendFile(page('device-management.html'));
-}));
 app.get('/admin', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
-  if (!await hasAuthorizedPageDevice(req, req.session.userId)) { req.session = null; return res.redirect('/'); }
   const user = await one('SELECT role, status, password_change_required, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
   if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) { req.session = null; return res.redirect('/'); }
   if (Number(user.password_change_required)) return res.redirect('/change-password');
@@ -2192,7 +1958,6 @@ app.get('/admin', wrap(async (req, res) => {
 }));
 app.get('/dashboard', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
-  if (!await hasAuthorizedPageDevice(req, req.session.userId)) { req.session = null; return res.redirect('/'); }
   const user = await one('SELECT role, status, password_change_required, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
   if (!user) return res.redirect('/');
   if (user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) { req.session = null; return res.redirect('/'); }
@@ -2202,7 +1967,6 @@ app.get('/dashboard', wrap(async (req, res) => {
 }));
 app.get('/change-password', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
-  if (!await hasAuthorizedPageDevice(req, req.session.userId)) { req.session = null; return res.redirect('/'); }
   const user = await one('SELECT role, status, password_change_required, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
   if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) { req.session = null; res.clearCookie(REMEMBER_COOKIE, { path: '/' }); return res.redirect('/'); }
   if (!Number(user.password_change_required)) return res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
@@ -2262,7 +2026,7 @@ app.post('/api/login', wrap(async (req, res) => {
   if (await consumeRateLimit(ipKey, 60, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
   if (await consumeRateLimit(accountKey, 8, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
   if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) return res.status(401).json({ error: 'Credenciais inválidas' });
-  const user = await one('SELECT id, username, email, password_hash, role, status, password_change_required, primary_device_id FROM users WHERE username = $1 OR email = $2', [identifier, identifier.toLowerCase()]);
+  const user = await one('SELECT id, username, email, password_hash, role, status, password_change_required FROM users WHERE username = $1 OR email = $2', [identifier, identifier.toLowerCase()]);
   const verification = await verifyPassword(password, user ? user.password_hash : await DUMMY_PASSWORD_HASH);
   if (!verification.matches) {
     await logAct(req, 'login_falhou', identifier.slice(0, 60), { username: user ? user.username : null, id: user ? user.id : null, role: user ? user.role : null });
@@ -2274,16 +2038,6 @@ app.post('/api/login', wrap(async (req, res) => {
     const upgradedHash = await hashPassword(password);
     await q('UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash = $3', [upgradedHash, user.id, user.password_hash]);
   }
-  let device = req.session && req.session.userId === user.id && req.session.deviceId
-    ? await one("SELECT id, user_id, status FROM account_devices WHERE id = $1 AND user_id = $2 AND status = 'approved'", [req.session.deviceId, user.id])
-    : null;
-  if (!device) device = await getOrCreateDevice(user, req, res, { approve: !user.primary_device_id });
-  if (device.status !== 'approved') {
-    req.session = null;
-    res.clearCookie(REMEMBER_COOKIE, { path: '/' });
-    await logAct(req, 'dispositivo_pendente', device.name || deviceName(req.headers['user-agent']), { id: user.id, username: user.username, role: user.role });
-    return res.status(202).json({ success: true, state: 'device_pending', message: 'Este dispositivo foi cadastrado e aguarda aprovação pelo dispositivo principal.' });
-  }
   const passwordChangeRequired = Number(user.password_change_required) === 1;
   await clearLoginRateLimits(ipKey, accountKey);
   await q('UPDATE users SET last_login = $1, last_seen = $1, last_ip = $2 WHERE id = $3', [ts(), clientIp(req), user.id]);
@@ -2293,11 +2047,9 @@ app.post('/api/login', wrap(async (req, res) => {
   req.session.username = user.username;
   req.session.role = user.role;
   req.session.status = user.status;
-  req.session.deviceId = device.id;
   req.session.passwordChangeRequired = passwordChangeRequired;
   try { await issueRememberToken(req, res, user.id); } catch (e) { console.error('issue token:', e && e.message); }
-  const currentPrimary = await one('SELECT primary_device_id FROM users WHERE id = $1', [user.id]);
-  res.json({ success: true, role: user.role, status: user.status, password_change_required: passwordChangeRequired, is_primary_device: Boolean(currentPrimary && currentPrimary.primary_device_id === device.id) });
+  res.json({ success: true, role: user.role, status: user.status, password_change_required: passwordChangeRequired });
 }));
 
 app.post('/api/logout', wrap(async (req, res) => {
@@ -2307,142 +2059,6 @@ app.post('/api/logout', wrap(async (req, res) => {
   res.clearCookie(REMEMBER_COOKIE, { path: '/' });
   req.session = null;
   res.json({ success: true });
-}));
-
-// Gestão de dispositivos: somente o principal atual aprova, recusa e encerra aparelhos.
-app.get('/api/devices', requireAuth, wrap(async (req, res) => {
-  if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal pode consultar e gerenciar os aparelhos da conta.' });
-  res.set('Cache-Control', 'no-store');
-  const devices = await q(`SELECT d.id, d.name, d.status, d.created_at, d.last_seen, d.approved_at,
-      (d.id = u.primary_device_id) AS is_primary, (d.id = $2) AS is_current
-    FROM account_devices d JOIN users u ON u.id = d.user_id
-    WHERE d.user_id = $1 AND d.status <> 'revoked' ORDER BY (d.id = u.primary_device_id) DESC, d.created_at ASC`, [req.user.id, req.device.id]);
-  res.json({ is_primary: req.device.isPrimary, devices });
-}));
-// Poll curto para novos pedidos: a autenticação e a identidade do principal
-// impedem que uma sessão secundária veja dados ou decida acessos da conta.
-app.get('/api/devices/pending', requireAuth, wrap(async (req, res) => {
-  if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal pode revisar pedidos de acesso.' });
-  res.set('Cache-Control', 'no-store');
-  const devices = await q("SELECT id, name, created_at, last_seen FROM account_devices WHERE user_id = $1 AND status = 'pending' ORDER BY created_at DESC", [req.user.id]);
-  res.json({ devices });
-}));
-app.get('/api/devices/recovery/status', requireAuth, wrap(async (req, res) => {
-  if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal pode consultar essa informação.' });
-  const pending = await one('SELECT token_hash FROM device_recovery_tokens WHERE user_id = $1 AND used_at IS NULL AND expires_at > $2 LIMIT 1', [req.user.id, ts()]);
-  res.set('Cache-Control', 'no-store');
-  res.json({ pending: Boolean(pending) });
-}));
-app.get('/api/devices/pending-status', wrap(async (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  const key = readCookie(req, DEVICE_COOKIE);
-  if (!/^[a-f0-9]{64}$/i.test(key)) return res.status(401).json({ state: 'unknown' });
-  const device = await one('SELECT status FROM account_devices WHERE device_key_hash = $1', [hashToken(key)]);
-  res.json({ state: !device ? 'unknown' : device.status });
-}));
-app.post('/api/devices/:id/approve', requireAuth, wrap(async (req, res) => {
-  if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal pode aprovar novos aparelhos.' });
-  if (!await verifyPrimaryConfirmation(req, res)) return;
-  const rows = await q("UPDATE account_devices SET status = 'approved', approved_at = $1 WHERE id = $2 AND user_id = $3 AND status = 'pending' RETURNING id", [ts(), req.params.id, req.user.id]);
-  if (!rows.length) return res.status(404).json({ error: 'Dispositivo pendente não encontrado.' });
-  await logAct(req, 'dispositivo_aprovado', req.params.id);
-  res.json({ success: true });
-}));
-app.post('/api/devices/:id/deny', requireAuth, wrap(async (req, res) => {
-  if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal pode recusar aparelhos.' });
-  if (!await verifyPrimaryConfirmation(req, res)) return;
-  const rows = await q("UPDATE account_devices SET status = 'revoked' WHERE id = $1 AND user_id = $2 AND status = 'pending' RETURNING id", [req.params.id, req.user.id]);
-  if (!rows.length) return res.status(404).json({ error: 'Dispositivo pendente não encontrado.' });
-  await q('DELETE FROM auth_tokens WHERE device_id = $1', [req.params.id]);
-  res.json({ success: true });
-}));
-app.post('/api/devices/:id/primary', requireAuth, wrap(async (req, res) => {
-  if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal atual pode transferir essa função.' });
-  if (!await verifyPrimaryConfirmation(req, res)) return;
-  if (req.params.id === req.device.id) return res.status(400).json({ error: 'Este dispositivo já é o principal.' });
-  const result = await withTransaction(async tx => {
-    const account = await tx('SELECT id FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
-    if (!account.length) return 'stale';
-    const target = await tx("UPDATE account_devices SET status = 'approved', approved_at = COALESCE(approved_at, $1) WHERE id = $2 AND user_id = $3 AND status = 'approved' RETURNING id", [ts(), req.params.id, req.user.id]);
-    if (!target.length) return 'not_found';
-    // Compare-and-swap no único ponteiro de principal: se duas transferências
-    // concorrentes partirem do mesmo principal, apenas uma pode vencer.
-    const changed = await tx('UPDATE users SET primary_device_id = $1 WHERE id = $2 AND primary_device_id = $3 RETURNING id', [req.params.id, req.user.id, req.device.id]);
-    return changed.length ? 'transferred' : 'stale';
-  });
-  if (result === 'not_found') return res.status(404).json({ error: 'O dispositivo ativo não foi encontrado.' });
-  if (result === 'stale') return res.status(409).json({ error: 'O dispositivo principal foi alterado. Atualize a lista e tente novamente.' });
-  await logAct(req, 'dispositivo_principal_transferido', req.params.id);
-  res.json({ success: true });
-}));
-app.delete('/api/devices/:id', requireAuth, wrap(async (req, res) => {
-  if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal pode encerrar aparelhos.' });
-  if (!await verifyPrimaryConfirmation(req, res)) return;
-  if (req.params.id === req.device.id) return res.status(400).json({ error: 'O principal não pode encerrar a própria sessão por aqui.' });
-  const rows = await q("UPDATE account_devices SET status = 'revoked' WHERE id = $1 AND user_id = $2 AND id <> $3 AND status = 'approved' RETURNING id", [req.params.id, req.user.id, req.device.id]);
-  if (!rows.length) return res.status(404).json({ error: 'Dispositivo ativo não encontrado.' });
-  await q('DELETE FROM auth_tokens WHERE device_id = $1', [req.params.id]);
-  await logAct(req, 'dispositivo_revogado', req.params.id);
-  res.json({ success: true });
-}));
-app.post('/api/devices/recovery/request', wrap(async (req, res) => {
-  const email = String(req.body && req.body.email || '').trim().toLowerCase();
-  if (await consumeRateLimit('device-recovery-ip:' + clientIp(req), 5, 60 * 60 * 1000)) return res.status(429).json({ error: 'Muitas solicitações. Aguarde e tente novamente.' });
-  if (email && await consumeRateLimit('device-recovery-email:' + email, 3, 60 * 60 * 1000)) return res.status(429).json({ error: 'Muitas solicitações. Aguarde e tente novamente.' });
-  if (email.length <= 254) {
-    const user = await one('SELECT id, username, email FROM users WHERE lower(email) = $1', [email]);
-    if (user) {
-      const token = crypto.randomBytes(32).toString('hex');
-      const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
-      await q(`INSERT INTO device_recovery_tokens (token_hash, user_id, expires_at, used_at) VALUES ($1,$2,$3,NULL)
-        ON CONFLICT (user_id) WHERE used_at IS NULL DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at`, [hashToken(token), user.id, expires]);
-      const link = `${baseUrlFor(req)}/device-recovery?token=${encodeURIComponent(token)}`;
-      const recoveryMail = deviceRecoveryEmail(link);
-      const sent = await sendMail({ to: user.email, subject: 'Recuperação do dispositivo principal — Arquive Online', ...recoveryMail });
-      if (!sent.ok && LOCAL_MODE) console.log('[device-recovery] link de recuperação local para ' + user.email + ': ' + link);
-      await logAct(req, 'recuperacao_dispositivo_solicitada', '', { id: user.id, username: user.username });
-    }
-  }
-  res.json({ success: true, message: 'Se o e-mail estiver cadastrado e o envio estiver configurado, você receberá um link de recuperação válido por 15 minutos.' });
-}));
-app.post('/api/devices/recovery/claim', wrap(async (req, res) => {
-  const token = String(req.body && req.body.token || '').trim();
-  if (await consumeRateLimit('device-recovery-claim-ip:' + clientIp(req), 10, 60 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
-  if (!/^[a-f0-9]{64}$/i.test(token)) return res.status(400).json({ error: 'Link de recuperação inválido ou expirado.' });
-  const presented = readCookie(req, DEVICE_COOKIE);
-  if (!/^[a-f0-9]{64}$/i.test(presented)) return res.status(403).json({ error: 'Abra o link de recuperação no mesmo aparelho que solicitou acesso.' });
-  const currentDevice = await one("SELECT id, user_id, status FROM account_devices WHERE device_key_hash = $1 AND status <> 'revoked'", [hashToken(presented)]);
-  if (!currentDevice) return res.status(403).json({ error: 'Não há uma solicitação de acesso pendente neste aparelho. Entre novamente para criá-la.' });
-  const account = await one('SELECT id, username, password_hash FROM users WHERE id = $1', [currentDevice.user_id]);
-  const password = String(req.body && req.body.password || '');
-  if (!account || Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES || !(await verifyPassword(password, account.password_hash)).matches) {
-    return res.status(401).json({ error: 'A senha atual está incorreta.' });
-  }
-  if (await consumeRateLimit('device-recovery-account:' + currentDevice.user_id, 10, 60 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde e tente novamente.' });
-  const recovery = await one('SELECT token_hash, user_id, expires_at, used_at FROM device_recovery_tokens WHERE token_hash = $1 AND user_id = $2', [hashToken(token), currentDevice.user_id]);
-  if (!recovery || recovery.used_at || recovery.expires_at <= ts()) return res.status(400).json({ error: 'Link de recuperação inválido ou expirado.' });
-  if (!['pending', 'approved'].includes(currentDevice.status)) return res.status(403).json({ error: 'Este dispositivo não pode ser promovido.' });
-  const recoveryResult = await withTransaction(async tx => {
-    // Serializa recuperações e transferências da mesma conta antes de alterar
-    // o principal, os estados dos aparelhos e as credenciais relacionadas.
-    const lockedAccount = await tx('SELECT id FROM users WHERE id = $1 FOR UPDATE', [currentDevice.user_id]);
-    if (!lockedAccount.length) return 'account_missing';
-    const lockedDevice = await tx("SELECT id FROM account_devices WHERE id = $1 AND user_id = $2 AND status IN ('pending', 'approved') FOR UPDATE", [currentDevice.id, currentDevice.user_id]);
-    if (!lockedDevice.length) return 'device_unavailable';
-    const recoveredAt = ts();
-    const consumed = await tx('UPDATE device_recovery_tokens SET used_at = $1 WHERE token_hash = $2 AND user_id = $3 AND used_at IS NULL AND expires_at > $1 RETURNING user_id', [recoveredAt, recovery.token_hash, currentDevice.user_id]);
-    if (!consumed.length) return 'invalid_token';
-    await tx("UPDATE account_devices SET status = 'revoked' WHERE user_id = $1 AND id <> $2", [currentDevice.user_id, currentDevice.id]);
-    await tx("UPDATE account_devices SET status = 'approved', approved_at = $1, device_key_hash = $2 WHERE id = $3 AND user_id = $4", [recoveredAt, hashToken(presented), currentDevice.id, currentDevice.user_id]);
-    await tx('UPDATE users SET primary_device_id = $1, force_logout_at = $2 WHERE id = $3', [currentDevice.id, String(Date.now()), currentDevice.user_id]);
-    await tx('DELETE FROM auth_tokens WHERE user_id = $1', [currentDevice.user_id]);
-    await tx('DELETE FROM device_recovery_tokens WHERE user_id = $1', [currentDevice.user_id]);
-    return 'recovered';
-  });
-  if (recoveryResult === 'invalid_token') return res.status(400).json({ error: 'Link de recuperação inválido ou expirado.' });
-  if (recoveryResult !== 'recovered') return res.status(400).json({ error: 'Não foi possível transferir o dispositivo principal.' });
-  await logAct(req, 'dispositivo_principal_recuperado', currentDevice.id, { id: currentDevice.user_id, username: account.username });
-  return res.json({ success: true, message: 'Dispositivo principal recuperado. Entre novamente para iniciar uma nova sessão segura.' });
 }));
 
 // ===== Recuperação de senha por e-mail ("esqueci minha senha") =====
@@ -2523,11 +2139,6 @@ function passwordResetEmail(link, ttlMinutes) {
     '</table></td></tr></table></body></html>';
   return { subject: '⚡ FileShare — redefina sua senha', html, text };
 }
-function deviceRecoveryEmail(link) {
-  const text = 'Foi solicitada a recuperação do dispositivo principal da sua conta. Abra este link no aparelho que deseja tornar principal. O link expira em 15 minutos e só pode ser usado uma vez:\n\n' + link + '\n\nSe não foi você, ignore esta mensagem. Nenhum dispositivo foi alterado.';
-  const html = '<!doctype html><html lang="pt-br"><meta charset="utf-8"><body style="font-family:Arial,sans-serif;background:#080b12;color:#e8f1ff;padding:32px"><main style="max-width:560px;margin:auto;background:#111827;border:1px solid #263247;border-radius:16px;padding:28px"><h1>Recuperação do dispositivo principal</h1><p>Abra o link <strong>no aparelho que você deseja tornar principal</strong>. Ele expira em 15 minutos e só pode ser usado uma vez.</p><p><a href="' + link + '" style="display:inline-block;background:#00d9ff;color:#04121a;padding:14px 20px;border-radius:9px;text-decoration:none;font-weight:bold">RECUPERAR DISPOSITIVO</a></p><p style="word-break:break-all">' + link + '</p><p>Se não foi você, ignore esta mensagem. Nenhum dispositivo foi alterado.</p></main></body></html>';
-  return { html, text };
-}
 app.post('/api/forgot-password', wrap(async (req, res) => {
   const email = String((req.body || {}).email || '').trim().toLowerCase().slice(0, 254);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Informe um e-mail válido.' });
@@ -2571,8 +2182,6 @@ app.post('/api/reset-password', wrap(async (req, res) => {
   // Encerra todas as sessões e tokens "lembrar de mim" existentes dessa conta (mesmo comportamento da troca de senha).
   await q('UPDATE users SET force_logout_at = $1 WHERE id = $2', [String(Date.now()), row.user_id]);
   await q('DELETE FROM auth_tokens WHERE user_id = $1', [row.user_id]);
-  await q("UPDATE account_devices SET status = 'revoked' WHERE user_id = $1", [row.user_id]);
-  await q('UPDATE users SET primary_device_id = NULL WHERE id = $1', [row.user_id]);
   await q('DELETE FROM password_reset_tokens WHERE user_id = $1', [row.user_id]);
   await logAct(req, 'senha_redefinida', row.username, { id: row.user_id, username: row.username });
   return res.json({ success: true, message: 'Senha redefinida com sucesso! Já pode entrar com a nova senha.' });
@@ -2583,8 +2192,7 @@ app.get('/api/me', requireAuth, wrap(async (req, res) => {
   const unread = await one('SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND "read" = 0', [req.user.id]);
   const driveEnabled = await googleDriveConnected();
   const blobsEnabled = blobEnabled();
-  res.set('Cache-Control', 'no-store');
-  res.json({ ...user, is_primary_device: req.device.isPrimary, device_name: req.device.name, unread_notifications: num(unread && unread.count), drive_upload_enabled: driveEnabled, blob_upload_enabled: blobsEnabled,
+  res.json({ ...user, unread_notifications: num(unread && unread.count), drive_upload_enabled: driveEnabled, blob_upload_enabled: blobsEnabled,
     max_upload_bytes: blobsEnabled ? MAX_BLOB_UPLOAD_BYTES : driveEnabled ? MAX_DIRECT_BYTES : MAX_FILE_BYTES });
 }));
 
@@ -2882,7 +2490,7 @@ app.put('/api/preferences', requireAuth, wrap(async (req, res) => {
   res.json({ success: true, theme, compact_mode: !!compact, reduced_motion: !!reduced, refresh_seconds: refresh, browser_notifications: !!notifications });
 }));
 
-app.put('/api/profile/avatar', requireAuth, requirePrimaryDevice, wrap(async (req, res) => {
+app.put('/api/profile/avatar', requireAuth, wrap(async (req, res) => {
   const image = req.body && req.body.image;
   if (image !== null && image !== '' && (typeof image !== 'string' || image.length > 140000 || !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/i.test(image))) {
     return res.status(400).json({ error: 'Use uma imagem JPG, PNG ou WebP de até 100 KB.' });
@@ -3622,7 +3230,6 @@ app.post('/api/rooms/:id/upload-token', wrap(async (req, res) => {
   if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
   const action = req.body && req.body.type;
   if (action === 'blob.generate-presigned-url') {
-    if (!await requireDeviceSession(req, res)) return;
     if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
     const user = await one('SELECT id, username, role, status, last_seen, force_logout_at, password_change_required FROM users WHERE id = $1', [req.session.userId]);
     if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
@@ -3777,7 +3384,6 @@ app.post('/api/library/upload-token', wrap(async (req, res) => {
   if (!blobEnabled()) return res.status(501).json({ error: 'Upload direto indisponível neste ambiente' });
   const action = req.body && req.body.type;
   if (action === 'blob.generate-presigned-url') {
-    if (!await requireDeviceSession(req, res)) return;
     if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
     const user = await one('SELECT id, username, role, status, last_seen, force_logout_at, password_change_required FROM users WHERE id = $1', [req.session.userId]);
     if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
@@ -5561,7 +5167,6 @@ app.get('/api/admin/stats', asAdmin, wrap(async (req, res) => {
 }));
 
 app.post('/api/change-password', requireAuth, wrap(async (req, res) => {
-  if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal pode alterar a senha da conta.' });
   const { currentPassword, newPassword } = req.body || {};
   if (await consumeRateLimit('change-password:' + req.user.id, 8, 15 * 60 * 1000)) return res.status(429).json({ error: 'Muitas tentativas para alterar a senha. Aguarde e tente novamente.' });
   const user = await one('SELECT id, password_hash FROM users WHERE id = $1', [req.user.id]);
@@ -5572,7 +5177,7 @@ app.post('/api/change-password', requireAuth, wrap(async (req, res) => {
   // Encerra sessões e tokens antigos; mantém somente a sessão que acabou de trocar a senha.
   const loggedOutAt = Date.now();
   await q('UPDATE users SET force_logout_at = $1 WHERE id = $2', [String(loggedOutAt), user.id]);
-  await q('DELETE FROM auth_tokens WHERE user_id = $1 AND device_id <> $2', [user.id, req.device.id]);
+  await q('DELETE FROM auth_tokens WHERE user_id = $1', [user.id]);
   req.session.at = loggedOutAt + 1;
   try { await issueRememberToken(req, res, user.id); } catch (e) { console.error('revoke tokens:', e && e.message); }
   res.json({ success: true, role: req.user.role });
