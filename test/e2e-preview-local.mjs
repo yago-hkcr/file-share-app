@@ -77,10 +77,32 @@ try {
   check(res.ok, 'login do admin local');
   check(cookies.includes('fs_device='), 'login cria uma credencial persistente vinculada ao dispositivo');
   const csrfCookies = Object.fromEntries(cookies.split('; ').map(part => { const index = part.indexOf('='); return [part.slice(0, index), part.slice(index + 1)]; }));
+  const rememberToken = csrfCookies.fs_remember;
+  const recoveredCookieLogin = await fetch(`${BASE}/api/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...ORIGIN, cookie: `fs_remember=${rememberToken}`, 'user-agent': 'Chrome/120.0 (Windows NT 10.0)' },
+    body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD })
+  });
+  const recoveredCookieLoginBody = await recoveredCookieLogin.json();
+  const recoveredCookieValues = (recoveredCookieLogin.headers.getSetCookie ? recoveredCookieLogin.headers.getSetCookie() : [recoveredCookieLogin.headers.get('set-cookie')])
+    .filter(Boolean).map(cookie => cookie.split(';')[0]);
+  if (!recoveredCookieLogin.ok || recoveredCookieLoginBody.is_primary_device !== true || !recoveredCookieValues.some(cookie => cookie.startsWith('fs_device='))) {
+    console.log('  [debug remember recovery]', recoveredCookieLogin.status, recoveredCookieLoginBody, recoveredCookieValues);
+  }
+  check(recoveredCookieLogin.ok && recoveredCookieLoginBody.is_primary_device === true
+    && recoveredCookieValues.some(cookie => cookie.startsWith('fs_device=')),
+  'cookie lembrar-me restaura o dispositivo principal aprovado quando o cookie de aparelho foi perdido');
+  cookies = [...new Set([`fs_remember=${rememberToken}`, ...recoveredCookieValues])].join('; ');
   const adminPage = await fetch(`${BASE}/admin`, { headers: { cookie: cookies, ...ORIGIN } });
   const adminHtml = await adminPage.text();
   check(adminPage.ok && adminHtml.includes('id="tab-storage"') && adminHtml.includes('loadGoogleDriveStatus()'),
     'painel administrativo oferece estado e conexão do Google Drive compartilhado');
+  check(adminHtml.includes('pendingDeviceNotice') && adminHtml.includes('loadPendingDeviceNotice()'),
+    'painel ADM mostra aviso separado para pedidos e direciona à gestão de dispositivos');
+  const loginHtml = await (await fetch(`${BASE}/`)).text();
+  check(loginHtml.includes('pendingDeviceRecoveryEmailGroup') && loginHtml.includes('Recuperar acesso ao principal por e-mail')
+    && loginHtml.includes('Isso não remove o aparelho principal') && loginHtml.includes('window.pendingDevicePoll'),
+  'login explica que pedidos não removem o principal e permite solicitar recuperação por e-mail sem trocar o usuário');
   const driveStatusResponse = await fetch(`${BASE}/api/admin/google-drive/status`, { headers: { cookie: cookies, ...ORIGIN } });
   const driveStatus = await driveStatusResponse.json();
   if (!driveStatusResponse.ok || driveStatus.configured !== false) console.log('  [debug drive status]', driveStatusResponse.status, driveStatus);
@@ -92,7 +114,10 @@ try {
   check(driveStatusAnonymous.status === 401,
     'status da conexão do Drive continua restrito ao administrador autenticado');
   const deviceManagementPage = await fetch(`${BASE}/admin/devices`, { headers: { cookie: cookies, ...ORIGIN } });
-  check(deviceManagementPage.ok && (await deviceManagementPage.text()).includes('Dispositivos vinculados'), 'painel ADM inclui página de gerenciamento de dispositivos');
+  const deviceManagementHtml = await deviceManagementPage.text();
+  check(deviceManagementPage.ok && deviceManagementHtml.includes('Dispositivos vinculados'), 'painel ADM inclui página de gerenciamento de dispositivos');
+  check(deviceManagementHtml.includes('setInterval(() => { if (!document.hidden) load(); }, 3000)'),
+    'gestão de dispositivos atualiza automaticamente pedidos novos sem recarregar a página');
   const deviceListResponse = await fetch(`${BASE}/api/devices`, { headers: { cookie: cookies, ...ORIGIN } });
   const deviceList = await deviceListResponse.json();
   if (!deviceListResponse.ok) console.log('  [debug devices]', deviceListResponse.status, deviceList);
@@ -108,6 +133,24 @@ try {
   const pendingCookieValues = Object.fromEntries(secondCookies.split('; ').map(part => { const index = part.indexOf('='); return [part.slice(0, index), part.slice(index + 1)]; }));
   check(secondDeviceLogin.status === 202 && pendingDevice.state === 'device_pending' && secondCookies.includes('fs_device='),
     'novo aparelho entra em espera até aprovação e recebe identidade própria');
+  const principalStillUsable = await fetch(`${BASE}/api/devices`, { headers: { cookie: cookies, ...ORIGIN } });
+  check(principalStillUsable.ok, 'solicitação em outro aparelho não remove o acesso do dispositivo principal já autorizado');
+  const approvalNoticeResponse = await fetch(`${BASE}/api/notifications`, { headers: { cookie: cookies, ...ORIGIN } });
+  const approvalNotices = approvalNoticeResponse.ok ? await approvalNoticeResponse.json() : [];
+  check(approvalNoticeResponse.ok && !approvalNotices.some(item => item.type === 'device_pending'),
+    'pedido de novo aparelho não é misturado às notificações genéricas da conta');
+  const pendingApprovalsResponse = await fetch(`${BASE}/api/devices/pending`, { headers: { cookie: cookies, ...ORIGIN } });
+  const pendingApprovalsData = pendingApprovalsResponse.ok ? await pendingApprovalsResponse.json() : {};
+  check(pendingApprovalsResponse.ok && Array.isArray(pendingApprovalsData.devices) && pendingApprovalsData.devices.length > 0 && pendingApprovalsData.devices.every(device => device.id && device.name && device.created_at),
+    'dispositivo principal consegue consultar os pedidos para aprovar');
+  const dashboardResponse = await fetch(`${BASE}/dashboard`, { headers: { cookie: cookies, ...ORIGIN } });
+  const dashboardHtml = await dashboardResponse.text();
+  check(dashboardResponse.ok && dashboardHtml.includes('pendingDeviceApprovalBanner') && dashboardHtml.includes('20261102b'),
+    'dashboard inclui alerta destacado para pedidos e carrega o cliente de notificações atualizado');
+  const serviceWorkerResponse = await fetch(`${BASE}/sw.js`);
+  const serviceWorkerSource = await serviceWorkerResponse.text();
+  check(serviceWorkerResponse.ok && serviceWorkerSource.includes("new URL(client.url).pathname === '/dashboard'") && serviceWorkerSource.includes("admin.navigate('/dashboard')"),
+    'clique na notificação direciona ao dashboard da conta, não ao painel ADM');
   const pendingList = await (await fetch(`${BASE}/api/devices`, { headers: { cookie: cookies, ...ORIGIN } })).json();
   if (!pendingList.devices) console.log('  [debug pending devices]', pendingList);
   if (!pendingList.devices) throw new Error('Falha ao carregar a lista de dispositivos. Log do servidor:\n' + serverLog.slice(-8000));
@@ -126,14 +169,79 @@ try {
     const secondaryListResponse = await fetch(`${BASE}/api/devices`, { headers: { cookie: secondarySessionCookies, ...ORIGIN } });
     if (secondaryListResponse.status !== 403) console.log('  [debug secondary devices]', secondaryListResponse.status, await secondaryListResponse.text());
     check(secondaryListResponse.status === 403, 'dispositivo aprovado não principal não pode gerenciar dispositivos');
+    const secondaryPendingResponse = await fetch(`${BASE}/api/devices/pending`, { headers: { cookie: secondarySessionCookies, ...ORIGIN } });
+    check(secondaryPendingResponse.status === 403, 'dispositivo aprovado não principal não pode consultar pedidos de acesso');
     const avatarResponse = await fetch(`${BASE}/api/profile/avatar`, { method: 'PUT', headers: { 'content-type': 'application/json', cookie: secondarySessionCookies, ...ORIGIN }, body: JSON.stringify({ image: null }) });
     if (avatarResponse.status !== 403) console.log('  [debug secondary avatar]', avatarResponse.status, await avatarResponse.text());
     check(avatarResponse.status === 403, 'dispositivo secundário não pode alterar dados pessoais do perfil');
     const revokeResponse = await fetch(`${BASE}/api/devices/${pending.id}`, { method: 'DELETE', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN }, body: JSON.stringify({ confirmationPassword: ADMIN_PASSWORD }) });
     const revokedLogin = await fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN, cookie: 'fs_device=' + pendingCookieValues.fs_device }, body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD }) });
     check(revokeResponse.ok && revokedLogin.status === 202, 'revogação imediata impede renovar sessão no aparelho removido');
+    const revokedApprovalNotice = await fetch(`${BASE}/api/devices/pending`, { headers: { cookie: cookies, ...ORIGIN } });
+    const revokedApprovalData = revokedApprovalNotice.ok ? await revokedApprovalNotice.json() : {};
+    check(revokedApprovalNotice.ok && !revokedApprovalData.devices.some(device => device.id === pending.id), 'pedido recusado deixa de aparecer no fluxo principal de aprovação');
     const revokedApiAccess = await fetch(`${BASE}/api/me`, { headers: { cookie: secondarySessionCookies, ...ORIGIN } });
     check(revokedApiAccess.status === 401, 'revogação imediata bloqueia a sessão ativa do aparelho removido');
+  }
+  const transferUserAgents = ['Edg/130.0 (Windows NT 10.0)', 'Firefox/130.0 (Macintosh)'];
+  const transferLogins = await Promise.all(transferUserAgents.map(userAgent =>
+    fetch(`${BASE}/api/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN, 'user-agent': userAgent },
+      body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD })
+    })));
+  const transferDevices = [];
+  for (let index = 0; index < transferLogins.length; index++) {
+    const response = transferLogins[index];
+    const body = await response.json();
+    const setCookies = (response.headers.getSetCookie ? response.headers.getSetCookie() : [response.headers.get('set-cookie')]).filter(Boolean);
+    const deviceCookie = setCookies.map(cookie => cookie.split(';')[0]).find(cookie => cookie.startsWith('fs_device='));
+    transferDevices.push({ response, body, deviceCookie, userAgent: transferUserAgents[index], id: null, cookies: null });
+  }
+  check(transferDevices.every(device => device.response.status === 202 && device.body.state === 'device_pending' && device.deviceCookie),
+    'aparelhos candidatos a principal iniciam como pedidos pendentes');
+  for (const device of transferDevices) {
+    const request = await fetch(`${BASE}/api/devices/pending-status`, { headers: { cookie: device.deviceCookie, ...ORIGIN } });
+    check(request.ok && (await request.json()).state === 'pending', 'pedido candidato mantém identidade própria para aprovação');
+    const pendingDevicesResponse = await fetch(`${BASE}/api/devices`, { headers: { cookie: cookies, ...ORIGIN } });
+    const pendingDevices = await pendingDevicesResponse.json();
+    const expectedDeviceName = device.userAgent.includes('Firefox') ? 'Firefox · Mac' : 'Microsoft Edge · Windows';
+    const target = pendingDevices.devices?.find(item => item.status === 'pending' && item.name === expectedDeviceName && item.id);
+    if (!target) throw new Error('Não foi possível encontrar o pedido candidato para aprovação.');
+    device.id = target.id;
+    const approved = await fetch(`${BASE}/api/devices/${device.id}/approve`, {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },
+      body: JSON.stringify({ confirmationPassword: ADMIN_PASSWORD })
+    });
+    check(approved.ok, 'principal aprova aparelho candidato à transferência');
+    const login = await fetch(`${BASE}/api/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN, cookie: device.deviceCookie, 'user-agent': device.userAgent },
+      body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD })
+    });
+    const loginBody = await login.json();
+    const loginCookies = (login.headers.getSetCookie ? login.headers.getSetCookie() : [login.headers.get('set-cookie')]).filter(Boolean).map(cookie => cookie.split(';')[0]);
+    device.cookies = [device.deviceCookie, ...loginCookies].join('; ');
+    check(login.status === 200 && loginBody.success, 'aparelho candidato aprovado consegue iniciar sessão');
+  }
+  const transferResponses = await Promise.all(transferDevices.map(device => fetch(`${BASE}/api/devices/${device.id}/primary`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: cookies, ...ORIGIN },
+    body: JSON.stringify({ confirmationPassword: ADMIN_PASSWORD })
+  })));
+  const transferStatuses = transferResponses.map(response => response.status).sort((a, b) => a - b);
+  check(transferStatuses.filter(status => status === 200).length === 1
+    && transferStatuses.every(status => status === 200 || status === 403 || status === 409),
+  'duas transferências simultâneas resultam em exatamente uma vencedora e a outra é bloqueada');
+  const winnerIndex = transferResponses.findIndex(response => response.ok);
+  if (winnerIndex >= 0) {
+    cookies = transferDevices[winnerIndex].cookies;
+    const afterTransferResponse = await fetch(`${BASE}/api/devices`, { headers: { cookie: cookies, ...ORIGIN } });
+    const afterTransfer = await afterTransferResponse.json();
+    const primaryDevices = (afterTransfer.devices || []).filter(device => device.is_primary);
+    check(afterTransferResponse.ok && afterTransfer.is_primary && primaryDevices.length === 1
+      && primaryDevices[0].id === transferDevices[winnerIndex].id,
+    'após transferências concorrentes existe exatamente um aparelho principal e é o vencedor');
+    const losingIndex = winnerIndex === 0 ? 1 : 0;
+    const losingManagement = await fetch(`${BASE}/api/devices`, { headers: { cookie: transferDevices[losingIndex].cookies, ...ORIGIN } });
+    check(losingManagement.status === 403, 'aparelho perdedor da disputa não recebe permissões de principal');
   }
   const recoveryDeviceLogin = await fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', ...ORIGIN, 'user-agent': 'Firefox/130.0 (Linux)' }, body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD }) });
   const recoveryDeviceLoginBody = await recoveryDeviceLogin.json();
