@@ -1416,6 +1416,12 @@ function readCookie(req, name) {
   }
   return '';
 }
+function setRequestCookie(req, name, value) {
+  const cookies = String(req.headers.cookie || '').split(';').map(part => part.trim()).filter(Boolean)
+    .filter(part => part.slice(0, part.indexOf('=')) !== name);
+  cookies.push(`${name}=${encodeURIComponent(value)}`);
+  req.headers.cookie = cookies.join('; ');
+}
 function remCookieOpts(maxAgeMs) {
   return { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
 }
@@ -1447,13 +1453,36 @@ app.use(wrap(async (req, res, next) => {
   const token = readCookie(req, REMEMBER_COOKIE);
   if (token && /^[a-f0-9]{64}$/.test(token)) {
     try {
-      const row = await one('SELECT a.user_id, a.device_id, a.created_at, a.expires_at, u.username, u.role, u.status, d.device_key_hash FROM auth_tokens a JOIN users u ON u.id = a.user_id LEFT JOIN account_devices d ON d.id = a.device_id WHERE a.token_hash = $1', [hashToken(token)]);
+      const row = await one('SELECT a.user_id, a.device_id, a.created_at, a.expires_at, u.username, u.role, u.status, u.force_logout_at, d.device_key_hash, d.status AS device_status FROM auth_tokens a JOIN users u ON u.id = a.user_id LEFT JOIN account_devices d ON d.id = a.device_id WHERE a.token_hash = $1', [hashToken(token)]);
       const issuedAt = row && Date.parse(String(row.created_at || '').replace(' ', 'T') + 'Z');
       const rememberIsFresh = Number.isFinite(issuedAt) && Date.now() - issuedAt < REMEMBER_DAYS * 86400000;
-      if (row && row.expires_at > ts() && rememberIsFresh && row.status !== 'rejected' && row.status !== 'banned' && row.device_id) {
+      const rememberIsCurrent = row && (!row.force_logout_at || issuedAt > Number(row.force_logout_at));
+      if (row && row.expires_at > ts() && rememberIsFresh && rememberIsCurrent && row.status !== 'rejected' && row.status !== 'banned' && row.device_id) {
         req.session.at = Date.now();
         req.session.userId = row.user_id; req.session.username = row.username; req.session.role = row.role; req.session.status = row.status; req.session.deviceId = row.device_id;
-        if (row.device_key_hash === hashToken(token)) res.cookie(DEVICE_COOKIE, token, deviceCookieOpts(10 * 365 * 86400000));
+        if (row.device_key_hash === hashToken(token)) {
+          res.cookie(DEVICE_COOKIE, token, deviceCookieOpts(10 * 365 * 86400000));
+        } else if (row.device_status === 'approved') {
+          const deviceKey = readCookie(req, DEVICE_COOKIE);
+          const deviceKeyHash = /^[a-f0-9]{64}$/i.test(deviceKey) ? hashToken(deviceKey) : '';
+          // Preserve a chave válida já vinculada. Se ela sumiu ou ficou
+          // inconsistente, o token "lembrar de mim" restaura o aparelho aprovado.
+          if (deviceKeyHash !== row.device_key_hash) {
+            const restoredKey = crypto.randomBytes(32).toString('hex');
+            const restoredHash = hashToken(restoredKey);
+            if (row.device_key_hash !== restoredHash) {
+              const restored = await q(`UPDATE account_devices SET device_key_hash = $1
+                WHERE id = $2 AND user_id = $3 AND status = 'approved' AND device_key_hash = $4 RETURNING id`,
+              [restoredHash, row.device_id, row.user_id, row.device_key_hash]);
+              if (!restored.length) {
+                const current = await one("SELECT device_key_hash FROM account_devices WHERE id = $1 AND user_id = $2 AND status = 'approved'", [row.device_id, row.user_id]);
+                if (current && current.device_key_hash !== deviceKeyHash) return next();
+              }
+            }
+            res.cookie(DEVICE_COOKIE, restoredKey, deviceCookieOpts(10 * 365 * 86400000));
+            setRequestCookie(req, DEVICE_COOKIE, restoredKey);
+          }
+        }
       } else {
         if (row) await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]);
         res.clearCookie(REMEMBER_COOKIE, { path: '/' });
@@ -2245,7 +2274,10 @@ app.post('/api/login', wrap(async (req, res) => {
     const upgradedHash = await hashPassword(password);
     await q('UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash = $3', [upgradedHash, user.id, user.password_hash]);
   }
-  const device = await getOrCreateDevice(user, req, res, { approve: !user.primary_device_id });
+  let device = req.session && req.session.userId === user.id && req.session.deviceId
+    ? await one("SELECT id, user_id, status FROM account_devices WHERE id = $1 AND user_id = $2 AND status = 'approved'", [req.session.deviceId, user.id])
+    : null;
+  if (!device) device = await getOrCreateDevice(user, req, res, { approve: !user.primary_device_id });
   if (device.status !== 'approved') {
     req.session = null;
     res.clearCookie(REMEMBER_COOKIE, { path: '/' });
@@ -2264,7 +2296,8 @@ app.post('/api/login', wrap(async (req, res) => {
   req.session.deviceId = device.id;
   req.session.passwordChangeRequired = passwordChangeRequired;
   try { await issueRememberToken(req, res, user.id); } catch (e) { console.error('issue token:', e && e.message); }
-  res.json({ success: true, role: user.role, status: user.status, password_change_required: passwordChangeRequired, is_primary_device: device.id === user.primary_device_id || !user.primary_device_id });
+  const currentPrimary = await one('SELECT primary_device_id FROM users WHERE id = $1', [user.id]);
+  res.json({ success: true, role: user.role, status: user.status, password_change_required: passwordChangeRequired, is_primary_device: Boolean(currentPrimary && currentPrimary.primary_device_id === device.id) });
 }));
 
 app.post('/api/logout', wrap(async (req, res) => {
@@ -2285,6 +2318,14 @@ app.get('/api/devices', requireAuth, wrap(async (req, res) => {
     FROM account_devices d JOIN users u ON u.id = d.user_id
     WHERE d.user_id = $1 AND d.status <> 'revoked' ORDER BY (d.id = u.primary_device_id) DESC, d.created_at ASC`, [req.user.id, req.device.id]);
   res.json({ is_primary: req.device.isPrimary, devices });
+}));
+// Poll curto para novos pedidos: a autenticação e a identidade do principal
+// impedem que uma sessão secundária veja dados ou decida acessos da conta.
+app.get('/api/devices/pending', requireAuth, wrap(async (req, res) => {
+  if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal pode revisar pedidos de acesso.' });
+  res.set('Cache-Control', 'no-store');
+  const devices = await q("SELECT id, name, created_at, last_seen FROM account_devices WHERE user_id = $1 AND status = 'pending' ORDER BY created_at DESC", [req.user.id]);
+  res.json({ devices });
 }));
 app.get('/api/devices/recovery/status', requireAuth, wrap(async (req, res) => {
   if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal pode consultar essa informação.' });
@@ -2319,9 +2360,18 @@ app.post('/api/devices/:id/primary', requireAuth, wrap(async (req, res) => {
   if (!req.device.isPrimary) return res.status(403).json({ error: 'Somente o dispositivo principal atual pode transferir essa função.' });
   if (!await verifyPrimaryConfirmation(req, res)) return;
   if (req.params.id === req.device.id) return res.status(400).json({ error: 'Este dispositivo já é o principal.' });
-  const target = await q("UPDATE account_devices SET status = 'approved', approved_at = COALESCE(approved_at, $1) WHERE id = $2 AND user_id = $3 AND status = 'approved' RETURNING id", [ts(), req.params.id, req.user.id]);
-  if (!target.length) return res.status(404).json({ error: 'O dispositivo ativo não foi encontrado.' });
-  await q('UPDATE users SET primary_device_id = $1 WHERE id = $2', [req.params.id, req.user.id]);
+  const result = await withTransaction(async tx => {
+    const account = await tx('SELECT id FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
+    if (!account.length) return 'stale';
+    const target = await tx("UPDATE account_devices SET status = 'approved', approved_at = COALESCE(approved_at, $1) WHERE id = $2 AND user_id = $3 AND status = 'approved' RETURNING id", [ts(), req.params.id, req.user.id]);
+    if (!target.length) return 'not_found';
+    // Compare-and-swap no único ponteiro de principal: se duas transferências
+    // concorrentes partirem do mesmo principal, apenas uma pode vencer.
+    const changed = await tx('UPDATE users SET primary_device_id = $1 WHERE id = $2 AND primary_device_id = $3 RETURNING id', [req.params.id, req.user.id, req.device.id]);
+    return changed.length ? 'transferred' : 'stale';
+  });
+  if (result === 'not_found') return res.status(404).json({ error: 'O dispositivo ativo não foi encontrado.' });
+  if (result === 'stale') return res.status(409).json({ error: 'O dispositivo principal foi alterado. Atualize a lista e tente novamente.' });
   await logAct(req, 'dispositivo_principal_transferido', req.params.id);
   res.json({ success: true });
 }));
@@ -2372,15 +2422,25 @@ app.post('/api/devices/recovery/claim', wrap(async (req, res) => {
   const recovery = await one('SELECT token_hash, user_id, expires_at, used_at FROM device_recovery_tokens WHERE token_hash = $1 AND user_id = $2', [hashToken(token), currentDevice.user_id]);
   if (!recovery || recovery.used_at || recovery.expires_at <= ts()) return res.status(400).json({ error: 'Link de recuperação inválido ou expirado.' });
   if (!['pending', 'approved'].includes(currentDevice.status)) return res.status(403).json({ error: 'Este dispositivo não pode ser promovido.' });
-  const consumed = await q('UPDATE device_recovery_tokens SET used_at = $1 WHERE token_hash = $2 AND used_at IS NULL AND expires_at > $1 RETURNING user_id', [ts(), recovery.token_hash]);
-  if (!consumed.length) return res.status(400).json({ error: 'Link de recuperação inválido ou expirado.' });
-  const claimed = await q('UPDATE users SET primary_device_id = $1 WHERE id = $2 RETURNING id', [currentDevice.id, currentDevice.user_id]);
-  if (!claimed.length) return res.status(400).json({ error: 'Não foi possível transferir o dispositivo principal.' });
-  await q("UPDATE account_devices SET status = 'revoked' WHERE user_id = $1 AND id <> $2", [currentDevice.user_id, currentDevice.id]);
-  await q("UPDATE account_devices SET status = 'approved', approved_at = $1, device_key_hash = $2 WHERE id = $3", [ts(), hashToken(presented), currentDevice.id]);
-  await q('DELETE FROM auth_tokens WHERE user_id = $1', [currentDevice.user_id]);
-  await q('UPDATE users SET force_logout_at = $1 WHERE id = $2', [String(Date.now()), currentDevice.user_id]);
-  await q('DELETE FROM device_recovery_tokens WHERE user_id = $1', [currentDevice.user_id]);
+  const recoveryResult = await withTransaction(async tx => {
+    // Serializa recuperações e transferências da mesma conta antes de alterar
+    // o principal, os estados dos aparelhos e as credenciais relacionadas.
+    const lockedAccount = await tx('SELECT id FROM users WHERE id = $1 FOR UPDATE', [currentDevice.user_id]);
+    if (!lockedAccount.length) return 'account_missing';
+    const lockedDevice = await tx("SELECT id FROM account_devices WHERE id = $1 AND user_id = $2 AND status IN ('pending', 'approved') FOR UPDATE", [currentDevice.id, currentDevice.user_id]);
+    if (!lockedDevice.length) return 'device_unavailable';
+    const recoveredAt = ts();
+    const consumed = await tx('UPDATE device_recovery_tokens SET used_at = $1 WHERE token_hash = $2 AND user_id = $3 AND used_at IS NULL AND expires_at > $1 RETURNING user_id', [recoveredAt, recovery.token_hash, currentDevice.user_id]);
+    if (!consumed.length) return 'invalid_token';
+    await tx("UPDATE account_devices SET status = 'revoked' WHERE user_id = $1 AND id <> $2", [currentDevice.user_id, currentDevice.id]);
+    await tx("UPDATE account_devices SET status = 'approved', approved_at = $1, device_key_hash = $2 WHERE id = $3 AND user_id = $4", [recoveredAt, hashToken(presented), currentDevice.id, currentDevice.user_id]);
+    await tx('UPDATE users SET primary_device_id = $1, force_logout_at = $2 WHERE id = $3', [currentDevice.id, String(Date.now()), currentDevice.user_id]);
+    await tx('DELETE FROM auth_tokens WHERE user_id = $1', [currentDevice.user_id]);
+    await tx('DELETE FROM device_recovery_tokens WHERE user_id = $1', [currentDevice.user_id]);
+    return 'recovered';
+  });
+  if (recoveryResult === 'invalid_token') return res.status(400).json({ error: 'Link de recuperação inválido ou expirado.' });
+  if (recoveryResult !== 'recovered') return res.status(400).json({ error: 'Não foi possível transferir o dispositivo principal.' });
   await logAct(req, 'dispositivo_principal_recuperado', currentDevice.id, { id: currentDevice.user_id, username: account.username });
   return res.json({ success: true, message: 'Dispositivo principal recuperado. Entre novamente para iniciar uma nova sessão segura.' });
 }));
