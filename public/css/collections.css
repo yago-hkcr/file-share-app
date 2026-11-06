@@ -565,6 +565,28 @@ html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions
 html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions > div,
 html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions > div i { color:#a00e2c; }
 html:not([data-theme="dark"]) #collectionsPanel .collection-request-instructions p { color:#3f3f3f; }
+/* Keep every nested collection control on the light palette as well. The
+   component defaults are intentionally dark because the public upload flow
+   also uses this stylesheet. */
+html:not([data-theme="dark"]) #collectionsPanel .collection-mode-badge,
+html:not([data-theme="dark"]) #collectionsPanel .collection-single-toggle small,
+html:not([data-theme="dark"]) #collectionsPanel .collection-download-senders small,
+html:not([data-theme="dark"]) #collectionsPanel .collection-file-preview-info small,
+html:not([data-theme="dark"]) #collectionsPanel .collection-saved-file small { color:#8a2638; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-exclusive-toggle,
+html:not([data-theme="dark"]) #collectionsPanel .collection-review { color:#3f3f3f; border-color:#f3c9ce; background:#fff5f6; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-preview-card,
+html:not([data-theme="dark"]) #collectionsPanel .collection-saved-file { color:#3f3f3f; border-color:#efd6d9; background:#fff; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-preview-icon { color:#e22c3b; background:#fdeef0; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-review h2,
+html:not([data-theme="dark"]) #collectionsPanel .collection-file-preview-info strong,
+html:not([data-theme="dark"]) #collectionsPanel .collection-download-senders span { color:#262626; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-file-preview-info a { color:#a00e2c; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-upload-progress { color:#3f3f3f; background:#fff1f3; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-public-message { color:#a52343; border-color:#f1c9d2; background:#fff1f3; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-public-message.is-success { color:#17683b; border-color:#bfe8cd; background:#effbf3; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-participant-chip button { color:#3f3f3f; }
+html:not([data-theme="dark"]) #collectionsPanel .collection-status.is-submitted { color:#166534; background:#dcfce7; }
 @media (prefers-color-scheme:light) {
   body.collection-page { color:#1c1c1c; color-scheme:light; background:#f7f7f7; }
   body.collection-page::before { background:radial-gradient(ellipse at 17% 15%,rgba(226, 44, 59, .13),transparent 42%),radial-gradient(ellipse at 86% 74%,rgba(226, 44, 59, .1),transparent 39%),linear-gradient(145deg,#ffffff,#ffebee 56%,#f7f7f7); }
