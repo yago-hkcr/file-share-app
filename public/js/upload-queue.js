@@ -263,7 +263,7 @@
         body.append(progress);
         const percent = document.createElement('small');
         percent.className = 'fs-upload-percent';
-        percent.textContent = task.state === 'queued' ? 'Aguardando conexão para retomar' : `${task.progress}%`;
+        percent.textContent = task.state === 'queued' ? 'Salvo no aparelho; aguarda conexão e execução do navegador' : `${task.progress}%`;
         body.append(percent);
       }
       row.append(icon, body);
@@ -350,7 +350,7 @@
       if (controller.signal.aborted || task.state === 'cancelled') return { ok: false, cancelled: true };
       if (value && value.backgroundPending) {
         task.state = 'queued';
-        task.label = 'Aguardando conexão';
+        task.label = 'Em segundo plano';
         task.progress = 0;
         task.backgroundId = value.backgroundId;
         task.backgroundRetry = value.backgroundRetry || null;

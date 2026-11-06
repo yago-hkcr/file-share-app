@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v9';
+const CACHE_NAME = 'fileshare-v10';
 const ASSETS = [
   '/css/social.css?v=20261101a',
   '/css/upload-queue.css?v=20261031b',
@@ -24,8 +24,8 @@ const ASSETS = [
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261014p',
   '/js/fx.js?v=20261014o',
-  '/js/upload-queue.js?v=20261031b',
-  '/js/upload.js?v=20261031d',
+  '/js/upload-queue.js?v=20261105a',
+  '/js/upload.js?v=20261105a',
   '/js/google-drive-upload.mjs?v=20261031b',
   '/js/social.js?v=20261014o',
   '/js/personal.js?v=20261101a',
@@ -153,18 +153,23 @@ function updatePendingUpload(item) {
 // ---------------------------------------------------------------------------
 function replayUpload(item) {
   const { kind, roomId, file, pathname, uploadUrl, name, size, mime } = item;
+  const isDm = item.destinationType === 'dm';
+  const isDrive = kind === 'drive';
+  const targetPath = isDm
+    ? '/api/dm/' + encodeURIComponent(item.friendId)
+    : '/api/rooms/' + encodeURIComponent(roomId);
   if (!item.ownerId) return Promise.reject(new Error('Upload pendente sem usuário proprietário; abra novamente a conta que iniciou o envio.'));
   const verifyOwner = fetch('/api/me', { cache: 'no-store' }).then(async resp => {
     if (!resp.ok) throw new Error('Sessão encerrada; entre novamente para retomar o upload.');
     const user = await resp.json();
     if (String(user.id) !== String(item.ownerId)) throw new Error('Este upload pertence a outra conta; entre na conta original para retomá-lo.');
   });
-  if (!pathname || (kind === 'presigned' && item.stage === 'upload' && !uploadUrl)) {
+  if ((!pathname && !isDrive) || (kind === 'presigned' && item.stage === 'upload' && !uploadUrl)) {
     return Promise.reject(new Error('Upload pendente sem dados suficientes para retomada.'));
   }
   const postToChat = async () => {
     const content = '[[file:' + item.fileId + '|' + (name || 'arquivo') + '|' + (mime || '') + ']]';
-    const messagesResponse = await fetch('/api/rooms/' + encodeURIComponent(roomId) + '/messages', { cache: 'no-store' });
+    const messagesResponse = await fetch(targetPath + '/messages', { cache: 'no-store' });
     if (!messagesResponse.ok) throw new Error('Não foi possível confirmar se o arquivo já foi publicado no chat (' + messagesResponse.status + ')');
     const messages = await messagesResponse.json();
     if (messages.some(message => String(message.user_id) === String(item.ownerId) && message.content === content)) {
@@ -172,7 +177,7 @@ function replayUpload(item) {
       await updatePendingUpload(item);
       return;
     }
-    const response = await fetch('/api/rooms/' + encodeURIComponent(roomId) + '/messages', {
+    const response = await fetch(targetPath + '/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, reply_to_id: item.replyToId || null })
@@ -182,10 +187,13 @@ function replayUpload(item) {
     await updatePendingUpload(item);
   };
 
-  const register = () => fetch('/api/rooms/' + encodeURIComponent(roomId) + '/files/register', {
+  const registerPath = isDrive ? '/drive-files/register' : '/files/register';
+  const register = () => fetch(targetPath + registerPath, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pathname, name, size, mime, chat_only: item.chatOnly ? 1 : 0 })
+    body: JSON.stringify(isDrive
+      ? { upload_id: item.driveSession.upload_id, chat_only: !isDm && item.chatOnly ? 1 : 0 }
+      : { pathname, name, size, mime, chat_only: !isDm && item.chatOnly ? 1 : 0 })
   }).then(async resp => {
     const result = await resp.json().catch(() => ({}));
     if (!resp.ok) {
@@ -193,7 +201,7 @@ function replayUpload(item) {
       error.state = result.state;
       throw error;
     }
-    if (item.chatOnly) {
+    if (item.chatOnly || isDm) {
       item.fileId = result.id;
       item.stage = 'message';
       await updatePendingUpload(item);
@@ -204,6 +212,70 @@ function replayUpload(item) {
   if (item.stage === 'complete') return Promise.resolve();
   if (item.stage === 'message') return verifyOwner.then(postToChat);
   if (item.stage === 'register') return verifyOwner.then(register);
+  if (isDrive && item.stage === 'upload' && file && item.driveSession && item.driveSession.upload_id) {
+    return verifyOwner.then(async () => {
+      let current = item.driveSession;
+      const restartSession = async () => {
+        const response = await fetch(targetPath + '/drive-upload-session', {
+          method: 'POST', credentials: 'same-origin', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, size, mime })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.upload_id) throw new Error(data.error || 'Não foi possível renovar a sessão do Google Drive.');
+        current = data;
+        item.driveSession = current;
+        await updatePendingUpload(item);
+      };
+      for (;;) {
+        const endpoint = '/api/google-drive/uploads/' + encodeURIComponent(current.upload_id);
+        const statusResponse = await fetch(endpoint + '/status', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: '{}', cache: 'no-store'
+        });
+        const status = await statusResponse.json().catch(() => ({}));
+        if (statusResponse.status === 409 && status.state === 'account_changed' && status.session) {
+          current = status.session;
+          item.driveSession = current;
+          await updatePendingUpload(item);
+          continue;
+        }
+        if (statusResponse.status === 410 && status.state === 'upload_session_expired') {
+          await restartSession();
+          continue;
+        }
+        if (!statusResponse.ok) throw new Error(status.error || 'Não foi possível retomar a sessão do Google Drive.');
+        if (status.complete) break;
+        const offset = Number(status.next_offset);
+        if (!Number.isSafeInteger(offset) || offset < 0 || offset > file.size) throw new Error('Posição de envio inválida.');
+        const end = Math.min(offset + (Number(current.chunk_bytes) || 4 * 1024 * 1024), file.size);
+        const chunkResponse = await fetch(endpoint + '/chunk', {
+          method: 'POST', credentials: 'same-origin', cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Range': 'bytes ' + offset + '-' + (end - 1) + '/' + file.size
+          },
+          body: file.slice(offset, end)
+        });
+        const chunk = await chunkResponse.json().catch(() => ({}));
+        if (chunkResponse.status === 409 && chunk.state === 'account_changed' && chunk.session) {
+          current = chunk.session;
+          item.driveSession = current;
+          await updatePendingUpload(item);
+          continue;
+        }
+        if (chunkResponse.status === 410 && chunk.state === 'upload_session_expired') {
+          await restartSession();
+          continue;
+        }
+        if (!chunkResponse.ok) throw new Error(chunk.error || 'Falha ao enviar um bloco ao Google Drive.');
+      }
+      item.driveSession = current;
+      item.stage = 'register';
+      await updatePendingUpload(item);
+      return register();
+    });
+  }
   if (kind === 'multipart' && item.stage === 'upload') {
     // O multipart já foi concluído no Blob: falta apenas confirmar o arquivo.
     return verifyOwner.then(register);
@@ -274,8 +346,10 @@ self.addEventListener('message', event => {
   const port = event.ports && event.ports[0];
   // Recria o Blob a partir do ArrayBuffer transferido
   if (buffer) item.file = new Blob([buffer], { type: (item.file && item.file.type) || 'application/octet-stream' });
-  if (!item.ownerId || !item.pathname || !['presigned', 'multipart'].includes(item.kind) ||
+  if (!item.ownerId || (!item.pathname && item.kind !== 'drive') || !['presigned', 'multipart', 'drive'].includes(item.kind) ||
+      (item.destinationType === 'dm' && !item.friendId) ||
       (item.stage === 'upload' && item.kind === 'presigned' && (!buffer || !item.uploadUrl)) ||
+      (item.stage === 'upload' && item.kind === 'drive' && (!item.file || !item.driveSession || !item.driveSession.upload_id)) ||
       !['upload', 'register', 'message', 'complete'].includes(item.stage)) {
     if (port) port.postMessage({ type: 'fs-enqueue-error', error: 'Dados insuficientes para salvar o upload pendente.' });
     return;

@@ -205,7 +205,7 @@
           const result = await window.uploadToDm(friendId, [file], text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); });
           const warn = window.skippedMessage ? window.skippedMessage(result) : '';
           if (result.sent) {
-            for (const uploaded of (result.files || [])) {
+            for (const uploaded of (result.files || []).filter(entry => !entry.pending)) {
               const token = '[[file:' + uploaded.id + '|' + (uploaded.name || 'arquivo') + '|' + (uploaded.mime || '') + ']]';
               await post('/api/dm/' + encodeURIComponent(friendId) + '/messages', { content: token, reply_to_id: replyToId });
             }
@@ -286,6 +286,7 @@
       const replyToId = dmReply && dmReply.id;
       const result = await window.uploadToDm(targetId, files, text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); }, {
         cancelableDm: true,
+        replyToId,
         onFileSuccess: async (uploaded, file) => {
           for (const entry of (uploaded.files || [])) {
             const token = '[[file:' + entry.id + '|' + (entry.name || file.name) + '|' + (entry.mime || file.type || '') + ']]';
@@ -300,6 +301,9 @@
       await Promise.all([loadDmMessages(), loadDmFriends()]);
     } catch (e) { toast(e.message, 'error'); }
   }
+  window.addEventListener('fileshare:background-upload-complete', () => {
+    if (activeFriend) Promise.all([loadDmMessages(), loadDmFriends()]).catch(() => {});
+  });
   directFileInput?.addEventListener('change', event => {
     const files = Array.from(event.target.files || []); event.target.value = '';
     if (files.length) sendDirectFiles(files);
@@ -320,6 +324,7 @@
       if (longMessage) {
         toast(window.describeLongMessage(content), 'info');
         const result = await window.uploadToDm(targetId, [longMessage.file], text => { if (typeof toast === 'function' && !/%$/.test(text)) toast(text, 'info'); }, {
+          replyToId,
           onFileSuccess: async uploaded => {
             for (const entry of (uploaded.files || [])) {
               const token = '[[file:' + entry.id + '|' + (entry.name || longMessage.file.name) + '|' + (entry.mime || longMessage.file.type || '') + ']]';

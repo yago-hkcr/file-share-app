@@ -3071,7 +3071,8 @@ app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
   // URL pre-assinada (mesmo fluxo estavel das Coletas): o servidor emite um link PUT de curta
   // duracao e o navegador envia o arquivo direto ao Blob, sem o callback de token do SDK `upload()`.
   const { issueSignedToken, presignUrl } = await blobSdk();
-  const validUntil = Date.now() + 60 * 60 * 1000;
+  // Uploads em segundo plano podem aguardar vários dias até o aparelho voltar a ficar online.
+  const validUntil = Date.now() + 7 * 24 * 60 * 60 * 1000;
   const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_DIRECT_BYTES, validUntil });
   const signed = await presignUrl(token, { operation: 'put', pathname, access: 'private', maximumSizeInBytes: MAX_DIRECT_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil });
   res.json({ pathname, presignedUrl: signed.presignedUrl, validUntil, maxBytes: MAX_DIRECT_BYTES });
@@ -3117,6 +3118,7 @@ app.post('/api/google-drive/uploads/:uploadId/status', asMember, wrap(async (req
     return res.status(403).json({ error: 'A prateleira desta sessão não está mais disponível.' });
   }
   if (['complete', 'registered'].includes(upload.status)) return res.json({ complete: true, next_offset: num(upload.size) });
+  if (upload.status === 'failed') return res.status(410).json({ state: 'upload_session_expired', error: 'Esta sessão expirou; o arquivo pode ser retomado em uma nova sessão.' });
   if (upload.status !== 'uploading') return res.status(409).json({ error: 'Esta sessão de upload foi encerrada.' });
   try {
     const { drive, accountId } = await getDriveUploadStorage(upload);
@@ -4760,7 +4762,8 @@ app.post('/api/dm/:id/upload-url', asMember, wrap(async (req, res) => {
   const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
   const pathname = `dm/${req.user.id}/${fileId}-${safe}`;
   const { issueSignedToken, presignUrl } = await blobSdk();
-  const validUntil = Date.now() + 60 * 60 * 1000;
+  // Uploads em segundo plano podem aguardar o aparelho voltar a ficar online.
+  const validUntil = Date.now() + 7 * 24 * 60 * 60 * 1000;
   const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_DIRECT_BYTES, validUntil });
   const signed = await presignUrl(token, { operation: 'put', pathname, access: 'private', maximumSizeInBytes: MAX_DIRECT_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil });
   res.json({ pathname, presignedUrl: signed.presignedUrl, validUntil, maxBytes: MAX_DIRECT_BYTES });
@@ -4808,7 +4811,12 @@ app.post('/api/dm/:id/files/register', asMember, wrap(async (req, res) => {
   const pathname = String((req.body && req.body.pathname) || '');
   const m = DM_BLOB_PATH_RE.exec(pathname);
   if (!m || m[1] !== req.user.id) return res.status(400).json({ error: 'Caminho de arquivo inválido' });
-  if (await one('SELECT id FROM files WHERE stored_name = $1', [pathname])) return res.status(400).json({ error: 'Arquivo já registrado' });
+  const existing = await one('SELECT id, room_id, uploaded_by, original_name, size, mime_type FROM files WHERE stored_name = $1', [pathname]);
+  if (existing) {
+    const conversationKey = 'dm:' + [req.user.id, friend.id].sort().join(':');
+    if (existing.room_id !== conversationKey || existing.uploaded_by !== req.user.id) return res.status(409).json({ error: 'Arquivo já registrado por outra conta.' });
+    return res.json({ id: existing.id, original_name: existing.original_name, size: num(existing.size), mime_type: existing.mime_type });
+  }
 
   let size = Number(req.body.size);
   try {
