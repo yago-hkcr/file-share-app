@@ -2856,16 +2856,30 @@ app.delete('/api/library/:id', asMember, wrap(async (req, res) => {
 app.delete('/api/library/spaces/:id', asMember, wrap(async (req, res) => {
   const space = await one('SELECT id FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
   if (!space) return res.status(404).json({ error: 'Espaço não encontrado no seu Acervo.' });
-  const usedByCollection = await one(`SELECT id FROM file_collections
+  const linkedCollections = await q(`SELECT id FROM file_collections
     WHERE owner_id = $1 AND destination_type = 'library' AND library_space_id = $2
-      AND status IN ('active','suspended') LIMIT 1`, [req.user.id, space.id]);
-  if (usedByCollection) return res.status(409).json({ error: 'Este espaço está vinculado a uma coleta aberta. Encerre a coleta antes de excluí-lo.' });
+      AND status IN ('active','suspended')`, [req.user.id, space.id]);
+  let reassignedCollections = 0;
+  let collectionDestination = null;
+  if (linkedCollections.length) {
+    const destination = await one(`SELECT s.id AS space_id, s.name AS space_name, b.id AS bookcase_id, b.name AS bookcase_name
+      FROM personal_library_spaces s
+      JOIN personal_library_bookcases b ON b.space_id = s.id AND b.user_id = s.user_id
+      WHERE s.user_id = $1 AND s.id <> $2
+      ORDER BY s.created_at, s.id, b.created_at, b.id LIMIT 1`, [req.user.id, space.id]);
+    if (!destination) return res.status(409).json({ error: 'Crie outro espaço com uma prateleira antes de excluir este; há uma coleta vinculada que precisa de um destino.' });
+    const reassigned = await q(`UPDATE file_collections SET library_space_id = $1, library_bookcase_id = $2
+      WHERE owner_id = $3 AND destination_type = 'library' AND library_space_id = $4
+        AND status IN ('active','suspended') RETURNING id`, [destination.space_id, destination.bookcase_id, req.user.id, space.id]);
+    reassignedCollections = reassigned.length;
+    collectionDestination = { space: destination.space_name, shelf: destination.bookcase_name };
+  }
   const removed = await q('SELECT id, stored_name FROM personal_library_items WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
   await deleteLibraryBlobs(removed);
   await q('DELETE FROM personal_library_items WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
   await q('DELETE FROM personal_library_bookcases WHERE user_id = $1 AND space_id = $2', [req.user.id, space.id]);
   await q('DELETE FROM personal_library_spaces WHERE id = $1 AND user_id = $2', [space.id, req.user.id]);
-  res.json({ success: true, removed_count: removed.length });
+  res.json({ success: true, removed_count: removed.length, reassigned_collections: reassignedCollections, collection_destination: collectionDestination });
 }));
 
 // Download de um item do Acervo: usa a copia independente (funciona mesmo sem a sala).
