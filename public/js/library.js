@@ -443,15 +443,19 @@
   async function deleteSpace(spaceId) {
     const space = spaces.find(entry => entry.id === spaceId);
     if (!space) return;
-    const content = 'Excluir o espaço “' + space.name + '”? Os atalhos deste espaço sairão do Minha Biblioteca, mas os arquivos originais continuarão nas salas.';
+    const content = 'Excluir o espaço “' + space.name + '”? As cópias guardadas nele serão removidas; os arquivos originais nas salas continuam. Coletas abertas vinculadas serão redirecionadas para outro espaço.';
     if (!window.confirm(content)) return;
     try {
-      await api('/api/library/spaces/' + encodeURIComponent(spaceId), { method: 'DELETE' });
+      const result = await api('/api/library/spaces/' + encodeURIComponent(spaceId), { method: 'DELETE' });
       if (selectedSpaceId() === spaceId) $('libraryShelfFilter').value = '';
       signature = '';
       await loadLibrary(true);
       window.loadRooms?.();
-      window.toast?.('Espaço excluído. Os arquivos originais continuam nas salas.');
+      const destination = result.collection_destination;
+      const redirectMessage = result.reassigned_collections
+        ? ' ' + result.reassigned_collections + ' coleta(s) redirecionada(s) para “' + displayBookcaseName(destination.shelf) + '”, em “' + destination.space + '”.'
+        : '';
+      window.toast?.('Espaço excluído.' + redirectMessage + ' Os arquivos originais continuam nas salas.');
     } catch (error) { window.toast?.(error.message, 'error'); }
   }
 
