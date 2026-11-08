@@ -192,7 +192,6 @@
       };
       let pathname;
       let uploadUrl;
-      let driveSession;
       let uploadCompleted = false;
       let bgKind = null;
       try {
@@ -204,9 +203,14 @@
         const prep = await postJson('/api/rooms/' + roomId + '/drive-upload-session', { name: file.name, size: file.size, mime: file.type }, options.signal);
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
         if (typeof options.onCancelable === 'function') options.onCancelable(true);
-        driveSession = prep.data;
-        // Uploads online começam imediatamente. O Background Sync pode demorar
-        // a ser executado pelo navegador; só enfileire quando houver falha de rede.
+        let driveSession = prep.data;
+        const queueId = await queueDriveUpload({ file, session: driveSession, roomId, chatOnly: options.chatOnly, replyToId: options.replyToId });
+        if (queueId != null) {
+          say('Arquivo salvo no aparelho; o navegador tentará continuar em segundo plano quando possível.');
+          uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
+          sent++;
+          continue;
+        }
         await uploadDriveInChunks(driveSession, file, reportProgress, options.signal, session => { driveSession = session; });
         if (typeof options.onCancelable === 'function') options.onCancelable(false);
         if (typeof options.onPhase === 'function') options.onPhase('finalizing');
@@ -254,6 +258,13 @@
         uploadUrl = prep.data.presignedUrl;
         pathname = prep.data.pathname;
         bgKind = 'presigned';
+        const queueId = await queuePresignedUpload({ file, pathname, uploadUrl, roomId, chatOnly: options.chatOnly, replyToId: options.replyToId });
+        if (queueId != null) {
+          say('Arquivo salvo no aparelho; o navegador tentará continuar em segundo plano quando possível.');
+          uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
+          sent++;
+          continue;
+        }
         await putWithProgress(uploadUrl, file, reportProgress, options.signal);
         uploadCompleted = true;
       }
@@ -269,7 +280,7 @@
         const msg = String(error && error.message ? error.message : error);
         const isNetwork = error.name === 'TypeError' || /rede|conexão|conexao|failed to fetch|network|offline|failed to execute/i.test(msg);
         if (options.signal && options.signal.aborted) throw uploadAbortError();
-        if (isNetwork && ((bgKind === 'presigned' && uploadUrl && pathname) || (bgKind === 'multipart' && uploadCompleted && pathname) || (bgKind === 'drive' && driveSession))) {
+        if (isNetwork && ((bgKind === 'presigned' && uploadUrl && pathname) || (bgKind === 'multipart' && uploadCompleted && pathname))) {
           say('Sem conexão — arquivo enfileirado para confirmar quando voltar online.');
           const item = {
             kind: bgKind,
@@ -286,14 +297,10 @@
             ownerId: String(document.body.dataset.userId || '')
           };
           try {
-            const queueId = bgKind === 'drive'
-              ? await queueDriveUpload({ file, session: driveSession, roomId, chatOnly: options.chatOnly, replyToId: options.replyToId })
-              : await window.enqueueBackgroundUpload(item);
-            if (queueId != null) {
-              uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
-              sent++;
-              continue;
-            }
+            const queueId = await window.enqueueBackgroundUpload(item);
+            uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
+            sent++;
+            continue;
           } catch (enqueueError) {
             say('Falha ao enfileirar: ' + String(enqueueError && enqueueError.message ? enqueueError.message : enqueueError));
           }
@@ -484,14 +491,12 @@
           if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
           onCancelable(true);
           let driveSession = prep.data;
-          if (!navigator.onLine) {
-            const queueId = await queueDriveUpload({ file, session: driveSession, friendId, replyToId: options.replyToId });
-            if (queueId != null) {
-              say('Arquivo salvo no aparelho; aguardará a conexão para continuar o envio.');
-              uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
-              sent++;
-              continue;
-            }
+          const queueId = await queueDriveUpload({ file, session: driveSession, friendId, replyToId: options.replyToId });
+          if (queueId != null) {
+            say('Arquivo salvo no aparelho; o navegador tentará continuar em segundo plano quando possível.');
+            uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
+            sent++;
+            continue;
           }
           await uploadDriveInChunks(driveSession, file, reportProgress, options.signal, session => { driveSession = session; });
           onCancelable(false);
@@ -523,14 +528,12 @@
           if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
           if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponível).');
           pathname = prep.data.pathname;
-          if (!navigator.onLine) {
-            const queueId = await queuePresignedUpload({ file, pathname, uploadUrl: prep.data.presignedUrl, friendId, replyToId: options.replyToId });
-            if (queueId != null) {
-              say('Arquivo salvo no aparelho; aguardará a conexão para continuar o envio.');
-              uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
-              sent++;
-              continue;
-            }
+          const queueId = await queuePresignedUpload({ file, pathname, uploadUrl: prep.data.presignedUrl, friendId, replyToId: options.replyToId });
+          if (queueId != null) {
+            say('Arquivo salvo no aparelho; o navegador tentará continuar em segundo plano quando possível.');
+            uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
+            sent++;
+            continue;
           }
           onCancelable(true);
           await putWithProgress(prep.data.presignedUrl, file, reportProgress, options.signal);

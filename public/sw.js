@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v11';
+const CACHE_NAME = 'fileshare-v10';
 const ASSETS = [
   '/css/social.css?v=20261101a',
   '/css/upload-queue.css?v=20261031b',
@@ -25,7 +25,7 @@ const ASSETS = [
   '/js/gfx.js?v=20261014p',
   '/js/fx.js?v=20261014o',
   '/js/upload-queue.js?v=20261105a',
-  '/js/upload.js?v=20261107a',
+  '/js/upload.js?v=20261105a',
   '/js/google-drive-upload.mjs?v=20261031b',
   '/js/social.js?v=20261014o',
   '/js/personal.js?v=20261101a',
