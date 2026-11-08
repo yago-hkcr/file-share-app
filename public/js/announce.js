@@ -1,4 +1,4 @@
-// Pulso ao vivo (a cada 2s, invisível): aviso global, novas notificações, sessão/cargo e nova versão do site.
+// Pulso ao vivo (a cada 10s, invisível): aviso global, novas notificações, sessão/cargo e nova versão do site.
 (function () {
   const path = location.pathname;
   const isProtected = /^\/(admin|dashboard|sala|pending)/.test(path);
@@ -69,10 +69,10 @@
         if (seen === null) seen = new Set(ids);
         else (j.latest || []).slice().reverse().forEach(n => { if (!seen.has(n.id)) { seen.add(n.id); toast(n); } });
       } else renderBar(null);
-    } catch (e) { /* tenta de novo em 2s */ }
+    } catch (e) { /* tenta de novo no próximo ciclo */ }
     finally { busy = false; }
   }
-  setInterval(tick, 2000);
+  setInterval(tick, 10000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
   tick();
 })();

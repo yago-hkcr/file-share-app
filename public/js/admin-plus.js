@@ -295,7 +295,7 @@
       refreshingAll = false;
     }
   }
-  setInterval(refreshAllPanels, 2000);
+  setInterval(refreshAllPanels, 10000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshAllPanels(); });
   overview();
 })();

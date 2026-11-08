@@ -50,7 +50,7 @@
     if (!stateHeartbeatTimer) stateHeartbeatTimer = setInterval(refreshAccessLease, 30000);
   }
   function startStatePolling() {
-    if (!statePollTimer) statePollTimer = setInterval(pollState, 2000);
+    if (!statePollTimer) statePollTimer = setInterval(pollState, 5000);
   }
   function renderNameGate() {
     const multiUse = !!collection.multi_use_link;
