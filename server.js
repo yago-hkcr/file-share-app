@@ -470,9 +470,11 @@ if (!LOCAL_MODE && DATABASE_URL && !SUPABASE_CA_CERT) {
 }
 const sql = !LOCAL_MODE && DATABASE_URL ? new Pool({
   connectionString: DATABASE_URL,
-  max: Number(process.env.PG_POOL_MAX || 3),
+  // Cada instância serverless mantém seu próprio pool. Limitar a uma conexão
+  // reduz o risco de atingir o teto global do Postgres em picos de cold starts.
+  max: 1,
   connectionTimeoutMillis: 10000,
-  idleTimeoutMillis: 30000,
+  idleTimeoutMillis: 5000,
   ssl: {
     rejectUnauthorized: true,
     ca: SUPABASE_CA_CERT

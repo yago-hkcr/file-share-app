@@ -552,5 +552,5 @@
     } finally { dmPollBusy = false; }
   }
   loadPreferences();
-  setInterval(pollPersonalPanels, 2000);
+  setInterval(pollPersonalPanels, 10000);
 })();

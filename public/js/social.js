@@ -196,7 +196,7 @@
   window.memRemove = async uid => { if (!confirm('Remover este membro da sala?')) return; try { await remove('/api/rooms/' + currentRoom + '/private-members/' + uid); toast('Membro removido'); mSig = ''; lastRoomsSig = ''; loadMembers(); } catch (e) { toast(e.message, 'error'); } };
 
   document.addEventListener('keydown', e => { if (e.key === 'Escape') ['friendsSheet', 'membersSheet'].forEach(id => { const m = $(id); if (m) m.style.display = 'none'; }); });
-  setInterval(() => { pollFriends(); ensureAdminBackButton(); if (memSheet.style.display !== 'none') loadMembers(); addFileEditButtons(); }, 2000);
+  setInterval(() => { pollFriends(); ensureAdminBackButton(); if (memSheet.style.display !== 'none') loadMembers(); addFileEditButtons(); }, 10000);
   pollFriends();
   ensureAdminBackButton();
   addFileEditButtons();

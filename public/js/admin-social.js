@@ -71,7 +71,7 @@
     } catch (e) { /* tenta de novo */ }
     finally { refreshing = false; }
   }
-  setInterval(refresh, 2000);
+  setInterval(refresh, 10000);
   $('prSearch').addEventListener('input', paintRooms); $('prOwner').addEventListener('change', paintRooms);
   $('frSearch').addEventListener('input', () => { sig.fr = ''; refresh(); });
   $('frMake').onclick = async () => { try { await call('/api/admin/friendships', 'POST', { a: $('frA').value, b: $('frB').value }); $('frA').value = $('frB').value = ''; ok('Amizade criada'); sig.fr = ''; refresh(); } catch (e) { bad(e); } };

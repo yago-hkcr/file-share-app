@@ -372,8 +372,8 @@
   $('refreshCollectionsBtn').addEventListener('click', loadCollections);
   $('collectionDestination').addEventListener('change', () => { renderCollectionDestination(); if ($('collectionDestination').value === 'library') loadLibraryLocationsForSelect(); });
   $('collectionLibrarySpace').addEventListener('change', () => renderCollectionLibraryBookcases());
-  setInterval(() => { if (!document.hidden && !$('collectionsPanel').hidden) loadCollections(true); }, 2000);
-  setInterval(() => { if (!document.hidden && !$('libraryPanel').hidden) window.loadLibrary?.(true); }, 2000);
+  setInterval(() => { if (!document.hidden && !$('collectionsPanel').hidden) loadCollections(true); }, 10000);
+  setInterval(() => { if (!document.hidden && !$('libraryPanel').hidden) window.loadLibrary?.(true); }, 10000);
 
   // Inicializa o indicador líquido na aba ativa já no carregamento e
   // reposiciona sem animar ao redimensionar a janela.
