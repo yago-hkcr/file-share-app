@@ -25,7 +25,7 @@
   <link rel="stylesheet" href="/css/admin-select.css?v=20261014a">
   <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
   <link rel="stylesheet" href="/css/hacker-ui.css?v=20261014a">
-  <link rel="stylesheet" href="/css/admin-storage.css?v=20261031d">
+  <link rel="stylesheet" href="/css/admin-storage.css?v=20261107a">
 </head>
 <body class="app-page">
   <header class="header">
@@ -403,7 +403,9 @@
       setGoogleDriveNoticeState({ connected: true, failed: verificationFailed });
       updateGoogleDriveDistributionMessage(accounts.length);
       if (verificationFailed) {
-        document.getElementById('googleDriveVerificationMessage').textContent = 'Algumas contas não puderam ser verificadas no momento. A autorização continua salva.';
+        document.getElementById('googleDriveVerificationMessage').textContent = data.reauthorization_required
+          ? 'O Google recusou a autorização de uma ou mais contas. Use Reconectar na conta marcada para renovar o acesso.'
+          : 'Algumas contas não puderam ser verificadas agora. A verificação será repetida automaticamente.';
       }
     }
 
@@ -441,13 +443,17 @@
         const used = acc.quotaUsedBytes != null ? acc.quotaUsedBytes : null;
         const limit = acc.quotaLimitBytes != null ? acc.quotaLimitBytes : null;
         const percent = used != null && limit != null && limit > 0 ? Math.min(100, used / limit * 100) : null;
+        const reauthorizationRequired = Boolean(acc.reauthorizationRequired);
+        const verificationFailed = Boolean(acc.verificationFailed);
         card.innerHTML = '<div class="storage-account-card-header">' +
           '<div class="storage-account-card-avatar"><i class="fas fa-user"></i></div>' +
           '<div class="storage-account-card-info">' +
           '<div class="storage-account-card-name">' + esc(acc.accountName || 'Conta sem nome') + '</div>' +
           '<div class="storage-account-card-email">' + esc(acc.accountEmail || '—') + '</div>' +
-          '<div class="storage-account-card-status">' + (acc.lastVerifiedAt ? '<i class="fas fa-shield-check"></i> Verificada' : '<i class="fas fa-link"></i> Autorização salva') + '</div>' +
+          '<div class="storage-account-card-status' + (reauthorizationRequired ? ' is-error' : verificationFailed ? ' is-warning' : '') + '">' +
+          (reauthorizationRequired ? '<i class="fas fa-triangle-exclamation"></i> Reconexão necessária' : verificationFailed ? '<i class="fas fa-clock"></i> Verificação temporariamente indisponível' : acc.lastVerifiedAt ? '<i class="fas fa-shield-check"></i> Verificada' : '<i class="fas fa-link"></i> Autorização salva') + '</div>' +
           '</div>' +
+          (reauthorizationRequired ? '<button type="button" class="btn btn-sm btn-outline storage-account-card-reconnect" onclick="connectNewGoogleDrive(event)" title="Reconectar esta conta">Reconectar</button>' : '') +
           '<button type="button" class="btn btn-sm btn-danger storage-account-card-remove" onclick="disconnectGoogleDriveAccount(\'' + esc(acc.id) + '\')" title="Remover conta"><i class="fas fa-trash-alt"></i></button>' +
           '</div>' +
           '<div class="storage-account-card-quota">' +

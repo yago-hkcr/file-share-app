@@ -2218,6 +2218,9 @@ app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
     const totalLimit = accounts.reduce((sum, a) => sum + (Number.isFinite(a.quotaLimitBytes) ? a.quotaLimitBytes : 0), 0);
     const totalUsed = accounts.reduce((sum, a) => sum + (Number.isFinite(a.quotaUsedBytes) ? a.quotaUsedBytes : 0), 0);
     const failedIds = new Set(checks.flatMap((result, index) => result.status === 'rejected' ? [staleAccounts[index].id] : []));
+    const reauthorizationIds = new Set(checks.flatMap((result, index) =>
+      result.status === 'rejected' && /invalid_grant/.test(String(result.reason && result.reason.message || result.reason))
+        ? [staleAccounts[index].id] : []));
     const responseAccounts = verified.map(a => ({
       id: a.id,
       accountName: a.accountName,
@@ -2230,7 +2233,8 @@ app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
       quotaDriveUsedBytes: a.quotaDriveUsedBytes,
       quotaTrashUsedBytes: a.quotaTrashUsedBytes,
       freeBytes: Number.isFinite(a.quotaLimitBytes) && Number.isFinite(a.quotaUsedBytes) ? Math.max(0, a.quotaLimitBytes - a.quotaUsedBytes) : null,
-      verificationFailed: failedIds.has(a.id)
+      verificationFailed: failedIds.has(a.id),
+      reauthorizationRequired: reauthorizationIds.has(a.id)
     }));
     const refreshedLimit = responseAccounts.reduce((sum, a) => sum + (Number.isFinite(a.quotaLimitBytes) ? a.quotaLimitBytes : 0), 0);
     const refreshedUsed = responseAccounts.reduce((sum, a) => sum + (Number.isFinite(a.quotaUsedBytes) ? a.quotaUsedBytes : 0), 0);
@@ -2241,6 +2245,7 @@ app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
       connected,
       verified: verifiedOk,
       verification_failed: failedIds.size > 0 || responseAccounts.some(a => !a.lastVerifiedAt),
+      reauthorization_required: reauthorizationIds.size > 0,
       checked_at: new Date().toISOString(),
       accounts: responseAccounts,
       // Compatibilidade com clientes antigos de status que exibem uma conta.
@@ -2267,7 +2272,7 @@ app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
     });
   } catch (error) {
     return res.json({ configured, connected, verified: false, checked_at: new Date().toISOString(),
-      verification_failed: true, accounts: [], total: null });
+      verification_failed: true, reauthorization_required: false, accounts: [], total: null });
   }
 }));
 
@@ -5229,6 +5234,9 @@ app.use((err, req, res, next) => {
   console.error('Erro em', req.method, safePath, '-', err && err.stack || err);
   if (res.headersSent) return next(err);
   if (isBlobStoreSuspended(err) && req.path.startsWith('/api/')) return res.status(503).json({ error: blobStoreSuspendedMessage });
+  if (req.path.includes('/drive-upload-session') && /invalid_grant/.test(String(err && err.message || ''))) {
+    return res.status(503).json({ error: 'A autorização de uma conta do Google Drive expirou. Um administrador precisa reconectá-la em Administração → Armazenamento.' });
+  }
   if (req.path.startsWith('/api/') && Number(err && err.status) === 507) {
     return res.status(507).json({ error: err.message || 'Nenhuma conta do Google Drive tem espaço suficiente.' });
   }

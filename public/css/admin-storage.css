@@ -46,6 +46,9 @@ html[data-theme="dark"] .slide-panel-content{background:#050806;color:#e8f5ec}ht
 .storage-account-card-name{font-weight:600;color:var(--storage-ink);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .storage-account-card-email{color:var(--storage-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .storage-account-card-status{margin-top:4px;color:#15803d;font-size:11px;font-weight:600;white-space:nowrap}
+.storage-account-card-status.is-error{color:#b42318}
+.storage-account-card-status.is-warning{color:#a16207}
+.storage-account-card-reconnect{flex:0 0 auto;white-space:nowrap}
 .storage-account-card-remove{display:grid;width:36px;height:36px;flex:0 0 36px;place-items:center;color:#b42318;background:transparent;border:1px solid rgba(180,35,24,.16);cursor:pointer;padding:0;font-size:14px;border-radius:8px}
 .storage-account-card-remove:hover{background:rgba(180,35,24,.1)}
 .storage-account-card-quota{display:grid;gap:8px;min-width:0;padding:14px 18px 14px 0}
@@ -58,6 +61,8 @@ html[data-theme="dark"] .storage-account-card{--storage-line:rgba(134,239,172,.1
 html[data-theme="dark"] .storage-account-card-name,html[data-theme="dark"] .storage-account-card-quota-row strong{color:#e8f5ec}
 html[data-theme="dark"] .storage-account-card-email{color:#a5b1a9}
 html[data-theme="dark"] .storage-account-card-status{color:#4ade80}
+html[data-theme="dark"] .storage-account-card-status.is-error{color:#fca5a5}
+html[data-theme="dark"] .storage-account-card-status.is-warning{color:#facc15}
 html[data-theme="dark"] .storage-account-card-remove:hover{background:rgba(248,113,113,.15)}
 @media(max-width:760px){.storage-account-card{grid-template-columns:minmax(0,1fr)}.storage-account-card-header{padding-bottom:10px}.storage-account-card-quota{padding:4px 18px 16px}.storage-account-card-remove{margin-left:auto}}
 @media(max-width:760px){.storage-distribution-controls{grid-template-columns:1fr}.storage-distribution-controls select{width:100%}.storage-distribution-controls select[hidden]{display:none}}
