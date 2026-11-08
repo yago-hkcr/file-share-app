@@ -2739,19 +2739,27 @@ app.delete('/api/library/spaces/:id/shelves/:shelfId', asMember, wrap(async (req
   const shelf = await one(`SELECT id, name FROM personal_library_bookcases
     WHERE id = $1 AND space_id = $2 AND user_id = $3`, [req.params.shelfId, req.params.id, req.user.id]);
   if (!shelf) return res.status(404).json({ error: 'Prateleira não encontrada neste espaço.' });
-  const usedByCollection = await one(`SELECT id FROM file_collections
-    WHERE owner_id = $1 AND destination_type = 'library' AND library_bookcase_id = $2
-      AND status IN ('active','suspended') LIMIT 1`, [req.user.id, shelf.id]);
-  if (usedByCollection) return res.status(409).json({ error: 'Esta prateleira está vinculada a uma coleta aberta. Encerre a coleta antes de excluí-la.' });
+  const collectionWithUploads = await one(`SELECT c.title FROM file_collections c
+    WHERE c.owner_id = $1 AND c.destination_type = 'library' AND c.library_bookcase_id = $2
+      AND c.status IN ('active','suspended')
+      AND EXISTS (SELECT 1 FROM file_collection_uploads u
+        WHERE u.collection_id = c.id AND u.status IN ('ready','uploading'))
+    LIMIT 1`, [req.user.id, shelf.id]);
+  if (collectionWithUploads) {
+    return res.status(409).json({ error: `A coleta “${collectionWithUploads.title}” já tem arquivos ou envios em andamento. Encerre-a antes de excluir esta prateleira.` });
+  }
   const siblings = await q(`SELECT id, name FROM personal_library_bookcases
     WHERE user_id = $1 AND space_id = $2 AND id <> $3 ORDER BY created_at, id`, [req.user.id, req.params.id, shelf.id]);
   if (!siblings.length) return res.status(409).json({ error: 'Todo espaço precisa ter ao menos uma prateleira. Crie outra antes de excluir esta.' });
   const destination = siblings[0];
+  const reassignedCollections = await q(`UPDATE file_collections SET library_bookcase_id = $1
+    WHERE owner_id = $2 AND destination_type = 'library' AND library_bookcase_id = $3
+      AND status IN ('active','suspended') RETURNING id`, [destination.id, req.user.id, shelf.id]);
   const moved = await q(`UPDATE personal_library_items SET bookcase_id = $1, shelf = $2, updated_at = $3
     WHERE user_id = $4 AND space_id = $5 AND bookcase_id = $6 RETURNING id`,
   [destination.id, destination.name, ts(), req.user.id, req.params.id, shelf.id]);
   await q('DELETE FROM personal_library_bookcases WHERE id = $1 AND space_id = $2 AND user_id = $3', [shelf.id, req.params.id, req.user.id]);
-  res.json({ success: true, moved_count: moved.length, destination: destination.name });
+  res.json({ success: true, moved_count: moved.length, reassigned_collections: reassignedCollections.length, destination: destination.name });
 }));
 
 app.post('/api/library', asMember, wrap(async (req, res) => {

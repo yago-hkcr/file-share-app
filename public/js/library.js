@@ -471,9 +471,10 @@
       if ($('libraryShelfFilter').value === 'bookcase:' + bookcaseId) $('libraryShelfFilter').value = 'space:' + spaceId;
       signature = '';
       await loadLibrary(true);
-      window.toast?.(result.moved_count
-        ? result.moved_count + ' arquivo(s) movido(s) para “' + displayBookcaseName(result.destination) + '”.'
-        : 'Prateleira excluída.');
+      const notices = [];
+      if (result.moved_count) notices.push(result.moved_count + ' arquivo(s) movido(s) para “' + displayBookcaseName(result.destination) + '”.');
+      if (result.reassigned_collections) notices.push(result.reassigned_collections + (result.reassigned_collections === 1 ? ' coleta vazia direcionada' : ' coletas vazias direcionadas') + ' para “' + displayBookcaseName(result.destination) + '”.');
+      window.toast?.(notices.length ? notices.join(' ') : 'Prateleira excluída.');
     } catch (error) { window.toast?.(error.message, 'error'); }
   }
 
