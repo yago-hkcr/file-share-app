@@ -5,7 +5,7 @@
   const esc = value => {
     const node = document.createElement('div');
     node.textContent = value == null ? '' : String(value);
-    return node.innerHTML;
+    return node.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   };
 
   const sizeLabel = bytes => {

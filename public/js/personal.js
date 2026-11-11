@@ -1,7 +1,8 @@
 // Conversas privadas, notificações e preferências pessoais do dashboard.
 (function () {
   const $ = id => document.getElementById(id);
-  const escHtml = value => { const el = document.createElement('div'); el.textContent = value == null ? '' : String(value); return el.innerHTML; };
+  const escHtml = value => { const el = document.createElement('div'); el.textContent = value == null ? '' : String(value); return el.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+  const escAttr = value => escHtml(value);
   const post = (url, body, method = 'POST') => api(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   const avatar = user => '<span class="personal-avatar" style="--avatar-color:' + escHtml(user.avatar_color || '#35f28b') + '">' + (user.avatar_image ? '<img src="' + escHtml(user.avatar_image) + '" alt="">' : escHtml(String(user.username || '?').slice(0, 1).toUpperCase())) + '</span>';
   const humanTime = value => value ? new Date(String(value).replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
@@ -109,8 +110,8 @@
       const isImage = /^image\//i.test(mime) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name);
       const previewUrl = '/preview/' + encodeURIComponent(id);
       const downloadUrl = '/download/' + encodeURIComponent(id);
-      if (isImage) return '<div class="chat-attachment chat-attachment-image"><button type="button" class="chat-attachment-preview" onclick="previewFile(\'' + id + '\',\'' + escHtml(name) + '\',\'' + escHtml(mime) + '\',0,{preview:\'' + previewUrl + '\',download:\'' + downloadUrl + '\'});return false;"><img src="' + previewUrl + '" alt="' + escHtml(name) + '" loading="lazy"></button><div class="chat-attachment-name">' + escHtml(name) + '</div><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
-      return '<div class="chat-attachment chat-attachment-file"><span class="chat-attachment-icon"><i class="fas fa-file"></i></span><button type="button" class="chat-attachment-link" onclick="previewFile(\'' + id + '\',\'' + escHtml(name) + '\',\'' + escHtml(mime) + '\',0,{preview:\'' + previewUrl + '\',download:\'' + downloadUrl + '\'});return false;">' + escHtml(name) + '</button><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
+      if (isImage) return '<div class="chat-attachment chat-attachment-image"><button type="button" class="chat-attachment-preview" data-chat-attachment-preview data-file-id="' + escAttr(id) + '" data-file-name="' + escAttr(name) + '" data-file-mime="' + escAttr(mime) + '" data-preview-url="' + escAttr(previewUrl) + '" data-download-url="' + escAttr(downloadUrl) + '"><img src="' + previewUrl + '" alt="' + escAttr(name) + '" loading="lazy"></button><div class="chat-attachment-name">' + escHtml(name) + '</div><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
+      return '<div class="chat-attachment chat-attachment-file"><span class="chat-attachment-icon"><i class="fas fa-file"></i></span><button type="button" class="chat-attachment-link" data-chat-attachment-preview data-file-id="' + escAttr(id) + '" data-file-name="' + escAttr(name) + '" data-file-mime="' + escAttr(mime) + '" data-preview-url="' + escAttr(previewUrl) + '" data-download-url="' + escAttr(downloadUrl) + '">' + escHtml(name) + '</button><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
     };
     const host = $('directMessageList'), sig = JSON.stringify(messages);
     if (sig === lastDmSig) return;
@@ -193,6 +194,14 @@
     }
   });
   dm.querySelector('#directMessageList').addEventListener('click', event => {
+    const attachmentPreview = event.target.closest('[data-chat-attachment-preview]');
+    if (attachmentPreview) {
+      window.previewFile(attachmentPreview.dataset.fileId, attachmentPreview.dataset.fileName, attachmentPreview.dataset.fileMime, 0, {
+        preview: attachmentPreview.dataset.previewUrl,
+        download: attachmentPreview.dataset.downloadUrl
+      });
+      return;
+    }
     const sendText = event.target.closest('[data-send-text-id]');
     if (sendText) {
       const file = window.createMessageTextFileById(sendText.dataset.sendTextScope, sendText.dataset.sendTextId);

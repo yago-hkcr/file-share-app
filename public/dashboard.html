@@ -22,7 +22,7 @@
   <link rel="stylesheet" href="/css/upload-queue.css?v=20261031b">
   <link rel="stylesheet" href="/css/collections.css?v=20261030d">
   <link rel="stylesheet" href="/css/library.css?v=20261026a">
-  <script src="/js/common.js?v=20261027b"></script><script src="/js/message-export.js?v=20261027c"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="/js/onboarding.js?v=20261014o" defer></script>
+  <script src="/js/common.js?v=20261111a"></script><script src="/js/message-export.js?v=20261027c"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="/js/onboarding.js?v=20261014o" defer></script>
   <style>
     .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
     .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
@@ -299,7 +299,8 @@
     let currentRoom = null, me = null, roomReplyTo = null;
     let lastRoomsSig = '', lastFilesSig = '', lastChatSig = '', filesRequestId = 0;
     let chatSeenIds = new Set(), lastTypingSig = '', typingActive = false, typingLastSentAt = 0, typingRoomId = null, typingTimer = null, typingRequestQueue = Promise.resolve();
-    const esc = value => { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; };
+    const esc = value => { const div = document.createElement('div'); div.textContent = value; return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+    const escAttr = value => esc(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     let tesseractLoadPromise = null;
     function loadTesseract() {
       if (window.Tesseract) return Promise.resolve(window.Tesseract);
@@ -560,9 +561,9 @@
       const previewUrl = '/preview/' + encodeURIComponent(id);
       const downloadUrl = '/download/' + encodeURIComponent(id);
       if (isImage) {
-        return '<div class="chat-attachment chat-attachment-image"><button type="button" class="chat-attachment-preview" onclick="previewFile(\'' + id + '\',\'' + esc(name) + '\',\'' + esc(mime) + '\',0,{preview:\'' + previewUrl + '\',download:\'' + downloadUrl + '\'});return false;"><img src="' + previewUrl + '" alt="' + esc(name) + '" loading="lazy"></button><div class="chat-attachment-name">' + esc(name) + '</div><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
+        return '<div class="chat-attachment chat-attachment-image"><button type="button" class="chat-attachment-preview" data-chat-attachment-preview data-file-id="' + escAttr(id) + '" data-file-name="' + escAttr(name) + '" data-file-mime="' + escAttr(mime) + '" data-preview-url="' + escAttr(previewUrl) + '" data-download-url="' + escAttr(downloadUrl) + '"><img src="' + previewUrl + '" alt="' + escAttr(name) + '" loading="lazy"></button><div class="chat-attachment-name">' + esc(name) + '</div><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
       }
-      return '<div class="chat-attachment chat-attachment-file"><span class="chat-attachment-icon"><i class="fas fa-file"></i></span><button type="button" class="chat-attachment-link" onclick="previewFile(\'' + id + '\',\'' + esc(name) + '\',\'' + esc(mime) + '\',0,{preview:\'' + previewUrl + '\',download:\'' + downloadUrl + '\'});return false;">' + esc(name) + '</button><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
+      return '<div class="chat-attachment chat-attachment-file"><span class="chat-attachment-icon"><i class="fas fa-file"></i></span><button type="button" class="chat-attachment-link" data-chat-attachment-preview data-file-id="' + escAttr(id) + '" data-file-name="' + escAttr(name) + '" data-file-mime="' + escAttr(mime) + '" data-preview-url="' + escAttr(previewUrl) + '" data-download-url="' + escAttr(downloadUrl) + '">' + esc(name) + '</button><a class="chat-attachment-download" href="' + downloadUrl + '" title="Baixar"><i class="fas fa-download"></i></a></div>';
     }
     async function loadMessages(forceBottom = false) {
       const roomId = currentRoom; if (!roomId) return;
@@ -603,6 +604,14 @@
     function cancelRoomReply() { roomReplyTo = null; const preview = document.getElementById('roomReplyPreview'); if (preview) preview.hidden = true; }
     window.cancelRoomReply = cancelRoomReply;
     document.getElementById('chatList').addEventListener('click', event => {
+      const attachmentPreview = event.target.closest('[data-chat-attachment-preview]');
+      if (attachmentPreview) {
+        previewFile(attachmentPreview.dataset.fileId, attachmentPreview.dataset.fileName, attachmentPreview.dataset.fileMime, 0, {
+          preview: attachmentPreview.dataset.previewUrl,
+          download: attachmentPreview.dataset.downloadUrl
+        });
+        return;
+      }
       const sendText = event.target.closest('[data-send-text-id]');
       if (sendText) {
         const file = window.createMessageTextFileById(sendText.dataset.sendTextScope, sendText.dataset.sendTextId);
@@ -810,17 +819,17 @@
     });
   </script>
   <script src="/js/social.js?v=20261107d"></script>
-  <script src="/js/personal.js?v=20261107d"></script>
+  <script src="/js/personal.js?v=20261111a"></script>
   <script src="/js/cursor.js?v=20261014o"></script>
-  <script src="/js/preview.js?v=20261014o"></script>
-  <script src="/js/collections.js?v=20261107d"></script>
-  <script src="/js/library.js?v=20261107e"></script>
+  <script src="/js/preview.js?v=20261111a"></script>
+  <script src="/js/collections.js?v=20261111a"></script>
+  <script src="/js/library.js?v=20261111a"></script>
   <script src="/js/dashboard-shell.js?v=20261014o"></script>
   <script src="/js/announce.js?v=20261107d"></script>
 <script src="/js/cyber.js?v=20261014o"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js?v=20261107e').then(reg => {
+    navigator.serviceWorker.register('/sw.js?v=20261111a').then(reg => {
       console.log('[SW] Registrado:', reg.scope);
     }).catch(err => console.warn('[SW] Falha ao registrar:', err));
   }

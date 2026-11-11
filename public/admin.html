@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014a">
   <link rel="stylesheet" href="/css/style.css?v=20261014c">
   <link rel="stylesheet" href="/css/social.css?v=20261014c">
-  <script src="/js/common.js?v=20261014c"></script><script src="/js/adaptive.js?v=20261014c"></script>
+  <script src="/js/common.js?v=20261111a"></script><script src="/js/adaptive.js?v=20261014c"></script>
   <link rel="stylesheet" href="/css/mobile.css?v=20261014c">
   <script src="/js/mobile.js?v=20261014c" defer></script>
   <link rel="stylesheet" href="/css/fx.css?v=20261014c">
@@ -217,12 +217,14 @@
       const t = document.createElement('div');
       t.className = 'toast toast-'+type;
       const icons = {success:'check-circle',error:'times-circle',info:'info-circle',warning:'exclamation-triangle'};
-      t.innerHTML = '<i class="fas fa-'+icons[type]+'"></i> '+msg;
+      const icon = document.createElement('i');
+      icon.className = 'fas fa-' + (icons[type] || icons.info);
+      t.append(icon, document.createTextNode(String(msg == null ? '' : msg)));
       c.appendChild(t);
       setTimeout(() => t.classList.add('show'), 10);
       setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, ms || (type === 'error' ? 7000 : 3000));
     }
-    function esc(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
+    function esc(t) { const d=document.createElement('div'); d.textContent=t == null ? '' : String(t); return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
     function fmtSize(b) { if(!b)return '0 B'; const k=1024,s=['B','KB','MB','GB']; const i=Math.floor(Math.log(b)/Math.log(k)); return parseFloat((b/Math.pow(k,i)).toFixed(1))+' '+s[i]; }
     function fmtDate(d) { if(!d)return ''; return new Date(d+'Z').toLocaleDateString('pt-BR')+' '+new Date(d+'Z').toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
     function fileIcon(m) { if(!m)return 'fa-file'; if(m.startsWith('image/'))return 'fa-file-image'; if(m.startsWith('video/'))return 'fa-file-video'; if(m.startsWith('audio/'))return 'fa-file-audio'; if(m.includes('pdf'))return 'fa-file-pdf'; if(m.includes('zip')||m.includes('rar'))return 'fa-file-zipper'; return 'fa-file'; }
@@ -453,8 +455,8 @@
           '<div class="storage-account-card-status' + (reauthorizationRequired ? ' is-error' : verificationFailed ? ' is-warning' : '') + '">' +
           (reauthorizationRequired ? '<i class="fas fa-triangle-exclamation"></i> Reconexão necessária' : verificationFailed ? '<i class="fas fa-clock"></i> Verificação temporariamente indisponível' : acc.lastVerifiedAt ? '<i class="fas fa-shield-check"></i> Verificada' : '<i class="fas fa-link"></i> Autorização salva') + '</div>' +
           '</div>' +
-          (reauthorizationRequired ? '<button type="button" class="btn btn-sm btn-outline storage-account-card-reconnect" onclick="connectNewGoogleDrive(event)" title="Reconectar esta conta">Reconectar</button>' : '') +
-          '<button type="button" class="btn btn-sm btn-danger storage-account-card-remove" onclick="disconnectGoogleDriveAccount(\'' + esc(acc.id) + '\')" title="Remover conta"><i class="fas fa-trash-alt"></i></button>' +
+          (reauthorizationRequired ? '<button type="button" class="btn btn-sm btn-outline storage-account-card-reconnect" data-drive-reconnect title="Reconectar esta conta">Reconectar</button>' : '') +
+          '<button type="button" class="btn btn-sm btn-danger storage-account-card-remove" data-drive-account-remove="' + esc(acc.id) + '" title="Remover conta"><i class="fas fa-trash-alt"></i></button>' +
           '</div>' +
           '<div class="storage-account-card-quota">' +
           '<div class="storage-account-card-quota-row"><span>Uso da cota</span><strong>' + (percent != null ? percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% usado' : '—') + '</strong></div>' +
@@ -465,6 +467,8 @@
           '</div>';
         list.appendChild(card);
       }
+      list.querySelectorAll('[data-drive-reconnect]').forEach(button => button.addEventListener('click', event => connectNewGoogleDrive(event)));
+      list.querySelectorAll('[data-drive-account-remove]').forEach(button => button.addEventListener('click', () => disconnectGoogleDriveAccount(button.dataset.driveAccountRemove)));
       document.getElementById('googleDriveStatus').textContent = accounts.length + ' conta(s) conectada(s)';
       document.getElementById('googleDriveBadge').className = 'storage-status-badge is-connected';
     }
@@ -565,7 +569,7 @@
           <div class="card-row-actions">
             ${u.status==='pending'?`<button class="btn btn-sm btn-success" onclick="approveUser('${u.id}')"><i class="fas fa-check"></i> Aprovar</button>
             <button class="btn btn-sm btn-danger" onclick="rejectUser('${u.id}')"><i class="fas fa-times"></i> Rejeitar</button>`:''}
-            ${u.role!=='admin'?`<button class="btn btn-sm btn-outline btn-danger" onclick="confirmAction('Excluir usuário ${esc(u.username)}?',()=>deleteUser('${u.id}'))"><i class="fas fa-trash"></i></button>`:''}
+            ${u.role!=='admin'?`<button class="btn btn-sm btn-outline btn-danger" onclick="confirmAction('Excluir este usuário?',()=>deleteUser('${u.id}'))"><i class="fas fa-trash"></i></button>`:''}
           </div>
         </div>`;
       }).join('');
@@ -607,7 +611,7 @@
               <input type="file" multiple style="display:none;" onchange="uploadFiles('${r.id}',this.files);this.value=''">
             </label>
             <span class="upload-hint"><i class="fas fa-triangle-exclamation"></i> máx. <b class="limit-note">${limitLabel()}</b> por arquivo<span class="drop-hint-desktop"> · ou arraste arquivos para este cartão</span></span>
-            <button class="btn btn-sm btn-danger" onclick="confirmAction('Excluir sala ${esc(r.name)}?',()=>deleteRoom('${r.id}'))"><i class="fas fa-trash"></i> Excluir</button>
+            <button class="btn btn-sm btn-danger" onclick="confirmAction('Excluir esta sala?',()=>deleteRoom('${r.id}'))"><i class="fas fa-trash"></i> Excluir</button>
           </div>
           ${r.files.length?`<div class="room-files-list">${r.files.map(f=>`
             <div class="file-row">
@@ -867,7 +871,7 @@
   <script src="/js/cursor.js?v=20261014a"></script>
   <script src="/js/admin-plus.js?v=20261107d"></script>
   <script src="/js/local-server.js?v=20261014a"></script>
-  <script src="/js/preview.js?v=20261014o"></script>
+  <script src="/js/preview.js?v=20261111a"></script>
   <script src="/js/announce.js?v=20261107d"></script>
   <script src="/js/admin-select.js?v=20261014a"></script>
 <script src="/js/cyber.js?v=20261014a"></script>
