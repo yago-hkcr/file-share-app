@@ -3,7 +3,7 @@
 // Não usa credenciais nem dados de produção.
 //
 // Uso: node test/regression-collections-browser-upload.mjs
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -242,12 +242,28 @@ try {
   if (serverOutput) console.error('Log do servidor local:', serverOutput.split(/\r?\n/).slice(-20).join('\n'));
   failures++;
 } finally {
+  if (socket?.readyState === WebSocket.OPEN && browser && browser.exitCode === null) {
+    try { await command('Browser.close'); } catch {}
+  }
   try { socket?.close(); } catch {}
-  if (browser && browser.exitCode === null) browser.kill();
+  if (browser) {
+    if (process.platform === 'win32') {
+      const escapedProfile = profile.replace(/'/g, "''");
+      spawnSync('powershell.exe', ['-NoProfile', '-Command',
+        `Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'msedge.exe' -and $_.CommandLine -like '*${escapedProfile}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+      ], { stdio: 'ignore', windowsHide: true });
+    } else if (browser.exitCode === null) {
+      browser.kill();
+    }
+    await Promise.race([
+      new Promise(resolve => browser.exitCode !== null ? resolve() : browser.once('exit', resolve)),
+      delay(5000)
+    ]);
+  }
   if (server && server.exitCode === null) server.kill();
   await delay(400);
-  rmSync(profile, { recursive: true, force: true });
-  rmSync(dataDir, { recursive: true, force: true });
+  rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
 if (failures) {
