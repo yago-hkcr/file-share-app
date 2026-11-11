@@ -132,7 +132,7 @@ const checks = [
   [queueInvocation?.file === file, 'a fila recebe o arquivo selecionado'],
   [queueInvocation?.operationType === 'function', 'a fila recebe uma operação de upload executável'],
   [queueInvocation?.optionsType === 'object', 'a fila recebe opções no quarto argumento conforme seu contrato'],
-  [publicPage.includes('/js/collection-upload.js?v=20261107d') && serviceWorker.includes("'/js/collection-upload.js?v=20261107d'"), 'a página e o Service Worker carregam o asset corrigido sem cache antigo'],
+  [publicPage.includes('/js/collection-upload.js?v=20261111a') && serviceWorker.includes("'/js/collection-upload.js?v=20261111a'"), 'a página e o Service Worker carregam o asset corrigido sem cache antigo'],
   [uploadRequest?.method === 'POST' && uploadRequest.url.endsWith('/upload'), 'a função de upload do arquivo é executada'],
   [uploadRequest?.fileName === 'comprovante.txt' && uploadRequest.itemId === item.id, 'o multipart contém arquivo e item corretos'],
   [finalized, 'a coleta só é concluída depois do upload']

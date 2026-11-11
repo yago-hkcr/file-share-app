@@ -50,7 +50,7 @@
     else { btn.classList.add('theme-toggle-fixed'); document.body.appendChild(btn); }
   }
 
-  const esc = t => { const d = document.createElement('div'); d.textContent = t == null ? '' : t; return d.innerHTML; };
+  const esc = t => { const d = document.createElement('div'); d.textContent = t == null ? '' : t; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
 
   window.uploaderTag = function (name, role) {
     if (!name) return '';
