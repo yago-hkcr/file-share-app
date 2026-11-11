@@ -36,6 +36,11 @@ check(roomChat.includes("const previewUrl = '/preview/' + encodeURIComponent(id)
   'chat da sala continua exibindo a prévia inline ao remetente e aos membros');
 check(directChat.includes("const previewUrl = '/preview/' + encodeURIComponent(id)") && directChat.includes('class="chat-attachment-preview"'),
   'conversa direta exibe a mesma prévia inline ao remetente e ao destinatário');
+check(!/function chatAttachmentHtml\(content\)[\s\S]*?onclick=/.test(roomChat) && !/const chatAttachmentHtml = \(content\) => \{[\s\S]*?onclick=/.test(directChat),
+  'nomes de anexos não são interpolados em handlers JavaScript inline');
+check(roomChat.includes('data-chat-attachment-preview') && roomChat.includes("event.target.closest('[data-chat-attachment-preview]')") &&
+  directChat.includes('data-chat-attachment-preview') && directChat.includes("event.target.closest('[data-chat-attachment-preview]')"),
+  'pré-visualização de anexos usa handlers delegados e atributos de dados escapados');
 
 if (failures) {
   console.error(`\n${failures} falha(s).`);

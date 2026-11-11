@@ -5,7 +5,7 @@
   const esc = value => {
     const node = document.createElement('span');
     node.textContent = String(value == null ? '' : value);
-    return node.innerHTML;
+    return node.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   };
   const api = async (url, options = {}) => {
     const response = await fetch(url, { credentials: 'same-origin', ...options });
