@@ -100,8 +100,8 @@ assert.match(admin, /get\('drive_connected'\) === '1'/);
 assert.match(server, /res\.redirect\(302, `\$\{safeReturnOrigin\}\/admin\?drive_connected=1#storage`\)/);
 assert.match(server, /app\.delete\('\/api\/admin\/google-drive\/connection', asAdmin/);
 assert.match(admin, /admin-storage\.css/);
-assert.match(admin, /admin-storage\.css\?v=20261031d/, 'mudanças de layout invalidam o CSS antigo em cache');
-assert.match(admin, /hacker-ui\.css\?v=[^"']+"[^>]*>\s*<link rel="stylesheet" href="\/css\/admin-storage\.css\?v=20261031d"/,
+assert.match(admin, /admin-storage\.css\?v=20261107a/, 'mudanças de layout invalidam o CSS antigo em cache');
+assert.match(admin, /hacker-ui\.css\?v=[^"']+"[^>]*>\s*<link rel="stylesheet" href="\/css\/admin-storage\.css\?v=20261107a"/,
   'o CSS do painel é carregado depois dos estilos globais');
 assert.match(admin, /<span>Uso da cota<\/span>/, 'o cartão não repete o e-mail na linha de percentual');
 assert.match(adminStorageCss, /\.storage-account-card\{[^}]*display:grid/,
@@ -123,10 +123,10 @@ assert.match(admin, /loadGoogleDriveDistribution\(accounts\)/);
 assert.match(admin, /saveGoogleDriveDistribution\(\)/);
 assert.match(admin, /O painel tentará verificar novamente automaticamente\./,
   'falhas temporárias mantêm a autorização e orientam uma nova verificação');
-assert.match(dashboard, /upload\.js\?v=20261031d/);
-assert.match(dashboard, /library\.js\?v=20261031b/);
-assert.match(serviceWorker, /upload\.js\?v=20261031d/);
+assert.match(dashboard, /upload\.js\?v=20261107b/);
+assert.match(dashboard, /library\.js\?v=20261107e/);
+assert.match(serviceWorker, /upload\.js\?v=20261107b/);
 assert.match(serviceWorker, /google-drive-upload\.mjs\?v=20261031b/);
-assert.match(serviceWorker, /library\.js\?v=20261031b/);
+assert.match(serviceWorker, /library\.js\?v=20261107e/);
 
 console.log('Todas as asserções da integração Google Drive passaram.');
