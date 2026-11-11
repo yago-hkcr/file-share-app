@@ -15,7 +15,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014o">
   <link rel="stylesheet" href="/css/style.css?v=20261014o">
-  <script src="/js/common.js?v=20261014o"></script><script src="/js/adaptive.js?v=20261014a"></script>
+  <script src="/js/common.js?v=20261111a"></script><script src="/js/adaptive.js?v=20261014a"></script>
   <style>
     .sala-header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
     .sala-back { display:inline-flex; align-items:center; gap:8px; padding:8px 13px; border-radius:10px; background:var(--surface); color:var(--gray-700); box-shadow:var(--shadow); font-size:13px; font-weight:600; }
@@ -184,12 +184,12 @@
     setInterval(() => { if (!document.hidden) loadRoom(true); }, 2000);
   </script>
   <script src="/js/cursor.js?v=20261014o"></script>
-  <script src="/js/preview.js?v=20261014o"></script>
+  <script src="/js/preview.js?v=20261111a"></script>
 <script src="/js/announce.js?v=20261107d"></script>
 <script src="/js/cyber.js?v=20261014o"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js?v=20261107e').then(reg => {
+    navigator.serviceWorker.register('/sw.js?v=20261111a').then(reg => {
       console.log('[SW] Registrado:', reg.scope);
     }).catch(err => console.warn('[SW] Falha ao registrar:', err));
   }

@@ -94,7 +94,7 @@
     });
   }
 
-  async function legacyUpload(roomId, files, onProgress, signal) {
+  async function legacyUpload(roomId, files, onProgress, signal, chatOnly) {
     const max = limitBytes || 4 * 1024 * 1024;
     const inserted = [];
     for (let i = 0; i < files.length; i++) {
@@ -102,6 +102,7 @@
       if (file.size > max) throw new Error('Limite de ' + sizeLabel(max) + ' por arquivo neste ambiente.');
       const form = new FormData();
       form.append('files', file);
+      if (chatOnly) form.append('chat_only', '1');
       const data = await postFormWithProgress('/api/rooms/' + roomId + '/files', form, onProgress && (percent => onProgress(i, percent)), signal);
       if (Array.isArray(data)) inserted.push(...data);
       else if (data && data.id) inserted.push(data);
@@ -240,7 +241,7 @@
           const rest = files.slice(i);
           if (typeof options.onPhase === 'function') options.onPhase('uploading');
           if (typeof options.onCancelable === 'function') options.onCancelable(true);
-          const inserted = await legacyUpload(roomId, rest, (index, percent) => { if (index === 0) reportProgress(percent); }, options.signal);
+          const inserted = await legacyUpload(roomId, rest, (index, percent) => { if (index === 0) reportProgress(percent); }, options.signal, options.chatOnly);
           (inserted || []).forEach(item => uploaded.push({ id: item.id, name: item.original_name || item.name, size: item.size || 0, mime: item.mime_type || file.type || 'application/octet-stream' }));
           sent += rest.length;
           return { sent, skipped, files: uploaded };

@@ -124,9 +124,9 @@ assert.match(admin, /saveGoogleDriveDistribution\(\)/);
 assert.match(admin, /O painel tentará verificar novamente automaticamente\./,
   'falhas temporárias mantêm a autorização e orientam uma nova verificação');
 assert.match(dashboard, /upload\.js\?v=20261107b/);
-assert.match(dashboard, /library\.js\?v=20261107e/);
+assert.match(dashboard, /library\.js\?v=20261111a/);
 assert.match(serviceWorker, /upload\.js\?v=20261107b/);
 assert.match(serviceWorker, /google-drive-upload\.mjs\?v=20261031b/);
-assert.match(serviceWorker, /library\.js\?v=20261107e/);
+assert.match(serviceWorker, /library\.js\?v=20261111a/);
 
 console.log('Todas as asserções da integração Google Drive passaram.');

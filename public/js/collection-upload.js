@@ -19,7 +19,7 @@
     try { sessionStorage.setItem(senderDraftKey, JSON.stringify({ name: senderName, confirmed: Boolean(confirmed && senderName) })); } catch (_) {}
   }
   function clearSenderDraft() { try { sessionStorage.removeItem(senderDraftKey); } catch (_) {} }
-  const esc = value => { const div = document.createElement('div'); div.textContent = String(value == null ? '' : value); return div.innerHTML; };
+  const esc = value => { const div = document.createElement('div'); div.textContent = String(value == null ? '' : value); return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
   const sizeLabel = value => {
     const bytes = Number(value) || 0;
     if (bytes >= 1024 ** 3) return (bytes / (1024 ** 3)).toFixed(1) + ' GB';

@@ -25,7 +25,9 @@ function createElement() {
     setAttribute(name, value) { this.attributes[name] = value; },
     querySelector(selector) { return selector === 'button' ? this.children.find(child => child.tagName === 'BUTTON') || null : null; },
     focus() { this.focused = true; },
-    append(...children) { this.children.push(...children); }
+    append(...children) { this.children.push(...children); },
+    querySelectorAll() { return []; },
+    addEventListener() {}
   };
 }
 

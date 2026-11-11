@@ -1,6 +1,6 @@
 (function () {
   const $ = id => document.getElementById(id);
-  const esc = value => { const div = document.createElement('div'); div.textContent = String(value == null ? '' : value); return div.innerHTML; };
+  const esc = value => { const div = document.createElement('div'); div.textContent = String(value == null ? '' : value); return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
   const api = async (url, options = {}) => {
     const response = await fetch(url, { credentials: 'same-origin', ...options });
     const data = await response.json().catch(() => ({}));

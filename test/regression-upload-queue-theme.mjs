@@ -28,16 +28,18 @@ check(queue.includes('progress.max = 100') && queue.includes('task.progress = Ma
   'a fila apresenta progresso individual por arquivo');
 check(upload.includes('postFormWithProgress') && upload.includes('uploadWithQueue') && upload.includes('onProgress: progress'),
   'salas e mensagens diretas registram progresso por arquivo');
+check(upload.includes("if (chatOnly) form.append('chat_only', '1')") && upload.includes('options.signal, options.chatOnly'),
+  'fallback local mantém anexos enviados ao chat fora da lista de arquivos da sala');
 check(collectionUpload.includes('FileShareUploadQueue.run') && collectionUpload.includes('data-retry-collection'),
   'Coletas integram a fila e oferecem retry do item que falhou');
 check(library.includes('FileShareUploadQueue.run') && library.includes('putWithProgress'),
   'envios diretos à Biblioteca exibem progresso individual');
 check(dashboard.includes('/js/upload-queue.js?v=20261105a') && dashboard.includes('/css/upload-queue.css?v=20261031b') &&
-  dashboard.includes('/js/upload.js?v=20261107b') && dashboard.includes('/js/library.js?v=20261107e') && dashboard.includes('/css/collections.css?v=20261030d'),
+  dashboard.includes('/js/upload.js?v=20261107b') && dashboard.includes('/js/library.js?v=20261111a') && dashboard.includes('/js/collections.js?v=20261111a') && dashboard.includes('/css/collections.css?v=20261030d'),
   'dashboard carrega os assets atualizados de upload, fila e Coletas');
 check(sw.includes("'/js/upload-queue.js?v=20261105a'") && sw.includes("'/css/upload-queue.css?v=20261031b'") &&
-  sw.includes("'/js/upload.js?v=20261107b'") && sw.includes("'/js/library.js?v=20261107e'") &&
-  sw.includes("'/js/collection-upload.js?v=20261107d'") && sw.includes("'/js/collections.js?v=20261107d'"),
+  sw.includes("'/js/upload.js?v=20261107b'") && sw.includes("'/js/library.js?v=20261111a'") &&
+  sw.includes("'/js/collection-upload.js?v=20261111a'") && sw.includes("'/js/collections.js?v=20261111a'"),
   'Service Worker inclui os assets atualizados de upload, fila e Coletas');
 check(queue.includes('IDLE_MINIMIZE_MS = 5000') && queue.includes('setTimeout(() => setOpen(false, true), IDLE_MINIMIZE_MS)') &&
   queue.includes('enableDragging(launcher, false)') && queue.includes('enableDragging(panel.querySelector(\'.fs-upload-panel-head\'), true)') &&

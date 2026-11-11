@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v15';
+const CACHE_NAME = 'fileshare-v16';
 const ASSETS = [
   '/css/social.css?v=20261101a',
   '/css/upload-queue.css?v=20261031b',
@@ -19,7 +19,7 @@ const ASSETS = [
   '/css/fx.css?v=20261014o',
   '/css/preview.css?v=20261014o',
   '/css/hacker-ui.css?v=20261014o',
-  '/js/common.js?v=20261027b',
+  '/js/common.js?v=20261111a',
   '/js/adaptive.js?v=20261014a',
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261014p',
@@ -28,13 +28,13 @@ const ASSETS = [
   '/js/upload.js?v=20261107b',
   '/js/google-drive-upload.mjs?v=20261031b',
   '/js/social.js?v=20261107d',
-  '/js/personal.js?v=20261107d',
+  '/js/personal.js?v=20261111a',
   '/js/message-export.js?v=20261027c',
   '/js/cursor.js?v=20261014o',
-  '/js/preview.js?v=20261014o',
-  '/js/collections.js?v=20261107d',
-  '/js/collection-upload.js?v=20261107d',
-  '/js/library.js?v=20261107e',
+  '/js/preview.js?v=20261111a',
+  '/js/collections.js?v=20261111a',
+  '/js/collection-upload.js?v=20261111a',
+  '/js/library.js?v=20261111a',
   '/js/dashboard-shell.js?v=20261014o',
   '/js/announce.js?v=20261107d',
   '/js/cyber.js?v=20261014o',
