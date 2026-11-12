@@ -179,8 +179,18 @@
     }
   }
 
+  function splashActive() {
+    var el = document.getElementById('splashIntro');
+    return !!(el && el.isConnected && !el.classList.contains('leaving'));
+  }
+
   function frame(ts) {
     if (!t0) t0 = ts;
+    // Pause heavy background rendering while the centered splash intro is on screen
+    if (splashActive()) {
+      if (!reduced) raf = requestAnimationFrame(frame);
+      return;
+    }
     var time = ts - t0;
     var pal = palette();
     var dark = themeIsDark();
@@ -215,8 +225,16 @@
   function start() {
     try {
       initCanvas();
-      if (reduced) { requestAnimationFrame(frame); }
-      else { raf = requestAnimationFrame(frame); }
+      if (reduced) {
+        // draw once when splash is gone
+        var tryOnce = function (ts) {
+          if (splashActive()) { requestAnimationFrame(tryOnce); return; }
+          frame(ts || performance.now());
+        };
+        requestAnimationFrame(tryOnce);
+      } else {
+        raf = requestAnimationFrame(frame);
+      }
     } catch (e) { /* background is decorative; never break the app */ }
   }
 
