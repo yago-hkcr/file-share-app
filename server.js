@@ -118,25 +118,47 @@ const isBlobStoreSuspended = error => Boolean(error && (
   || /store has been suspended|billing state is suspended|limits-exceeded-suspended/i.test(String(error.message || ''))
 ));
 const blobStoreSuspendedMessage = 'O armazenamento de arquivos está suspenso na Vercel por limite de uso/faturamento. Os envios voltam após a reativação da Blob store.';
-async function isGoogleDriveStoredFile(storedName) {
+async function isGoogleDriveStoredFile(storedName, lookup = q) {
   if (isDriveFileRef(storedName)) return true;
   if (!validateDriveFileId(storedName)) return false;
   // Formato legado: algumas referências guardavam só o ID, sem "gdrive:".
   // Confirma que o ID veio de um upload Drive para não apagar IDs locais.
-  return Boolean(await one('SELECT upload_id FROM google_drive_uploads WHERE file_id = $1 LIMIT 1', [storedName]));
+  // O lookup sempre devolve as linhas da consulta (array), tanto no pool
+  // quanto no cliente da transação; um array vazio NÃO pode contar como achado.
+  const rows = await lookup('SELECT upload_id FROM google_drive_uploads WHERE file_id = $1 LIMIT 1', [storedName]);
+  return Array.isArray(rows) ? rows.length > 0 : Boolean(rows);
 }
-async function deleteBlobs(pathnames) {
-  const blobPaths = [...new Set((pathnames || []).filter(isBlobPath))];
-  const blobResult = blobPaths.length
-    ? await blobDeletionQueue().enqueueAndDelete(blobPaths)
-    : { deleted: 0, pending: 0 };
+async function deleteBlobs(pathnames, options = {}) {
+  const storedNames = pathnames || [];
+  const blobPaths = [...new Set(storedNames.filter(isBlobPath))];
   const driveFiles = [];
-  for (const storedName of pathnames || []) {
-    if (!isBlobPath(storedName) && await isGoogleDriveStoredFile(storedName)) driveFiles.push(storedName);
+  for (const storedName of storedNames) {
+    if (isBlobPath(storedName)) continue;
+    if (isDriveFileRef(storedName)) { driveFiles.push(storedName); continue; }
+    if (await isGoogleDriveStoredFile(storedName, options.queueQuery || q)) driveFiles.push(storedName);
   }
-  const driveResult = driveFiles.length
-    ? await googleDriveDeletionQueue().enqueueAndDelete(driveFiles)
-    : { deleted: 0, pending: 0 };
+
+  if (options.queueQuery) {
+    // Dentro da transação usamos a mesma conexão/cliente: nada de paralelismo aqui.
+    const blobQueue = blobPaths.length
+      ? await blobDeletionQueue().enqueueOnly(blobPaths, options.queueQuery)
+      : { pathnames: [] };
+    const driveQueue = driveFiles.length
+      ? await googleDriveDeletionQueue().enqueueOnly(driveFiles, options.queueQuery)
+      : { fileIds: [] };
+    return {
+      failed: false,
+      blobPending: blobQueue.pathnames.length,
+      drivePending: driveQueue.fileIds.length,
+      queuedBlobPaths: blobQueue.pathnames,
+      queuedDriveFiles: driveQueue.fileIds
+    };
+  }
+
+  const [blobResult, driveResult] = await Promise.all([
+    blobPaths.length ? blobDeletionQueue().enqueueAndDelete(blobPaths) : { deleted: 0, pending: 0 },
+    driveFiles.length ? googleDriveDeletionQueue().enqueueAndDelete(driveFiles) : { deleted: 0, pending: 0 }
+  ]);
   const blobPending = Number(blobResult.pending || 0);
   const drivePending = Number(driveResult.pending || 0);
   return {
@@ -376,7 +398,14 @@ function chatMessageCleanup() {
     cachedChatMessageCleanup = createChatMessageCleanup({
       query: q,
       transaction: withTransaction,
-      deleteBlobs: (paths, options) => deleteBlobs(paths, options)
+      queueDeletions: deleteBlobs,
+      processQueuedDeletions: async (blobPaths, driveFiles) => {
+        const [blobResult, driveResult] = await Promise.all([
+          blobPaths.length ? blobDeletionQueue().processQueued(blobPaths) : { deleted: 0, pending: 0 },
+          driveFiles.length ? googleDriveDeletionQueue().processQueued(driveFiles) : { deleted: 0, pending: 0 }
+        ]);
+        return { blobPending: Number(blobResult.pending) || 0, drivePending: Number(driveResult.pending) || 0 };
+      }
     });
   }
   return cachedChatMessageCleanup;

@@ -2,6 +2,7 @@
 // Uso: node test/regression-chat-messages.mjs
 import assert from 'node:assert/strict';
 import { createBlobDeletionQueue } from '../lib/blob-deletion.js';
+import { createGoogleDriveDeletionQueue } from '../lib/google-drive-deletion.js';
 import {
   attachmentIds,
   createChatMessageCleanup,
@@ -26,11 +27,18 @@ assert.equal(directConversationKey('z', 'a'), directConversationKey('a', 'z'));
 assert.deepEqual(attachmentIds('anexo [[file:a|foto.png|image/png]] e [[file:b|doc.pdf|application/pdf]] [[file:a|duplicado|x]]'), ['a', 'b']);
 
 function createHarness({ failBlob = false, failDrive = false } = {}) {
-  const state = { messages: [], directs: [], files: [], blobs: [], typing: [], queue: [] };
+  const state = { messages: [], directs: [], files: [], blobs: [], typing: [], queue: [], driveQueue: [], driveUploads: [] };
   let currentTime = '2026-01-01 00:00:00';
+  let transactionActive = false;
   const statements = [];
   const query = async (sql, params = []) => {
     statements.push({ sql, params });
+    if (transactionActive && (sql.includes('blob_deletion_queue') || sql.includes('google_drive_deletion_queue')) && !query.isTransactionQuery) throw new Error('pool de banco esgotado');
+    if (sql.startsWith('INSERT INTO google_drive_deletion_queue')) { if (!state.driveQueue.some(row => row.file_id === params[0])) state.driveQueue.push({ file_id: params[0], created_at: params[1], next_attempt_at: params[1], attempts: 0 }); return []; }
+    if (sql.startsWith('DELETE FROM google_drive_deletion_queue')) { state.driveQueue = state.driveQueue.filter(row => row.file_id !== params[0]); return []; }
+    if (sql.startsWith('UPDATE google_drive_deletion_queue')) { const row = state.driveQueue.find(item => item.file_id === params[0]); if (row) Object.assign(row, { attempts: row.attempts + 1, last_error: params[1], next_attempt_at: params[2] }); return []; }
+    if (sql.startsWith('SELECT file_id, attempts FROM google_drive_deletion_queue')) return state.driveQueue.filter(row => row.next_attempt_at <= params[0]).slice(0, params[1]);
+    if (sql.startsWith('SELECT upload_id FROM google_drive_uploads')) return state.driveUploads.filter(row => row.file_id === params[0]);
     if (sql.startsWith('SELECT id, room_id, content FROM messages')) return state.messages.filter(row => row.expires_at && row.expires_at <= params[0]).slice(0, params[1]);
     if (sql.startsWith('SELECT id, content FROM messages')) return state.messages.map(({ id, content }) => ({ id, content }));
     if (sql.startsWith('SELECT id FROM direct_messages')) return state.directs.filter(row => (row.sender_id === params[0] && row.recipient_id === params[1]) || (row.sender_id === params[1] && row.recipient_id === params[0])).map(({ id }) => ({ id }));
@@ -67,12 +75,22 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
   };
   const transaction = async work => {
     const snapshot = structuredClone(state);
-    try { return await work(query); }
+    transactionActive = true;
+    const tx = async (sql, params = []) => {
+      query.isTransactionQuery = true;
+      try { return await query(sql, params); }
+      finally { query.isTransactionQuery = false; }
+    };
+    try { return await work(tx); }
     catch (error) { Object.assign(state, snapshot); throw error; }
+    finally { transactionActive = false; }
   };
   let blobDeleteFailures = failBlob ? Number.POSITIVE_INFINITY : 0;
   const blobQueue = createBlobDeletionQueue({
-    query,
+    query: async (sql, params = []) => {
+      if (transactionActive && sql.includes('blob_deletion_queue') && !query.isTransactionQuery) throw new Error('pool de banco esgotado');
+      return query(sql, params);
+    },
     deleteBlob: async pathname => {
       if (blobDeleteFailures > 0) { blobDeleteFailures--; throw new Error('Blob indisponível'); }
       state.blobs = state.blobs.filter(name => name !== pathname);
@@ -80,13 +98,59 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
     now: () => currentTime,
     logger: { error() {} }
   });
-  const deleteBlobs = async names => {
-    const paths = names.filter(name => String(name).startsWith('rooms/') || String(name).startsWith('dm/'));
-    const blob = await blobQueue.enqueueAndDelete(paths);
-    if (failDrive && names.some(name => String(name).startsWith('gdrive:'))) return { pending: 1, failed: false };
-    return { pending: blob.pending, blobPending: blob.pending, drivePending: 0, failed: false };
+  const driveQueue = createGoogleDriveDeletionQueue({
+    query: async (sql, params = []) => {
+      if (transactionActive && sql.includes('google_drive_deletion_queue') && !query.isTransactionQuery) throw new Error('pool de banco esgotado');
+      return query(sql, params);
+    },
+    getStorage: async () => ({ deleteFile: async fileId => {
+      if (failDrive) throw new Error('Google Drive indisponível');
+      state.blobs = state.blobs.filter(name => name !== fileId);
+    } }),
+    getFileId: value => value.startsWith('gdrive:') ? value.slice(7) : value,
+    now: () => currentTime,
+    logger: { error() {} }
+  });
+  const processQueuedDeletions = async (blobPaths, driveFiles) => {
+    const [blob, drive] = await Promise.all([
+      blobPaths.length ? blobQueue.processQueued(blobPaths) : { pending: 0 },
+      driveFiles.length ? driveQueue.processQueued(driveFiles) : { pending: 0 }
+    ]);
+    return { blobPending: blob.pending, drivePending: drive.pending };
   };
-  const cleanup = createChatMessageCleanup({ query, transaction, deleteBlobs, now: () => currentTime });
+  // Mesma classificação do server: só é Drive quando o ID legado existe em google_drive_uploads.
+  const isGoogleDriveStoredFile = async (storedName, lookup = query) => {
+    if (String(storedName).startsWith('gdrive:')) return true;
+    if (!/^[A-Za-z0-9_-]{10,200}$/.test(String(storedName))) return false;
+    const rows = await lookup('SELECT upload_id FROM google_drive_uploads WHERE file_id = $1 LIMIT 1', [storedName]);
+    return Array.isArray(rows) ? rows.length > 0 : Boolean(rows);
+  };
+  const deleteStoredFiles = async (names, options = {}) => {
+    const list = [...new Set((names || []).filter(Boolean))];
+    const lookup = options.queueQuery || query;
+    const blobPaths = list.filter(name => /^(rooms|dm)\//.test(String(name)));
+    const driveFiles = [];
+    for (const name of list) {
+      if (/^(rooms|dm)\//.test(String(name))) continue;
+      if (await isGoogleDriveStoredFile(name, lookup)) driveFiles.push(name);
+    }
+    if (options.queueQuery) {
+      const blob = await blobQueue.enqueueOnly(blobPaths, options.queueQuery);
+      const drive = await driveQueue.enqueueOnly(driveFiles, options.queueQuery);
+      return {
+        blobPending: blob.pathnames.length,
+        drivePending: drive.fileIds.length,
+        queuedBlobPaths: blob.pathnames,
+        queuedDriveFiles: drive.fileIds
+      };
+    }
+    const [blob, drive] = await Promise.all([blobQueue.enqueueAndDelete(blobPaths), driveQueue.enqueueAndDelete(driveFiles)]);
+    return { deleted: blob.deleted + drive.deleted, blobPending: blob.pending, drivePending: drive.pending };
+  };
+  const cleanup = createChatMessageCleanup({
+    query, transaction, queueDeletions: deleteStoredFiles,
+    processQueuedDeletions, now: () => currentTime
+  });
   return { state, statements, blobQueue, setBlobFailures: value => { blobDeleteFailures = value; }, setTime: value => { currentTime = value; }, cleanup: {
     ...cleanup,
     clearRoomChat: (...args) => cleanup.clearRoomChat(...args)
@@ -104,14 +168,14 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
     { id: 'chat-only', room_id: 'room', stored_name: 'rooms/chat', chat_only: 1 },
     { id: 'shared', room_id: 'room', stored_name: 'rooms/shared', chat_only: 0 }
   ];
-  h.state.blobs = ['attached', 'chat-only', 'shared'];
+  h.state.blobs = ['rooms/photo', 'rooms/chat', 'rooms/shared'];
   h.state.typing = ['typing'];
   const result = await h.cleanup.clearRoomChat('room');
   assert.equal(result.messages, 2);
   assert.equal(result.files, 2);
   assert.deepEqual(h.state.messages, []);
   assert.deepEqual(h.state.files.map(file => file.id), ['shared'], 'preserva arquivos compartilhados que não são anexos do chat');
-  assert.deepEqual(h.state.blobs, ['shared']);
+  assert.deepEqual(h.state.blobs, ['rooms/shared']);
   assert.deepEqual(h.state.typing, []);
 }
 
@@ -123,7 +187,7 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
     { id: 'dm-other', sender_id: 'a', recipient_id: 'c', content: 'texto' }
   ];
   h.state.files = [{ id: 'direct-file', room_id: directConversationKey('a', 'b'), stored_name: 'dm/file', chat_only: 1 }];
-  h.state.blobs = ['direct-file'];
+  h.state.blobs = ['dm/file'];
   const result = await h.cleanup.clearDirectChat('a', 'b');
   assert.equal(result.messages, 2, 'apaga a conversa nos dois sentidos, para ambos os participantes');
   assert.deepEqual(h.state.directs.map(row => row.id), ['dm-other']);
@@ -185,13 +249,13 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
     { id: 'live-room', room_id: 'room', content: '[[file:shared-room-file|shared.png|image/png]]' }
   ];
   h.state.files = [{ id: 'shared-room-file', room_id: 'room', stored_name: 'rooms/shared', chat_only: 1 }];
-  h.state.blobs = ['shared-room-file'];
+  h.state.blobs = ['rooms/shared'];
   h.state.directs = [{ id: 'live-direct', sender_id: 'a', recipient_id: 'b', content: 'não expirada' }];
   const result = await h.cleanup.purgeExpiredMessages(10);
   assert.equal(result.messages, 1);
   assert.deepEqual(h.state.messages.map(row => row.id), ['live-room'], 'remove somente a mensagem de sala expirada');
   assert.deepEqual(h.state.files.map(file => file.id), ['shared-room-file'], 'preserva anexo referenciado por mensagem válida');
-  assert.deepEqual(h.state.blobs, ['shared-room-file']);
+  assert.deepEqual(h.state.blobs, ['rooms/shared']);
   assert.deepEqual(h.state.directs.map(row => row.id), ['live-direct'], 'expirar mensagem de sala não apaga mensagens diretas válidas');
 }
 
@@ -203,12 +267,12 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
     { id: 'other-direct', sender_id: 'a', recipient_id: 'c', content: 'outra conversa' }
   ];
   h.state.files = [{ id: 'dm-expired-file', room_id: directConversationKey('a', 'b'), stored_name: 'dm/expired', chat_only: 1 }];
-  h.state.blobs = ['dm-expired-file'];
+  h.state.blobs = ['dm/expired'];
   const result = await h.cleanup.purgeExpiredMessages(10);
   assert.equal(result.messages, 1);
   assert.deepEqual(h.state.directs.map(row => row.id), ['live-direct', 'other-direct'], 'remove somente a DM expirada');
   assert.deepEqual(h.state.files.map(file => file.id), ['dm-expired-file'], 'preserva anexo referenciado pela DM válida');
-  assert.deepEqual(h.state.blobs, ['dm-expired-file']);
+  assert.deepEqual(h.state.blobs, ['dm/expired']);
 }
 
 {
@@ -218,7 +282,7 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
     { id: 'live-direct', sender_id: 'b', recipient_id: 'a', content: 'mensagem sem anexo' }
   ];
   h.state.files = [{ id: 'dm-only-expired-file', room_id: directConversationKey('a', 'b'), stored_name: 'dm/only-expired', chat_only: 1 }];
-  h.state.blobs = ['dm-only-expired-file'];
+  h.state.blobs = ['dm/only-expired'];
   const result = await h.cleanup.purgeExpiredMessages(10);
   assert.equal(result.messages, 1);
   assert.equal(result.files, 1);
@@ -227,6 +291,40 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
   assert.deepEqual(h.state.blobs, []);
 }
 
+{
+  // Arquivo local legado (UUID sem prefixo) não pode ser confundido com ID do Drive:
+  // a consulta devolve [] e um array vazio precisa contar como "não encontrado".
+  const legacyId = 'b6c059c4-a649-40d2-aed8-17ac90c9646d';
+  const h = createHarness();
+  h.state.messages = [{ id: 'legacy-msg', room_id: 'room', content: `[[file:legacy-file|nota.txt|text/plain]]` }];
+  h.state.files = [{ id: 'legacy-file', room_id: 'room', stored_name: legacyId, chat_only: 1 }];
+  const result = await h.cleanup.clearRoomChat('room');
+  assert.equal(result.messages, 1);
+  assert.equal(result.files, 1);
+  assert.equal(result.drivePending, 0, 'não enfileira arquivo local como exclusão do Drive');
+  assert.equal(result.blobPending, 0);
+  assert.deepEqual(h.state.driveQueue, []);
+  assert.deepEqual(h.state.queue, []);
+  assert.deepEqual(h.state.files, []);
+}
+
+{
+  // O mesmo formato de ID continua sendo Drive quando existe em google_drive_uploads.
+  const legacyDriveId = 'b6c059c4-a649-40d2-aed8-17ac90c9646d';
+  const h = createHarness({ failDrive: true });
+  h.state.driveUploads = [{ file_id: legacyDriveId, upload_id: 'upload-1' }];
+  h.state.messages = [{ id: 'legacy-drive-msg', room_id: 'room', content: `[[file:legacy-drive-file|drive.pdf|application/pdf]]` }];
+  h.state.files = [{ id: 'legacy-drive-file', room_id: 'room', stored_name: legacyDriveId, chat_only: 1 }];
+  const result = await h.cleanup.clearRoomChat('room');
+  assert.equal(result.messages, 1);
+  assert.equal(result.drivePending, 1, 'informa a pendência do Drive legado');
+  assert.equal(h.state.driveQueue.length, 1, 'persiste o ID legado do Drive na fila');
+  assert.equal(h.state.driveQueue[0].file_id, legacyDriveId);
+  assert.deepEqual(h.state.files, []);
+}
+
+assert.match(server, /async function isGoogleDriveStoredFile\(storedName, lookup = q\)[\s\S]*Array\.isArray\(rows\) \? rows\.length > 0/,
+  'arquivo local não é confundido com Drive quando a consulta não encontra linhas');
 assert.match(server, /app\.delete\('\/api\/rooms\/:id\/messages', asMember/);
 assert.match(server, /app\.delete\('\/api\/dm\/:id\/messages', asMember/);
 assert.match(server, /if \(!\(await canUseRoom\(req\.user, room\.id\)\)\) return res\.status\(403\)/,

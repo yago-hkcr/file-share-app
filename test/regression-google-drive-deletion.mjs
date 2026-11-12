@@ -115,11 +115,11 @@ assert.deepEqual(await queue.enqueueAndDelete([]), { deleted: 0, pending: 0 });
 assert.equal(operations.filter(([type]) => type === 'enqueue').length, enqueuesBeforeEmpty);
 
 const deleteHelper = server.slice(server.indexOf('async function deleteBlobs'), server.indexOf('let cachedGoogleDriveStorage'));
-assert.match(server, /async function isGoogleDriveStoredFile\(storedName\)[\s\S]*SELECT upload_id FROM google_drive_uploads WHERE file_id = \$1/,
+assert.match(server, /async function isGoogleDriveStoredFile\(storedName, lookup = q\)[\s\S]*SELECT upload_id FROM google_drive_uploads WHERE file_id = \$1/,
   'reconhece IDs antigos do Drive sem confundir os IDs do armazenamento local');
-assert.match(deleteHelper, /await isGoogleDriveStoredFile\(storedName\)/);
+assert.match(deleteHelper, /await isGoogleDriveStoredFile\(storedName, options\.queueQuery \|\| q\)/);
 assert.match(server, /getFileId: storedName => isDriveFileRef\(storedName\)[\s\S]{0,100}driveFileIdFromRef\(storedName\)/);
-assert.match(deleteHelper, /await googleDriveDeletionQueue\(\)\.enqueueAndDelete\(driveFiles\)/);
+assert.match(deleteHelper, /googleDriveDeletionQueue\(\)\.enqueueAndDelete\(driveFiles\)/);
 const libraryCleanup = server.slice(server.indexOf('async function deleteLibraryBlobs'), server.indexOf('// Preenche o snapshot'));
 assert.match(libraryCleanup, /await isGoogleDriveStoredFile\(item\.stored_name\)/);
 assert.match(libraryCleanup, /await deleteBlobs\(driveFiles\)/, 'a exclusão de item e de espaço da Biblioteca aguarda a limpeza do Drive');
