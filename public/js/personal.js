@@ -182,7 +182,9 @@
       const result = await api('/api/dm/' + encodeURIComponent(friendId) + '/messages', { method: 'DELETE' });
       if (!activeFriend || activeFriend.id !== friendId) return;
       lastDmSig = ''; initialDm = true; clearDmReply(); $('directMessageList').innerHTML = '<div class="chat-empty"><i class="fas fa-comment-dots"></i><span>Esta conversa está começando. Envie a primeira mensagem.</span></div>';
-      $('directChatSettingStatus').textContent = 'Conversa limpa (' + Number(result.messages || 0) + ' mensagens, ' + Number(result.files || 0) + ' anexos).' + (result.drivePending ? ' ' + Number(result.drivePending) + ' arquivo(s) aguardam exclusão no Google Drive.' : '');
+      $('directChatSettingStatus').textContent = 'Conversa limpa (' + Number(result.messages || 0) + ' mensagens, ' + Number(result.files || 0) + ' anexos).' +
+        (result.drivePending ? ' ' + Number(result.drivePending) + ' arquivo(s) aguardam exclusão no Google Drive.' : '') +
+        (result.blobPending ? ' ' + Number(result.blobPending) + ' arquivo(s) aguardam exclusão do armazenamento e serão removidos automaticamente.' : '');
       await loadDmFriends();
     } catch (error) { $('directChatSettingStatus').textContent = error.message || 'Não foi possível limpar a conversa.'; toast(error.message || 'Não foi possível limpar a conversa.', 'error'); }
     finally {

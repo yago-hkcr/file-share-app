@@ -1,6 +1,7 @@
 // Regressões para expiração, limpeza atômica do chat e preservação de anexos.
 // Uso: node test/regression-chat-messages.mjs
 import assert from 'node:assert/strict';
+import { createBlobDeletionQueue } from '../lib/blob-deletion.js';
 import {
   attachmentIds,
   createChatMessageCleanup,
@@ -26,6 +27,7 @@ assert.deepEqual(attachmentIds('anexo [[file:a|foto.png|image/png]] e [[file:b|d
 
 function createHarness({ failBlob = false, failDrive = false } = {}) {
   const state = { messages: [], directs: [], files: [], blobs: [], typing: [], queue: [] };
+  let currentTime = '2026-01-01 00:00:00';
   const statements = [];
   const query = async (sql, params = []) => {
     statements.push({ sql, params });
@@ -47,6 +49,13 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
         : true))
         .map(({ id, stored_name }) => ({ id, stored_name }));
     }
+    if (sql.startsWith('INSERT INTO blob_deletion_queue')) {
+      if (!state.queue.some(row => row.pathname === params[0])) state.queue.push({ pathname: params[0], created_at: params[1], next_attempt_at: params[1], attempts: 0, last_error: '' });
+      return [];
+    }
+    if (sql.startsWith('DELETE FROM blob_deletion_queue')) { state.queue = state.queue.filter(row => row.pathname !== params[0]); return []; }
+    if (sql.startsWith('UPDATE blob_deletion_queue')) { const row = state.queue.find(item => item.pathname === params[0]); if (row) Object.assign(row, { attempts: row.attempts + 1, last_error: params[1], next_attempt_at: params[2] }); return []; }
+    if (sql.startsWith('SELECT pathname, attempts FROM blob_deletion_queue')) return state.queue.filter(row => row.next_attempt_at <= params[0]).slice(0, params[1]);
     if (sql.startsWith('DELETE FROM file_blobs')) { state.blobs = state.blobs.filter(id => !params[0].includes(id)); return []; }
     if (sql.startsWith('DELETE FROM files')) { state.files = state.files.filter(file => !params[0].includes(file.id)); return []; }
     if (sql.startsWith('DELETE FROM messages WHERE id')) { const before = state.messages.length; state.messages = state.messages.filter(row => !params[0].includes(row.id)); return Array(before - state.messages.length).fill({ id: 'deleted' }); }
@@ -61,14 +70,24 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
     try { return await work(query); }
     catch (error) { Object.assign(state, snapshot); throw error; }
   };
-  const deleteBlobs = async (names, options) => {
+  let blobDeleteFailures = failBlob ? Number.POSITIVE_INFINITY : 0;
+  const blobQueue = createBlobDeletionQueue({
+    query,
+    deleteBlob: async pathname => {
+      if (blobDeleteFailures > 0) { blobDeleteFailures--; throw new Error('Blob indisponível'); }
+      state.blobs = state.blobs.filter(name => name !== pathname);
+    },
+    now: () => currentTime,
+    logger: { error() {} }
+  });
+  const deleteBlobs = async names => {
     const paths = names.filter(name => String(name).startsWith('rooms/') || String(name).startsWith('dm/'));
-    if (failBlob && paths.length) throw new Error('Blob indisponível');
+    const blob = await blobQueue.enqueueAndDelete(paths);
     if (failDrive && names.some(name => String(name).startsWith('gdrive:'))) return { pending: 1, failed: false };
-    return { pending: 0, failed: false };
+    return { pending: blob.pending, blobPending: blob.pending, drivePending: 0, failed: false };
   };
-  const cleanup = createChatMessageCleanup({ query, transaction, deleteBlobs, now: () => '2026-01-01 00:00:00' });
-  return { state, statements, cleanup: {
+  const cleanup = createChatMessageCleanup({ query, transaction, deleteBlobs, now: () => currentTime });
+  return { state, statements, blobQueue, setBlobFailures: value => { blobDeleteFailures = value; }, setTime: value => { currentTime = value; }, cleanup: {
     ...cleanup,
     clearRoomChat: (...args) => cleanup.clearRoomChat(...args)
   } };
@@ -114,11 +133,38 @@ function createHarness({ failBlob = false, failDrive = false } = {}) {
 
 {
   const h = createHarness({ failBlob: true });
-  h.state.messages = [{ id: 'keep', room_id: 'room', content: '[[file:broken|foto.png|image/png]]' }];
-  h.state.files = [{ id: 'broken', room_id: 'room', stored_name: 'rooms/broken', chat_only: 1 }];
-  await assert.rejects(h.cleanup.clearRoomChat('room'), /anexos do chat/);
-  assert.equal(h.state.messages.length, 1, 'mantém mensagens após falha de Blob');
-  assert.equal(h.state.files.length, 1, 'mantém metadados/referência para nova tentativa');
+  h.state.messages = [{ id: 'keep', sender_id: 'a', recipient_id: 'b', content: '[[file:broken|foto.png|image/png]]' }];
+  h.state.directs = [{ id: 'keep', sender_id: 'a', recipient_id: 'b', content: '[[file:broken|foto.png|image/png]]' }];
+  h.state.files = [{ id: 'broken', room_id: directConversationKey('a', 'b'), stored_name: 'dm/broken', chat_only: 1 }];
+  h.state.blobs = ['dm/broken'];
+  const cleared = await h.cleanup.clearDirectChat('a', 'b');
+  assert.equal(cleared.messages, 1, 'a falha temporária no Blob não bloqueia a limpeza da conversa');
+  assert.equal(cleared.blobPending, 1, 'a API informa a exclusão que ficou pendente');
+  assert.deepEqual(h.state.directs, []);
+  assert.deepEqual(h.state.files, [], 'remove a referência local depois de enfileirar com segurança');
+  assert.equal(h.state.queue.length, 1, 'persiste o caminho do arquivo para repetir a exclusão');
+  await h.blobQueue.retryPending();
+  assert.equal(h.state.queue.length, 1, 'mantém a exclusão na fila enquanto o armazenamento falha');
+  h.setBlobFailures(0);
+  h.setTime('2026-01-01 00:00:31');
+  assert.deepEqual(await h.blobQueue.retryPending(), { deleted: 1, pending: 0 });
+  assert.deepEqual(h.state.queue, []);
+  assert.deepEqual(h.state.blobs, []);
+}
+
+{
+  const queueRows = new Set();
+  const queue = createBlobDeletionQueue({
+    query: async (sql, params = []) => {
+      if (sql.startsWith('INSERT INTO blob_deletion_queue')) queueRows.add(params[0]);
+      else if (sql.startsWith('DELETE FROM blob_deletion_queue')) queueRows.delete(params[0]);
+      return [];
+    },
+    deleteBlob: async () => { const error = new Error('Blob not found'); error.name = 'BlobNotFoundError'; throw error; },
+    logger: { error() {} }
+  });
+  assert.deepEqual(await queue.enqueueAndDelete(['rooms/already-removed']), { deleted: 1, pending: 0 });
+  assert.equal(queueRows.size, 0, 'um arquivo já ausente é tratado como exclusão concluída');
 }
 
 {
