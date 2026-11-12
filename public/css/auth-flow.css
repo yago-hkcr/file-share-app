@@ -333,8 +333,6 @@ body.auth-page .auth-container {
 body.auth-page .auth-card,
 body.auth-page .auth-showcase {
   transform-style: preserve-3d;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
   --tilt-x: 4deg;
   --tilt-y: -6deg;
   --float-y: 0px;
@@ -385,11 +383,11 @@ body.auth-page .auth-card .auth-icon {
     0 16px 28px rgba(0,0,0,.22),
     0 0 34px rgba(var(--cy-rgb), .18);
 }
-body.auth-page .auth-card .auth-header { transform: translateZ(30px); }
+body.auth-page .auth-card .auth-header { transform: translateZ(20px); }
 body.auth-page .auth-card .auth-header h1 { transform: translateZ(42px); text-shadow: 0 8px 24px rgba(0,0,0,.25); }
-body.auth-page .auth-card .cy-lead, body.auth-page .auth-card .cy-status { transform: translateZ(22px); }
-body.auth-page .auth-card form { transform: translateZ(36px); }
-body.auth-page .auth-card .auth-footer { transform: translateZ(26px); }
+body.auth-page .auth-card .cy-lead, body.auth-page .auth-card .cy-status { transform: translateZ(12px); }
+body.auth-page .auth-card form { transform: none; position: relative; z-index: 5; }
+body.auth-page .auth-card .auth-footer { transform: translateZ(8px); position: relative; z-index: 5; }
 
 /* Subtle lift on hover - transform handled by JS vars, no animation swap (prevents tremble) */
 body.auth-page .auth-card.is-tilting {
@@ -456,7 +454,10 @@ body.auth-page .auth-card .form-group input {
     inset 0 2px 4px rgba(0,0,0,.18),
     0 1px 0 rgba(255,255,255,.06),
     0 4px 10px rgba(0,0,0,.10);
-  transform: translateZ(8px);
+  transform: none;
+  position: relative;
+  z-index: 6;
+  pointer-events: auto;
 }
 body.auth-page .auth-card .btn-primary,
 body.auth-page .auth-card .btn-success {
@@ -466,12 +467,14 @@ body.auth-page .auth-card .btn-success {
     0 6px 0 rgba(0,0,0,.12),
     0 12px 24px rgba(0,0,0,.22),
     0 0 18px rgba(var(--cy-rgb), .18);
-  transform: translateZ(14px);
+  transform: none;
+  position: relative;
+  z-index: 6;
   transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
 }
 body.auth-page .auth-card .btn-primary:hover,
 body.auth-page .auth-card .btn-success:hover {
-  transform: translateZ(18px) translateY(-2px);
+  transform: translateY(-2px);
   box-shadow:
     0 1px 0 rgba(255,255,255,.20) inset,
     0 5px 0 rgba(0,0,0,.18),
@@ -481,7 +484,7 @@ body.auth-page .auth-card .btn-success:hover {
 }
 body.auth-page .auth-card .btn-primary:active,
 body.auth-page .auth-card .btn-success:active {
-  transform: translateZ(6px) translateY(2px);
+  transform: translateY(1px);
   box-shadow:
     0 1px 0 rgba(255,255,255,.10) inset,
     0 2px 0 rgba(0,0,0,.18),

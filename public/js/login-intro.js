@@ -1,25 +1,33 @@
-/* Arquive Online — game-style laser splash intro (centered). */
+/* Arquive Online — game-style laser splash intro (centered, no skip). */
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'fileshare-login-intro-seen-v7-laser-splash';
+  var STORAGE_KEY = 'fileshare-login-intro-seen-v8-laser-splash';
   var INTRO_DURATION = 5600;
-  var FALLBACK_CLOSE = 9500;
 
   function prefersReducedMotion() {
-    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  function focusLogin() {
+    var username = document.getElementById('username');
+    if (username && typeof username.focus === 'function') {
+      try { username.focus({ preventScroll: true }); } catch (e) {}
+    }
   }
 
   function mount() {
+    var reduced = prefersReducedMotion();
     try {
       if (localStorage.getItem(STORAGE_KEY) === '1') return;
     } catch (e) { return; }
 
-    // Don't show on pages without the login/auth shell if desired? intro is for entry experience.
-    // But storage key is shared; only index/login shows naturally. Safe to show.
-    if (document.getElementById('splashIntro')) return;
+    // Remove any stale intro overlay from previous broken runs
+    try {
+      var stale = document.getElementById('splashIntro');
+      if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+    } catch (e) {}
 
-    var reduced = prefersReducedMotion();
     var overlay = document.createElement('div');
     overlay.id = 'splashIntro';
     overlay.className = 'splash-intro';
@@ -37,122 +45,125 @@
       '</div>' +
       '<div class="splash-center">' +
         '<div class="splash-logo-wrap">' +
-          '<canvas id="splashLogo3d" aria-label="Animação da logo Arquive Online"></canvas>' +
+          '<canvas id="splashLogo3d" aria-label="Logo Arquive Online"></canvas>' +
         '</div>' +
-        '<p class="splash-hint"><span class="splash-hint-dot"></span> Inicializando sistema seguro</p>' +
-      '</div>' +
-      '<div class="splash-actions">' +
-        '<button type="button" class="splash-btn splash-skip" data-action="skip">Pular</button>' +
-        '<button type="button" class="splash-btn splash-enter" data-action="enter">Entrar <i class="fas fa-arrow-right" aria-hidden="true"></i></button>' +
-      '</div>' +
-      '<div class="splash-corner">ARQUIVE ONLINE</div>';
+        '<p class="splash-hint"><span class="splash-hint-dot"></span> Inicializando</p>' +
+      '</div>';
 
-    document.body.appendChild(overlay);
+    try { document.body.appendChild(overlay); } catch (e) { return; }
 
     var canvas = overlay.querySelector('#splashLogo3d');
-    var enterBtn = overlay.querySelector('[data-action="enter"]');
-    var skipBtn = overlay.querySelector('[data-action="skip"]');
     var hint = overlay.querySelector('.splash-hint');
     var logo3d = null;
     var closed = false;
-    var readyToEnter = false;
+    var completed = false;
+    var hardTimer = 0;
     var closeTimer = 0;
-    var fallbackTimer = 0;
 
     function markSeen() {
       try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) {}
     }
 
+    function forceRemove() {
+      try {
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        else if (overlay && overlay.remove) overlay.remove();
+      } catch (e) {}
+    }
+
     function doClose() {
       if (closed) return;
       closed = true;
-      clearTimeout(closeTimer);
-      clearTimeout(fallbackTimer);
-      if (logo3d) { try { logo3d.stop(); } catch (e) {} }
-      overlay.classList.add('leaving');
+      try { clearTimeout(hardTimer); } catch (e) {}
+      try { clearTimeout(closeTimer); } catch (e) {}
+      try { if (logo3d && logo3d.stop) logo3d.stop(); } catch (e) {}
       markSeen();
+      try { overlay.classList.add('leaving'); overlay.style.pointerEvents = 'none'; } catch (e) {}
+      // transition/motion out, then remove and enable typing
       setTimeout(function () {
-        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-        var username = document.getElementById('username');
-        if (username && typeof username.focus === 'function') {
-          try { username.focus({ preventScroll: true }); } catch (e) {}
-        }
+        forceRemove();
+        focusLogin();
       }, 650);
+      // absolute guarantee removal even if transition callback logic fails
+      setTimeout(function () {
+        forceRemove();
+        focusLogin();
+      }, 1400);
     }
 
-    function revealEnter() {
-      readyToEnter = true;
-      overlay.classList.add('ready');
-      if (hint) hint.innerHTML = '<span class="splash-hint-dot"></span> Pressione Entrar para continuar';
-      // auto-enter shortly after reveal for "game loading" feel, but allow skip anytime
-      clearTimeout(closeTimer);
-      closeTimer = setTimeout(doClose, reduced ? 800 : 1800);
+    function onComplete() {
+      if (completed) return;
+      completed = true;
+      try {
+        overlay.classList.add('ready');
+        if (hint) hint.innerHTML = '<span class="splash-hint-dot"></span> Acessando...';
+      } catch (e) {}
+      // short pause for "motion" then enter
+      closeTimer = setTimeout(doClose, reduced ? 350 : 900);
     }
 
     function startLogo() {
-      if (!canvas || !window.ArquiveLogo3D) { revealEnter(); return; }
+      if (!canvas || !window.ArquiveLogo3D) { onComplete(); return; }
       try {
         logo3d = new window.ArquiveLogo3D(canvas, {
-          duration: INTRO_DURATION,
-          onComplete: function () { revealEnter(); }
+          duration: reduced ? 1200 : INTRO_DURATION,
+          onComplete: function () { onComplete(); }
         });
-        var kick = function () {
-          if (closed || !canvas.isConnected) return;
+        var kick = function (tries) {
+          if (closed || completed) return;
+          tries = tries || 0;
+          if (!canvas.isConnected) { if (tries < 40) requestAnimationFrame(function(){ kick(tries+1); }); else onComplete(); return; }
+          var r = null;
+          try { r = canvas.getBoundingClientRect(); } catch (e) {}
+          if (!r || !r.width || !r.height) {
+            if (tries < 60) requestAnimationFrame(function(){ kick(tries+1); }); else onComplete();
+            return;
+          }
           try { logo3d.resize(); } catch (e) {}
-          var r = canvas.getBoundingClientRect();
-          if (!r.width || !r.height) { requestAnimationFrame(kick); return; }
-          try { logo3d.play(); } catch (e) { revealEnter(); }
+          try { logo3d.play(); } catch (e) { onComplete(); }
         };
-        requestAnimationFrame(function () { requestAnimationFrame(kick); });
+        requestAnimationFrame(function () { requestAnimationFrame(function(){ kick(0); }); });
       } catch (e) {
-        revealEnter();
+        onComplete();
       }
     }
 
+    // No skip UI; keep Enter/Escape as accessibility-only emergency? user asked for no skip option.
+    // Still close on completion/fallbacks so user can type.
     overlay.addEventListener('click', function (e) {
-      var btn = e.target.closest('[data-action]');
-      if (btn) {
-        var a = btn.getAttribute('data-action');
-        if (a === 'skip' || a === 'enter') { e.preventDefault(); doClose(); }
-        return;
-      }
-      // click anywhere after ready also enters
-      if (readyToEnter) doClose();
-    });
-
-    overlay.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        doClose();
-      }
+      // prevent clicks passing through? overlay covers screen; allow default (no skip action)
+      e.stopPropagation();
     });
 
     window.addEventListener('resize', function () {
-      if (logo3d) try { logo3d.resize(); } catch (e) {}
+      try { if (logo3d && logo3d.resize) logo3d.resize(); } catch (e) {}
     }, { passive: true });
 
-    // absolute fallback: never trap the user on login
-    fallbackTimer = setTimeout(function () {
+    // Hard safety: never block login inputs
+    hardTimer = setTimeout(function () {
       if (!closed) {
-        if (!readyToEnter) revealEnter();
-        else doClose();
+        if (!completed) onComplete(); else doClose();
       }
-    }, reduced ? 2500 : FALLBACK_CLOSE);
+    }, reduced ? 3000 : 9000);
 
-    // start
-    if (skipBtn) skipBtn.focus({ preventScroll: true });
-    if (reduced) {
-      // show static/quick reveal
+    // Extra hard removal guarantee
+    setTimeout(function () { if (!closed) { markSeen(); doClose(); } }, reduced ? 4500 : 12000);
+
+    try {
       startLogo();
-      setTimeout(revealEnter, 400);
-    } else {
-      startLogo();
+    } catch (e) {
+      onComplete();
     }
 
-    // extra safety: if ArquiveLogo3D script missing, don't block
-    setTimeout(function () {
-      if (!window.ArquiveLogo3D && !readyToEnter) revealEnter();
-    }, 1200);
+    // If logo script not yet ready, wait briefly
+    if (!window.ArquiveLogo3D) {
+      setTimeout(function () {
+        if (!closed && !completed && window.ArquiveLogo3D) {
+          try { startLogo(); } catch (e) { onComplete(); }
+        }
+      }, 400);
+      setTimeout(function () { if (!completed) onComplete(); }, 1800);
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);

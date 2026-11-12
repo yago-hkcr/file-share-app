@@ -110,8 +110,8 @@
 
   Logo3D.prototype.drawFullLogo = function (cx, cy, scale, dark, reveal, pulse) {
     var ctx = this.ctx;
-    var accent = dark ? '74,222,128' : '24,24,24';
-    var accent2 = dark ? '34,211,238' : '70,70,70';
+    var accent = '74,222,128';
+    var accent2 = '34,211,238';
     var a = clamp(reveal, 0, 1);
     var nodes = [{ x: 0, y: -95, r: 28 }, { x: -82, y: 58, r: 28 }, { x: 82, y: 58, r: 28 }, { x: 0, y: 8, r: 22 }];
     var links = [[3, 0], [3, 1], [3, 2]];
@@ -124,7 +124,7 @@
 
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.shadowColor = 'rgba(' + accent + ',' + (0.95 * a) + ')';
-    ctx.shadowBlur = dark ? 28 : 8;
+    ctx.shadowBlur = 26;
 
     ctx.strokeStyle = 'rgba(' + accent + ',' + (0.95 * a) + ')';
     ctx.lineWidth = 7;
@@ -139,12 +139,12 @@
       ctx.strokeStyle = 'rgba(' + accent + ',' + (0.98 * a) + ')';
       ctx.lineWidth = 3.5;
       ctx.beginPath(); ctx.arc(nd.x, nd.y, nd.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.shadowBlur = dark ? 12 : 3;
-      ctx.fillStyle = 'rgba(255,255,255,' + (dark ? 0.9 : 0.5) * a + ')';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = 'rgba(255,255,255,' + 0.92 * a + ')';
       ctx.beginPath(); ctx.arc(nd.x, nd.y, nd.r * 0.28, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = dark ? 28 : 8;
+      ctx.shadowBlur = 26;
     }
-    ctx.shadowBlur = dark ? 16 : 4;
+    ctx.shadowBlur = 16;
     ctx.strokeStyle = 'rgba(' + accent2 + ',' + (0.55 * a) + ')'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(0, 8, 150, -Math.PI * 0.15, Math.PI * 1.05); ctx.stroke();
     ctx.beginPath(); ctx.arc(0, 8, 170, Math.PI * 0.9, Math.PI * 2.15); ctx.stroke();
@@ -153,8 +153,8 @@
 
   Logo3D.prototype.drawLaserTip = function (x, y, dark, intensity) {
     var ctx = this.ctx;
-    var c = dark ? '120,255,180' : '255,80,80';
-    var c2 = dark ? '34,211,238' : '255,200,80';
+    var c = '120,255,180';
+    var c2 = '34,211,238';
     ctx.save();
     var g = ctx.createRadialGradient(x, y, 0, x, y, 28 * intensity);
     g.addColorStop(0, 'rgba(255,255,255,' + (0.95 * intensity) + ')');
@@ -177,7 +177,7 @@
       sp.age += dt; sp.x += sp.vx * dt; sp.y += sp.vy * dt; sp.vy += 260 * dt; sp.vx *= 0.985;
       var life = 1 - sp.age / sp.life;
       if (life <= 0) { this.sparks.splice(si, 1); continue; }
-      var col = sp.accent || (dark ? '74,222,128' : '24,24,24');
+      var col = sp.accent || '74,222,128';
       ctx.save();
       ctx.fillStyle = 'rgba(' + col + ',' + (life * 0.9) + ')';
       ctx.shadowColor = 'rgba(' + col + ',0.8)'; ctx.shadowBlur = 8;
@@ -190,28 +190,28 @@
     ta = clamp(ta, 0, 1);
     if (ta <= 0) return;
     var ctx = this.ctx;
-    var accent = dark ? '74,222,128' : '24,24,24';
+    var accent = '74,222,128';
     var ty = cy + 175 * scale;
     ctx.save();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     var wipeW = this.W * easeOutCubic(ta);
     ctx.beginPath(); ctx.rect(cx - wipeW / 2, ty - 60 * scale, wipeW, 120 * scale); ctx.clip();
     ctx.globalAlpha = clamp(ta * 1.5, 0, 1);
-    ctx.shadowColor = dark ? 'rgba(74,222,128,0.7)' : 'rgba(0,0,0,0.12)';
-    ctx.shadowBlur = dark ? 24 : 0;
-    ctx.fillStyle = dark ? '#eafff3' : '#111111';
+    ctx.shadowColor = 'rgba(74,222,128,0.7)';
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = '#eafff3';
     ctx.font = '800 ' + Math.round(34 * scale) + 'px Inter, system-ui, sans-serif';
     ctx.fillText('ARQUIVE ONLINE', cx, ty);
     ctx.shadowBlur = 0;
     ctx.globalAlpha = clamp((ta - 0.3) / 0.7, 0, 1) * 0.85;
-    ctx.fillStyle = 'rgba(' + accent + ',' + (dark ? '0.9)' : '0.55)');
+    ctx.fillStyle = 'rgba(' + accent2 + ',0.95)';
     ctx.font = '700 ' + Math.round(12 * scale) + 'px Inter, system-ui, sans-serif';
     ctx.fillText('SEU ESPAÇO · SUAS CONEXÕES', cx, ty + 30 * scale);
     ctx.restore();
     if (ta < 1) {
       var edgeX = cx - wipeW / 2 + wipeW;
       var eg = ctx.createLinearGradient(edgeX - 18, 0, edgeX + 18, 0);
-      eg.addColorStop(0, 'rgba(34,211,238,0)'); eg.addColorStop(0.5, 'rgba(255,255,255,' + (dark ? 0.8 : 0.4) + ')'); eg.addColorStop(1, 'rgba(34,211,238,0)');
+      eg.addColorStop(0, 'rgba(34,211,238,0)'); eg.addColorStop(0.5, 'rgba(255,255,255,' + 0.85 + ')'); eg.addColorStop(1, 'rgba(34,211,238,0)');
       ctx.fillStyle = eg; ctx.fillRect(edgeX - 18, ty - 55 * scale, 36, 110 * scale);
     }
   };
@@ -224,8 +224,8 @@
     var progress = clamp(elapsed / duration, 0, 1);
     var ctx = self.ctx, W = self.W, H = self.H;
     var dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    var accent = dark ? '74,222,128' : '24,24,24';
-    var accent2 = dark ? '34,211,238' : '70,70,70';
+    var accent = '74,222,128';
+    var accent2 = '34,211,238';
     var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -237,7 +237,7 @@
     var sweepY = -H * 0.1 + sweepP * H * 1.2;
     var sg = ctx.createLinearGradient(0, sweepY - 40 * this.dpr, 0, sweepY + 40 * this.dpr);
     sg.addColorStop(0, 'rgba(' + accent2 + ',0)');
-    sg.addColorStop(0.5, 'rgba(' + accent2 + ',' + (dark ? 0.12 : 0.05) + ')');
+    sg.addColorStop(0.5, 'rgba(' + accent2 + ',' + 0.13 + ')');
     sg.addColorStop(1, 'rgba(' + accent2 + ',0)');
     ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
 
@@ -267,12 +267,12 @@
       var beamStartX = -20 * this.dpr, beamStartY = sweepY;
       var grad = ctx.createLinearGradient(beamStartX, beamStartY, tip.x, tip.y);
       grad.addColorStop(0, 'rgba(' + accent2 + ',0)');
-      grad.addColorStop(0.7, 'rgba(' + accent2 + ',' + (dark ? 0.20 : 0.08) + ')');
-      grad.addColorStop(1, 'rgba(255,255,255,' + (dark ? 0.55 : 0.28) + ')');
+      grad.addColorStop(0.7, 'rgba(' + accent2 + ',' + 0.22 + ')');
+      grad.addColorStop(1, 'rgba(255,255,255,' + 0.55 + ')');
       ctx.strokeStyle = grad; ctx.lineWidth = 2.2 * this.dpr;
       ctx.shadowColor = 'rgba(' + accent2 + ',0.9)'; ctx.shadowBlur = 18;
       ctx.beginPath(); ctx.moveTo(beamStartX, beamStartY); ctx.lineTo(tip.x, tip.y); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,' + (dark ? 0.75 : 0.35) + ')';
+      ctx.strokeStyle = 'rgba(255,255,255,' + 0.78 + ')';
       ctx.lineWidth = 1; ctx.shadowBlur = 8;
       ctx.beginPath(); ctx.moveTo(beamStartX, beamStartY); ctx.lineTo(tip.x, tip.y); ctx.stroke();
       ctx.restore();
@@ -286,7 +286,7 @@
       if (solidP < 0.22) {
         ctx.save();
         ctx.globalAlpha = (1 - solidP / 0.22) * 0.16;
-        ctx.fillStyle = dark ? '#dfffea' : '#ffffff';
+        ctx.fillStyle = '#eafff8';
         ctx.fillRect(0, 0, W, H);
         ctx.restore();
       }
@@ -317,7 +317,7 @@
     var elapsed = ts - self.start;
     var ctx = self.ctx, W = self.W, H = self.H;
     var dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    var accent = dark ? '74,222,128' : '24,24,24';
+    var accent = '74,222,128';
     var cx = W / 2, cy = H * 0.44;
     var scale = Math.min(W, H) / 520;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
