@@ -241,7 +241,7 @@
     window.__arquiveBg3dLoading = true;
     try {
       var s = document.createElement('script');
-      s.src = '/js/bg-3d.js?v=20261112b';
+      s.src = '/js/bg-3d.js?v=20261112c';
       s.async = true;
       document.head.appendChild(s);
     } catch (e) {}
@@ -253,7 +253,7 @@
     window.__arquiveAuth3dLoading = true;
     try {
       var s = document.createElement('script');
-      s.src = '/js/auth-3d-float.js?v=20261112f';
+      s.src = '/js/auth-3d-float.js?v=20261112g';
       s.async = true;
       document.head.appendChild(s);
     } catch (e) {}
