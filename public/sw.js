@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v25-splash-fix';
+const CACHE_NAME = 'fileshare-v26-splash-visible';
 const ASSETS = [
   '/css/social.css?v=20261112b',
   '/css/upload-queue.css?v=20261112b',
@@ -20,9 +20,9 @@ const ASSETS = [
   '/css/preview.css?v=20261014o',
   '/css/hacker-ui.css?v=20261112b',
   '/css/theme-v2.css?v=20261112b',
-  '/js/common.js?v=20261112g',
+  '/js/common.js?v=20261112h',
   '/js/bg-3d.js?v=20261112b',
-  '/js/logo-3d-anim.js?v=20261112b',
+  '/js/logo-3d-anim.js?v=20261112c',
   '/js/auth-3d-float.js?v=20261112f',
   '/js/adaptive.js?v=20261014a',
   '/js/mobile.js?v=20261014o',
@@ -43,7 +43,7 @@ const ASSETS = [
   '/js/announce.js?v=20261107d',
   '/js/cyber.js?v=20261014o',
   '/manifest.json',
-  '/js/login-intro.js?v=20261112f',
+  '/js/login-intro.js?v=20261112g',
   '/favicon.png',
   '/favicon-48.png',
   '/apple-touch-icon.png'
