@@ -28,6 +28,7 @@ const {
   isDriveFileRef
 } = require('./lib/google-drive-storage');
 const { createGoogleDriveDeletionQueue } = require('./lib/google-drive-deletion');
+const { createBlobDeletionQueue } = require('./lib/blob-deletion');
 const { GOOGLE_DRIVE_DISTRIBUTION_MODES, isGoogleDriveQuotaError, selectGoogleDriveCandidate } = require('./lib/google-drive-distribution');
 const { encryptSecret, decryptSecret } = require('./lib/google-drive-oauth');
 const { DISAPPEARING_MESSAGE_DURATIONS, createChatMessageCleanup, directConversationKey, expirationTimestamp } = require('./lib/chat-messages');
@@ -125,27 +126,26 @@ async function isGoogleDriveStoredFile(storedName) {
   return Boolean(await one('SELECT upload_id FROM google_drive_uploads WHERE file_id = $1 LIMIT 1', [storedName]));
 }
 async function deleteBlobs(pathnames) {
-  const list = pathnames.filter(isBlobPath);
-  let blobDeleted = 0;
-  let blobFailed = false;
-  if (list.length) {
-    try {
-      const { del } = await blobSdk();
-      await del(list);
-      blobDeleted = list.length;
-    } catch (e) {
-      console.error('Falha ao apagar do Blob:', e && e.message);
-      blobFailed = true;
-    }
-  }
+  const blobPaths = [...new Set((pathnames || []).filter(isBlobPath))];
+  const blobResult = blobPaths.length
+    ? await blobDeletionQueue().enqueueAndDelete(blobPaths)
+    : { deleted: 0, pending: 0 };
   const driveFiles = [];
-  for (const storedName of pathnames) {
+  for (const storedName of pathnames || []) {
     if (!isBlobPath(storedName) && await isGoogleDriveStoredFile(storedName)) driveFiles.push(storedName);
   }
-  const driveResult = driveFiles.length && !blobFailed
+  const driveResult = driveFiles.length
     ? await googleDriveDeletionQueue().enqueueAndDelete(driveFiles)
     : { deleted: 0, pending: 0 };
-  return { deleted: blobDeleted + Number(driveResult.deleted || 0), pending: Number(driveResult.pending || 0), failed: blobFailed };
+  const blobPending = Number(blobResult.pending || 0);
+  const drivePending = Number(driveResult.pending || 0);
+  return {
+    deleted: Number(blobResult.deleted || 0) + Number(driveResult.deleted || 0),
+    pending: blobPending + drivePending,
+    blobPending,
+    drivePending,
+    failed: false
+  };
 }
 
 const googleDriveStorageCache = new Map();
@@ -318,6 +318,25 @@ function clearGoogleDriveStorageCache() {
   googleDriveStorageCache.clear();
 }
 
+let cachedBlobDeletionQueue = null;
+function blobDeletionQueue() {
+  if (!cachedBlobDeletionQueue) {
+    cachedBlobDeletionQueue = createBlobDeletionQueue({
+      query: q,
+      deleteBlob: async pathname => {
+        const { del } = await blobSdk();
+        try {
+          await del(pathname);
+        } catch (error) {
+          if (error && (error.name === 'BlobNotFoundError' || Number(error.status || error.statusCode) === 404 || /HTTP 404/.test(String(error.message || '')))) return;
+          throw error;
+        }
+      }
+    });
+  }
+  return cachedBlobDeletionQueue;
+}
+
 let cachedGoogleDriveDeletionQueue = null;
 let lastGoogleDriveDeletionRetry = 0;
 function googleDriveDeletionQueue() {
@@ -340,13 +359,15 @@ async function retryPendingGoogleDriveDeletions() {
   lastGoogleDriveDeletionRetry = Date.now();
   const staged = await retryDeletingCollectionUploads(10);
   const queued = await googleDriveDeletionQueue().retryPending(10);
+  const blobQueued = await blobDeletionQueue().retryPending(10);
   try {
     const expired = await chatMessageCleanup().purgeExpiredMessages(25);
     if (expired.messages && console.info) console.info(`Mensagens temporárias expiradas: ${expired.messages} removida(s), ${expired.drivePending} arquivo(s) do Google Drive pendente(s).`);
   } catch (error) {
     console.error('Falha ao remover mensagens temporárias expiradas:', error && error.message);
   }
-  return { deleted: staged.deleted + queued.deleted, pending: staged.pending + queued.pending };
+  return { deleted: staged.deleted + queued.deleted + blobQueued.deleted, pending: staged.pending + queued.pending + blobQueued.pending,
+    drivePending: queued.pending, blobPending: blobQueued.pending };
 }
 
 let cachedChatMessageCleanup = null;
@@ -918,6 +939,13 @@ async function createTables() {
       last_error TEXT,
       next_attempt_at TEXT NOT NULL
     )`),
+    q(`CREATE TABLE IF NOT EXISTS blob_deletion_queue (
+      pathname TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      next_attempt_at TEXT NOT NULL
+    )`),
     q(`CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
       room_id TEXT NOT NULL,
@@ -1093,6 +1121,7 @@ async function createTables() {
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_uploads_recipient ON file_collection_uploads (recipient_id, status)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_uploads_submission ON file_collection_uploads (submission_id)');
   await q('CREATE INDEX IF NOT EXISTS idx_google_drive_deletion_queue_next_attempt ON google_drive_deletion_queue (next_attempt_at, created_at)');
+  await q('CREATE INDEX IF NOT EXISTS idx_blob_deletion_queue_next_attempt ON blob_deletion_queue (next_attempt_at, created_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_file_collection_submissions_collection ON file_collection_submissions (collection_id, submitted_at)');
   for (const col of ['last_login', 'last_seen', 'last_ip', 'force_logout_at', 'avatar_image']) await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col} TEXT`);
   await q('ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id TEXT');
@@ -4471,7 +4500,9 @@ app.delete('/api/rooms/:id/messages', asMember, wrap(async (req, res) => {
   lastGoogleDriveDeletionRetry = 0;
   const deletionRetry = await retryPendingGoogleDriveDeletions();
   await logAct(req, 'chat_limpo', `${room.name} (${result.messages} mensagens, ${result.files} arquivos)`);
-  res.json({ success: true, ...result, drivePending: Math.max(result.drivePending || 0, deletionRetry.pending || 0) });
+  res.json({ success: true, ...result,
+    drivePending: Math.max(result.drivePending || 0, deletionRetry.drivePending || 0),
+    blobPending: Math.max(result.blobPending || 0, deletionRetry.blobPending || 0) });
 }));
 
 // =================== NOTIFICAÇÕES ===================
@@ -4766,7 +4797,9 @@ app.delete('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
   lastGoogleDriveDeletionRetry = 0;
   const deletionRetry = await retryPendingGoogleDriveDeletions();
   await logAct(req, 'conversa_direta_limpa', `${friend.username} (${result.messages} mensagens, ${result.files} arquivos)`);
-  res.json({ success: true, ...result, drivePending: Math.max(result.drivePending || 0, deletionRetry.pending || 0) });
+  res.json({ success: true, ...result,
+    drivePending: Math.max(result.drivePending || 0, deletionRetry.drivePending || 0),
+    blobPending: Math.max(result.blobPending || 0, deletionRetry.blobPending || 0) });
 }));
 
 app.post('/api/dm/:id/upload-url', asMember, wrap(async (req, res) => {
