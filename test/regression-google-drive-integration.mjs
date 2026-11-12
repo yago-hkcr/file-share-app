@@ -100,8 +100,8 @@ assert.match(admin, /get\('drive_connected'\) === '1'/);
 assert.match(server, /res\.redirect\(302, `\$\{safeReturnOrigin\}\/admin\?drive_connected=1#storage`\)/);
 assert.match(server, /app\.delete\('\/api\/admin\/google-drive\/connection', asAdmin/);
 assert.match(admin, /admin-storage\.css/);
-assert.match(admin, /admin-storage\.css\?v=20261107a/, 'mudanças de layout invalidam o CSS antigo em cache');
-assert.match(admin, /hacker-ui\.css\?v=[^"']+"[^>]*>\s*<link rel="stylesheet" href="\/css\/admin-storage\.css\?v=20261107a"/,
+assert.match(admin, /admin-storage\.css\?v=20261112b/, 'mudanças de layout invalidam o CSS antigo em cache');
+assert.match(admin, /hacker-ui\.css\?v=[^"']+"[^>]*>\s*<link rel="stylesheet" href="\/css\/admin-storage\.css\?v=20261112b"/,
   'o CSS do painel é carregado depois dos estilos globais');
 assert.match(admin, /<span>Uso da cota<\/span>/, 'o cartão não repete o e-mail na linha de percentual');
 assert.match(adminStorageCss, /\.storage-account-card\{[^}]*display:grid/,

@@ -2532,12 +2532,12 @@ app.post('/api/onboarding/complete', requireAuth, wrap(async (req, res) => {
 
 app.get('/api/preferences', requireAuth, wrap(async (req, res) => {
   const row = await one('SELECT theme, compact_mode, reduced_motion, refresh_seconds, browser_notifications FROM user_preferences WHERE user_id = $1', [req.user.id]);
-  res.json({ has_preferences: !!row, theme: row && ['system', 'light', 'dark'].includes(row.theme) ? row.theme : 'dark', compact_mode: num(row && row.compact_mode) === 1, reduced_motion: num(row && row.reduced_motion) === 1, refresh_seconds: [2, 5, 10].includes(num(row && row.refresh_seconds)) ? num(row && row.refresh_seconds) : 2, browser_notifications: num(row && row.browser_notifications) === 1 });
+  res.json({ has_preferences: !!row, theme: row && row.theme === 'dark' ? 'dark' : 'light', compact_mode: num(row && row.compact_mode) === 1, reduced_motion: num(row && row.reduced_motion) === 1, refresh_seconds: [2, 5, 10].includes(num(row && row.refresh_seconds)) ? num(row && row.refresh_seconds) : 2, browser_notifications: num(row && row.browser_notifications) === 1 });
 }));
 
 app.put('/api/preferences', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
-  const theme = ['system', 'light', 'dark'].includes(b.theme) ? b.theme : 'dark';
+  const theme = b.theme === 'dark' ? 'dark' : 'light';
   const compact = b.compact_mode ? 1 : 0, reduced = b.reduced_motion ? 1 : 0;
   const refresh = [2, 5, 10].includes(Number(b.refresh_seconds)) ? Number(b.refresh_seconds) : 2;
   const notifications = b.browser_notifications ? 1 : 0;

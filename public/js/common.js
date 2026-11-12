@@ -2,19 +2,23 @@
 (function () {
   const KEY = 'fileshare-theme';
   const root = document.documentElement;
-  const systemTheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   const saved = (() => { try { return localStorage.getItem(KEY); } catch (e) { return null; } })();
-  const normalizeTheme = theme => ['system', 'light', 'dark'].includes(theme) ? theme : 'dark';
+  // Dois temas oficiais: light = preto e branco (principal), dark = verde + ciano.
+  // Valores antigos (system/mono/green) são migrados sem quebrar a preferência.
+  const normalizeTheme = theme => {
+    const value = String(theme || '').toLowerCase();
+    return value === 'dark' || value === 'green' || value === 'verde' ? 'dark' : 'light';
+  };
   let preference = normalizeTheme(saved);
 
   function applyTheme(theme) {
     preference = normalizeTheme(theme);
-    const resolved = preference === 'system' ? (systemTheme && systemTheme.matches ? 'dark' : 'light') : preference;
+    const resolved = preference;
     root.setAttribute('data-theme-preference', preference);
     root.setAttribute('data-theme', resolved);
     root.style.colorScheme = resolved;
     const themeColor = document.querySelector('meta[name="theme-color"]');
-    if (themeColor) themeColor.content = resolved === 'dark' ? '#000000' : '#ffffff';
+    if (themeColor) themeColor.content = resolved === 'dark' ? '#04120b' : '#ffffff';
     document.querySelectorAll('.theme-toggle').forEach(paintButton);
   }
   applyTheme(preference);
@@ -22,16 +26,11 @@
     applyTheme(theme);
     try { localStorage.setItem(KEY, preference); } catch (e) {}
   };
-  if (systemTheme) {
-    const onSystemThemeChange = () => { if (preference === 'system') applyTheme('system'); };
-    if (systemTheme.addEventListener) systemTheme.addEventListener('change', onSystemThemeChange);
-    else if (systemTheme.addListener) systemTheme.addListener(onSystemThemeChange);
-  }
 
   function paintButton(btn) {
     const dark = root.getAttribute('data-theme') === 'dark';
-    btn.innerHTML = dark ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
-    btn.title = dark ? 'Mudar para o tema claro' : 'Mudar para o tema escuro';
+    btn.innerHTML = dark ? '<i class="fas fa-circle-half-stroke"></i>' : '<i class="fas fa-leaf"></i>';
+    btn.title = dark ? 'Mudar para o tema preto e branco' : 'Mudar para o tema verde';
     btn.setAttribute('aria-label', btn.title);
   }
 
@@ -235,4 +234,31 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addThemeButton);
   else addThemeButton();
+
+  // Global 3D animated background (decorative, fails silently).
+  function loadBg3d() {
+    if (window.__arquiveBg3dLoading || document.getElementById('site-bg-3d')) return;
+    window.__arquiveBg3dLoading = true;
+    try {
+      var s = document.createElement('script');
+      s.src = '/js/bg-3d.js?v=20261112b';
+      s.async = true;
+      document.head.appendChild(s);
+    } catch (e) {}
+  }
+  // Floating 3D tilt effect for auth pages.
+  function loadAuth3dFloat() {
+    if (window.__arquiveAuth3dLoading) return;
+    if (!document.body || !document.body.classList.contains('auth-page')) return;
+    window.__arquiveAuth3dLoading = true;
+    try {
+      var s = document.createElement('script');
+      s.src = '/js/auth-3d-float.js?v=20261112e';
+      s.async = true;
+      document.head.appendChild(s);
+    } catch (e) {}
+  }
+  function loadDecor() { loadBg3d(); loadAuth3dFloat(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadDecor);
+  else loadDecor();
 })();
