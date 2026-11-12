@@ -108,6 +108,7 @@
     }
 
     if (shadow) {
+      syncShadow();
       var liftNorm = clamp((18 - currentFloat) / 36, 0, 1); // higher when floating up
       var sx = 1 + liftNorm * 0.22 + Math.abs(currentRY) * 0.01;
       var sy = 1 + liftNorm * 0.28;
@@ -163,8 +164,6 @@
   window.addEventListener('resize', function () { if (!hovering) updateRect(); syncShadow(); }, { passive: true });
   window.addEventListener('scroll', function () { if (!hovering) updateRect(); }, { passive: true });
 
-  // keep shadow in sync with animated card
-  setInterval(syncShadow, 800);
 
   raf = requestAnimationFrame(tick);
 })();
