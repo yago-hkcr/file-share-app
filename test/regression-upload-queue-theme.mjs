@@ -35,10 +35,10 @@ check(collectionUpload.includes('FileShareUploadQueue.run') && collectionUpload.
 check(library.includes('FileShareUploadQueue.run') && library.includes('putWithProgress'),
   'envios diretos à Biblioteca exibem progresso individual');
 check(dashboard.includes('/js/upload-queue.js?v=20261105a') && dashboard.includes('/css/upload-queue.css?v=20261031b') &&
-  dashboard.includes('/js/upload.js?v=20261107b') && dashboard.includes('/js/library.js?v=20261111a') && dashboard.includes('/js/collections.js?v=20261111a') && dashboard.includes('/css/collections.css?v=20261030d'),
+  dashboard.includes('/js/upload.js?v=20261112a') && dashboard.includes('/js/library.js?v=20261111a') && dashboard.includes('/js/collections.js?v=20261111a') && dashboard.includes('/css/collections.css?v=20261030d'),
   'dashboard carrega os assets atualizados de upload, fila e Coletas');
 check(sw.includes("'/js/upload-queue.js?v=20261105a'") && sw.includes("'/css/upload-queue.css?v=20261031b'") &&
-  sw.includes("'/js/upload.js?v=20261107b'") && sw.includes("'/js/library.js?v=20261111a'") &&
+  sw.includes("'/js/upload.js?v=20261112a'") && sw.includes("'/js/library.js?v=20261111a'") &&
   sw.includes("'/js/collection-upload.js?v=20261111a'") && sw.includes("'/js/collections.js?v=20261111a'"),
   'Service Worker inclui os assets atualizados de upload, fila e Coletas');
 check(queue.includes('IDLE_MINIMIZE_MS = 5000') && queue.includes('setTimeout(() => setOpen(false, true), IDLE_MINIMIZE_MS)') &&

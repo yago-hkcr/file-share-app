@@ -148,6 +148,7 @@ html[data-orientation="portrait"] .adaptive-stack { flex-direction: column; }
 html[data-input="touch"] .hover-only { display: none !important; }
 html[data-pointer="coarse"] .btn, html[data-pointer="coarse"] .nav-item { min-height: 44px; }
 
+/* Correção mobile definitiva da lista de arquivos do painel administrativo.
    Os controles são empilhados para impedir qualquer overflow horizontal. */
 @media (max-width: 800px) {
   .room-files-list .file-row {

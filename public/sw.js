@@ -7,29 +7,29 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v16';
+const CACHE_NAME = 'fileshare-v17';
 const ASSETS = [
   '/css/social.css?v=20261101a',
   '/css/upload-queue.css?v=20261031b',
   '/css/collections.css?v=20261030d',
-  '/css/style.css?v=20261014o',
-  '/css/mobile.css?v=20261031a',
-  '/css/adaptive.css?v=20261014b',
+  '/css/style.css?v=20261112a',
+  '/css/mobile.css?v=20261112a',
+  '/css/adaptive.css?v=20261112a',
   '/css/mobile-scroll-fix.css?v=20261027a',
   '/css/fx.css?v=20261014o',
   '/css/preview.css?v=20261014o',
-  '/css/hacker-ui.css?v=20261014o',
+  '/css/hacker-ui.css?v=20261112a',
   '/js/common.js?v=20261111a',
   '/js/adaptive.js?v=20261014a',
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261014p',
   '/js/fx.js?v=20261014o',
   '/js/upload-queue.js?v=20261105a',
-  '/js/upload.js?v=20261107b',
+  '/js/upload.js?v=20261112a',
   '/js/google-drive-upload.mjs?v=20261031b',
-  '/js/social.js?v=20261107d',
-  '/js/personal.js?v=20261111a',
-  '/js/message-export.js?v=20261027c',
+  '/js/social.js?v=20261112a',
+  '/js/personal.js?v=20261112a',
+  '/js/message-export.js?v=20261112a',
   '/js/cursor.js?v=20261014o',
   '/js/preview.js?v=20261111a',
   '/js/collections.js?v=20261111a',

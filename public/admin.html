@@ -13,18 +13,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014a">
-  <link rel="stylesheet" href="/css/style.css?v=20261014c">
+  <link rel="stylesheet" href="/css/style.css?v=20261112a">
   <link rel="stylesheet" href="/css/social.css?v=20261014c">
   <script src="/js/common.js?v=20261111a"></script><script src="/js/adaptive.js?v=20261014c"></script>
-  <link rel="stylesheet" href="/css/mobile.css?v=20261014c">
+  <link rel="stylesheet" href="/css/mobile.css?v=20261112a">
   <script src="/js/mobile.js?v=20261014c" defer></script>
   <link rel="stylesheet" href="/css/fx.css?v=20261014c">
-  <link rel="stylesheet" href="/css/adaptive.css?v=20261014c">
+  <link rel="stylesheet" href="/css/adaptive.css?v=20261112a">
   <script src="/js/gfx.js?v=20261014p"></script><script src="/js/fx.js?v=20261014a" defer></script>
   <link rel="stylesheet" href="/css/preview.css?v=20261014o">
   <link rel="stylesheet" href="/css/admin-select.css?v=20261014a">
   <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
-  <link rel="stylesheet" href="/css/hacker-ui.css?v=20261014a">
+  <link rel="stylesheet" href="/css/hacker-ui.css?v=20261112a">
   <link rel="stylesheet" href="/css/admin-storage.css?v=20261107a">
 </head>
 <body class="app-page">
@@ -140,7 +140,7 @@
           </div>
           <div id="googleDriveVerificationError" class="storage-notice storage-notice-error" hidden><i class="fas fa-triangle-exclamation"></i><span id="googleDriveVerificationMessage"></span></div>
           <div class="storage-actions"><span id="googleDriveAutoUpdate" class="storage-auto-update" aria-live="polite"><i class="fas fa-rotate"></i> Atualização automática ativada</span></div>
-        </div>
+        </section>
       </div>
     </main>
   </div>
@@ -185,7 +185,7 @@
 
   <div id="toastContainer" class="toast-container"></div>
 
-  <script src="/js/upload.js?v=20261107b"></script>
+  <script src="/js/upload.js?v=20261112a"></script>
   <script>
     let lastUsersSig = '', lastRoomsSig = '', lastNotifsSig = '', uploading = 0;
     let driveStatusRequest = null, driveStatusSequence = 0, lastDriveStatus = null;
@@ -536,7 +536,7 @@
     // Stats
     async function loadStats() {
       const res = await fetch('/api/admin/stats');
-        if (response.status === 401) { window.location.href = '/'; return; }
+        if (res.status === 401) { window.location.href = '/'; return; }
       const s = await res.json();
       if (!res.ok) return;
       document.getElementById('statUsers').textContent = s.totalUsers;
@@ -869,7 +869,7 @@
   </script>
   <script src="/js/admin-social.js?v=20261107d"></script>
   <script src="/js/cursor.js?v=20261014a"></script>
-  <script src="/js/admin-plus.js?v=20261107d"></script>
+  <script src="/js/admin-plus.js?v=20261112a"></script>
   <script src="/js/local-server.js?v=20261014a"></script>
   <script src="/js/preview.js?v=20261111a"></script>
   <script src="/js/announce.js?v=20261107d"></script>

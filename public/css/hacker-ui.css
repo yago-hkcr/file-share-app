@@ -150,6 +150,7 @@ html.has-bubble[data-theme="dark"] .cy-ripple { border-color: rgba(53,242,139,.9
   background: linear-gradient(135deg, rgba(var(--fn), .18), rgba(var(--fn), .06));
   clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
   transition: transform .16s ease, box-shadow .22s ease, background .22s ease, color .22s ease;
+}
 /* ---- esqueleto comum ---- */
 /* Seletor `.btn.btn-x` (2 classes) para vencer `.btn-primary`/`.btn-green`
    legados que também pintam fundo em style.css. */
@@ -251,8 +252,6 @@ html .btn-green:hover { color: #04120b !important; }
 /* "criar" e auth usam tinta escura própria no hover */
 .btn.btn-new:hover, html .btn-new:hover { color: #1c1200 !important; }
 
-
-}
 /* barra lateral que marca a função */
 .btn-upload::before, .btn-download::before, .btn-share::before, .btn-delete::before, .btn-new::before,
 .btn-auth::before, .btn.btn-danger::before, .btn.btn-green::before {

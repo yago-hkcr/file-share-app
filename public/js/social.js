@@ -24,13 +24,14 @@
   function paintFriends() {
     const row = (u, acts) => '<div class="soc-row">' + avatar(u) + '<span class="grow">' + esc(u.username) + admTag(u.role) + '</span>' + acts + '</div>';
     const list = (arr, fn) => arr.length ? arr.map(fn).join('') : '<div class="soc-empty">Nada por aqui.</div>';
+    const removeButton = (u, message, label) => '<button class="btn btn-outline' + (label === 'Remover' ? ' btn-danger' : '') + '" data-friend-remove="' + esc(u.id) + '" data-friend-remove-message="' + esc(message) + '">' + label + '</button>';
     $('friendLists').innerHTML =
       '<div class="soc-title">Pedidos recebidos <span class="soc-count">' + F.incoming.length + '</span></div>' +
-      list(F.incoming, u => row(u, '<button class="btn btn-primary" onclick="friendAccept(\'' + u.id + '\')">Aceitar</button><button class="btn btn-outline" onclick="friendRemove(\'' + u.id + '\',\'Recusar este pedido?\')">Recusar</button>')) +
+      list(F.incoming, u => row(u, '<button class="btn btn-primary" data-friend-accept="' + esc(u.id) + '">Aceitar</button>' + removeButton(u, 'Recusar este pedido?', 'Recusar'))) +
       '<div class="soc-title">Pedidos enviados <span class="soc-count">' + F.outgoing.length + '</span></div>' +
-      list(F.outgoing, u => row(u, '<button class="btn btn-outline" onclick="friendRemove(\'' + u.id + '\',\'Cancelar o pedido?\')">Cancelar</button>')) +
+      list(F.outgoing, u => row(u, removeButton(u, 'Cancelar o pedido?', 'Cancelar'))) +
       '<div class="soc-title">Meus amigos <span class="soc-count">' + F.friends.length + '</span></div>' +
-      list(F.friends, u => '<div class="soc-row"><span class="online-dot ' + (u.online ? 'on' : '') + '" title="' + (u.online ? 'Online' : 'Offline') + '"></span>' + avatar(u) + '<span class="grow">' + esc(u.username) + admTag(u.role) + '</span><button class="btn btn-primary" data-dm-user="' + esc(u.user_id) + '" data-dm-name="' + esc(u.username) + '"><i class="fas fa-comment-dots"></i> Conversar</button><button class="btn btn-outline btn-danger" onclick="friendRemove(\'' + u.id + '\',\'Remover ' + esc(u.username).replace(/'/g, '') + ' dos amigos? Ele também sai das suas salas privadas.\')">Remover</button></div>');
+      list(F.friends, u => '<div class="soc-row"><span class="online-dot ' + (u.online ? 'on' : '') + '" title="' + (u.online ? 'Online' : 'Offline') + '"></span>' + avatar(u) + '<span class="grow">' + esc(u.username) + admTag(u.role) + '</span><button class="btn btn-primary" data-dm-user="' + esc(u.user_id) + '" data-dm-name="' + esc(u.username) + '"><i class="fas fa-comment-dots"></i> Conversar</button>' + removeButton(u, 'Remover ' + u.username + ' dos amigos? Ele também sai das suas salas privadas.', 'Remover') + '</div>');
   }
   // O contador de pedidos aparece dentro do item "Amigos" da barra lateral.
   function badge() {
@@ -63,7 +64,14 @@
   }
   $('friendSend').onclick = sendRequest;
   $('friendName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sendRequest(); } });
-  $('friendLists').addEventListener('click', e => { const button = e.target.closest('[data-dm-user]'); if (button) window.openDirectChat(button.dataset.dmUser, button.dataset.dmName); });
+  $('friendLists').addEventListener('click', e => {
+    const button = e.target.closest('[data-dm-user]');
+    if (button) { window.openDirectChat(button.dataset.dmUser, button.dataset.dmName); return; }
+    const accept = e.target.closest('[data-friend-accept]');
+    if (accept) { window.friendAccept(accept.dataset.friendAccept); return; }
+    const remove = e.target.closest('[data-friend-remove]');
+    if (remove) window.friendRemove(remove.dataset.friendRemove, remove.dataset.friendRemoveMessage || 'Remover?');
+  });
   window.showFriends = () => { friendsSheet.style.display = 'flex'; paintFriends(); pollFriends(true); };
 
   // "Amigos" fica na barra lateral do dashboard (#friendsBtn, em dashboard.html),

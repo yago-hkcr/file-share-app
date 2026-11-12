@@ -18,7 +18,7 @@
     if (/^\s*<!doctype\s+html\b|^\s*<html\b|<\/(?:html|body|head)>/im.test(source)) return { kind: 'code', extension: 'html', mime: 'text/plain;charset=utf-8' };
     if (/^\s*(?:SELECT|WITH|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|CREATE\s+(?:TABLE|INDEX|VIEW|DATABASE)|ALTER\s+TABLE|DROP\s+(?:TABLE|DATABASE))\b/im.test(source) && /\b(?:FROM|WHERE|JOIN|VALUES|SET|TABLE|SELECT)\b/i.test(source)) return { kind: 'code', extension: 'sql', mime: 'text/plain;charset=utf-8' };
     if (/^\s*(?:@media\b|:root\s*\{|[.#][\w-]+(?:\s+[.#][\w-]+)*\s*\{)[\s\S]*\b(?:color|background|display|margin|padding|font|width|height)\s*:/im.test(source)) return { kind: 'code', extension: 'css', mime: 'text/plain;charset=utf-8' };
-    if (/^\s*[\[{]/.test(source)) {
+    if (/^\s*[[{]/.test(source)) {
       try { JSON.parse(source); return { kind: 'code', extension: 'json', mime: 'text/plain;charset=utf-8' }; } catch (error) { /* pode ser outra linguagem */ }
     }
     if (/^\s*#!.*\b(?:bash|sh|zsh)\b|^\s*(?:set\s+-[euo]|export\s+[A-Za-z_]|(?:sudo\s+)?(?:apt|npm|pnpm|yarn|git|docker|kubectl)\s+)/m.test(source)) return { kind: 'code', extension: 'sh', mime: 'text/plain;charset=utf-8' };

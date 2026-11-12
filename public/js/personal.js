@@ -550,7 +550,14 @@
     catch (error) { $('avatarStatus').textContent = error.message; }
   });
   $('chooseAvatar').addEventListener('click', () => $('avatarFile').click());
-  document.addEventListener('keydown', event => { if (event.key === 'Escape') [dm, notices, settings].forEach(item => { item.style.display = 'none'; }); });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    // O enquadramento de foto é assíncrono: fechar por CSS deixaria a Promise
+    // pendente, então acionamos o botão Cancelar para resolver o fluxo.
+    if (avatarCrop.style.display !== 'none') { $('avatarCropCancel').click(); return; }
+    [dm, notices, settings].forEach(item => { item.style.display = 'none'; });
+    window.dispatchEvent(new Event('fileshare:direct-chat-close'));
+  });
 
   async function pollPersonalPanels() {
     if (document.hidden || dmPollBusy) return;

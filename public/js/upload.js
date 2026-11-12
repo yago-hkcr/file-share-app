@@ -421,8 +421,10 @@
       if (throwOnError) throw error;
     }
   }
-  window.addEventListener('online', resumeQueuedUploads);
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resumeQueuedUploads, { once: true });
+  // Nunca passe o Event como throwOnError: ele é truthy e transformaria a
+  // falha (ex.: Background Sync desabilitado) em rejeição não tratada.
+  window.addEventListener('online', () => resumeQueuedUploads());
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => resumeQueuedUploads(), { once: true });
   else resumeQueuedUploads();
   if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', event => {
     if (!event.data) return;
