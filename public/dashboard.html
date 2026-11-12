@@ -475,7 +475,9 @@
         lastChatSig = ''; chatSeenIds = new Set();
         document.getElementById('chatList').innerHTML = '<div class="chat-empty"><i class="fas fa-satellite-dish"></i><span>Canal vazio. Mande a primeira mensagem.</span></div>';
         cancelRoomReply();
-        document.getElementById('roomChatSettingStatus').textContent = 'Chat limpo (' + Number(result.messages || 0) + ' mensagens, ' + Number(result.files || 0) + ' anexos).' + (result.drivePending ? ' ' + Number(result.drivePending) + ' arquivo(s) aguardam exclusão no Google Drive.' : '');
+        document.getElementById('roomChatSettingStatus').textContent = 'Chat limpo (' + Number(result.messages || 0) + ' mensagens, ' + Number(result.files || 0) + ' anexos).' +
+          (result.drivePending ? ' ' + Number(result.drivePending) + ' arquivo(s) aguardam exclusão no Google Drive.' : '') +
+          (result.blobPending ? ' ' + Number(result.blobPending) + ' arquivo(s) aguardam exclusão do armazenamento e serão removidos automaticamente.' : '');
       } catch (error) {
         document.getElementById('roomChatSettingStatus').textContent = error.message || 'Não foi possível limpar o chat.';
         toast(error.message || 'Não foi possível limpar o chat.', 'error');
