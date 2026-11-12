@@ -64,16 +64,17 @@
   Logo3D.prototype.resize = function () {
     var c = this.canvas;
     var r = c.getBoundingClientRect();
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = Math.min(window.devicePixelRatio || 1, 1.75);
     this.W = Math.max(1, Math.floor((r.width || 600) * this.dpr));
     this.H = Math.max(1, Math.floor((r.height || 420) * this.dpr));
     c.width = this.W; c.height = this.H;
   };
 
   Logo3D.prototype.spawnSparks = function (x, y, n, accent) {
+    if (this.sparks.length > 120) return;
     for (var i = 0; i < n; i++) {
-      var a = rand(0, Math.PI * 2), sp = rand(40, 220);
-      this.sparks.push({ x: x, y: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - rand(20, 90), life: rand(0.25, 0.75), age: 0, s: rand(0.8, 2.8), accent: accent });
+      var a = rand(0, Math.PI * 2), sp = rand(40, 180);
+      this.sparks.push({ x: x, y: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - rand(20, 80), life: rand(0.2, 0.55), age: 0, s: rand(0.8, 2.2), accent: accent });
     }
   };
 
@@ -88,7 +89,7 @@
     ctx.lineWidth = lineW || seg.w || 3;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.shadowColor = 'rgba(' + color + ',' + (glow || 0.9) + ')';
-    ctx.shadowBlur = 18;
+    ctx.shadowBlur = 7;
     ctx.beginPath();
     var tip = null;
     if (seg.type === 'line') {
@@ -124,7 +125,7 @@
 
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.shadowColor = 'rgba(' + accent + ',' + (0.95 * a) + ')';
-    ctx.shadowBlur = 26;
+    ctx.shadowBlur = 6;
 
     ctx.strokeStyle = 'rgba(' + accent + ',' + (0.95 * a) + ')';
     ctx.lineWidth = 7;
@@ -139,12 +140,12 @@
       ctx.strokeStyle = 'rgba(' + accent + ',' + (0.98 * a) + ')';
       ctx.lineWidth = 3.5;
       ctx.beginPath(); ctx.arc(nd.x, nd.y, nd.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 6;
       ctx.fillStyle = 'rgba(255,255,255,' + 0.92 * a + ')';
       ctx.beginPath(); ctx.arc(nd.x, nd.y, nd.r * 0.28, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = 26;
+      ctx.shadowBlur = 6;
     }
-    ctx.shadowBlur = 16;
+    ctx.shadowBlur = 7;
     ctx.strokeStyle = 'rgba(' + accent2 + ',' + (0.55 * a) + ')'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(0, 8, 150, -Math.PI * 0.15, Math.PI * 1.05); ctx.stroke();
     ctx.beginPath(); ctx.arc(0, 8, 170, Math.PI * 0.9, Math.PI * 2.15); ctx.stroke();
@@ -178,11 +179,8 @@
       var life = 1 - sp.age / sp.life;
       if (life <= 0) { this.sparks.splice(si, 1); continue; }
       var col = sp.accent || '74,222,128';
-      ctx.save();
-      ctx.fillStyle = 'rgba(' + col + ',' + (life * 0.9) + ')';
-      ctx.shadowColor = 'rgba(' + col + ',0.8)'; ctx.shadowBlur = 8;
+      ctx.fillStyle = 'rgba(' + col + ',' + (life * 0.85) + ')';
       ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.s * life * this.dpr, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
     }
   };
 
@@ -198,7 +196,7 @@
     ctx.beginPath(); ctx.rect(cx - wipeW / 2, ty - 60 * scale, wipeW, 120 * scale); ctx.clip();
     ctx.globalAlpha = clamp(ta * 1.5, 0, 1);
     ctx.shadowColor = 'rgba(74,222,128,0.7)';
-    ctx.shadowBlur = 24;
+    ctx.shadowBlur = 10;
     ctx.fillStyle = '#eafff3';
     ctx.font = '800 ' + Math.round(34 * scale) + 'px Inter, system-ui, sans-serif';
     ctx.fillText('ARQUIVE ONLINE', cx, ty);
@@ -273,11 +271,11 @@
       ctx.shadowColor = 'rgba(' + accent2 + ',0.9)'; ctx.shadowBlur = 18;
       ctx.beginPath(); ctx.moveTo(beamStartX, beamStartY); ctx.lineTo(tip.x, tip.y); ctx.stroke();
       ctx.strokeStyle = 'rgba(255,255,255,' + 0.78 + ')';
-      ctx.lineWidth = 1; ctx.shadowBlur = 8;
+      ctx.lineWidth = 1; ctx.shadowBlur = 4;
       ctx.beginPath(); ctx.moveTo(beamStartX, beamStartY); ctx.lineTo(tip.x, tip.y); ctx.stroke();
       ctx.restore();
       this.drawLaserTip(tip.x, tip.y, dark, 1);
-      if (!reduceMotion && Math.random() < 0.75) this.spawnSparks(tip.x, tip.y, 2, accent);
+      if (!reduceMotion && Math.random() < 0.35) this.spawnSparks(tip.x, tip.y, 1, accent);
     }
 
     if (solidP > 0) {
