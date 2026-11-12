@@ -25,7 +25,7 @@ check(isBlobPath('rooms/12345678/87654321-foto.png'), 'preserva arquivos Blob da
 check(isBlobPath('collections/12345678/87654321-foto.png'), 'preserva arquivos Blob das coletas');
 check(isBlobPath('library/12345678-foto.png'), 'preserva arquivos Blob da Biblioteca');
 check(!isBlobPath('12345678'), 'não classifica IDs de arquivos legados como Blob');
-check(server.includes("require('./lib/blob-paths')") && /async function deleteBlobs\(pathnames\)[\s\S]*?\.filter\(isBlobPath\)/.test(server),
+check(server.includes("require('./lib/blob-paths')") && /async function deleteBlobs\(pathnames, options = \{\}\)[\s\S]*?\.filter\(isBlobPath\)/.test(server),
   'servidor usa a mesma identificação Blob para preview, download e exclusão');
 
 const previewRoute = server.slice(server.indexOf("app.get('/preview/:fileId'"), server.indexOf('// =================== PRESENÇA DE DIGITAÇÃO'));
