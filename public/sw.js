@@ -7,19 +7,20 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v17';
+const CACHE_NAME = 'fileshare-v18';
 const ASSETS = [
-  '/css/social.css?v=20261101a',
-  '/css/upload-queue.css?v=20261031b',
-  '/css/collections.css?v=20261030d',
-  '/css/style.css?v=20261112a',
+  '/css/social.css?v=20261112b',
+  '/css/upload-queue.css?v=20261112b',
+  '/css/collections.css?v=20261112b',
+  '/css/style.css?v=20261112b',
   '/css/mobile.css?v=20261112a',
   '/css/adaptive.css?v=20261112a',
   '/css/mobile-scroll-fix.css?v=20261027a',
-  '/css/fx.css?v=20261014o',
+  '/css/fx.css?v=20261112b',
   '/css/preview.css?v=20261014o',
-  '/css/hacker-ui.css?v=20261112a',
-  '/js/common.js?v=20261111a',
+  '/css/hacker-ui.css?v=20261112b',
+  '/css/theme-v2.css?v=20261112b',
+  '/js/common.js?v=20261112b',
   '/js/adaptive.js?v=20261014a',
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261014p',
@@ -28,7 +29,7 @@ const ASSETS = [
   '/js/upload.js?v=20261112a',
   '/js/google-drive-upload.mjs?v=20261031b',
   '/js/social.js?v=20261112a',
-  '/js/personal.js?v=20261112a',
+  '/js/personal.js?v=20261112b',
   '/js/message-export.js?v=20261112a',
   '/js/cursor.js?v=20261014o',
   '/js/preview.js?v=20261111a',
@@ -39,7 +40,7 @@ const ASSETS = [
   '/js/announce.js?v=20261107d',
   '/js/cyber.js?v=20261014o',
   '/manifest.json',
-  '/js/login-intro.js?v=20261031a',
+  '/js/login-intro.js?v=20261112c',
   '/favicon.png',
   '/favicon-48.png',
   '/apple-touch-icon.png'
