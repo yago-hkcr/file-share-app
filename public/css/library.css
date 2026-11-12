@@ -200,7 +200,7 @@ html[data-theme="dark"] .library-editor-field select { color-scheme:dark; }
   min-width: 56px;
   border-radius: 50%;
   border: none;
-  background: linear-gradient(135deg, var(--cy), #22c55e);
+  background: linear-gradient(135deg, var(--cy), var(--primary));
   color: #fff;
   font-size: 20px;
   display: grid;

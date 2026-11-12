@@ -34,10 +34,10 @@ check(collectionUpload.includes('FileShareUploadQueue.run') && collectionUpload.
   'Coletas integram a fila e oferecem retry do item que falhou');
 check(library.includes('FileShareUploadQueue.run') && library.includes('putWithProgress'),
   'envios diretos à Biblioteca exibem progresso individual');
-check(dashboard.includes('/js/upload-queue.js?v=20261105a') && dashboard.includes('/css/upload-queue.css?v=20261031b') &&
-  dashboard.includes('/js/upload.js?v=20261112a') && dashboard.includes('/js/library.js?v=20261111a') && dashboard.includes('/js/collections.js?v=20261111a') && dashboard.includes('/css/collections.css?v=20261030d'),
+check(dashboard.includes('/js/upload-queue.js?v=20261105a') && dashboard.includes('/css/upload-queue.css?v=20261112b') &&
+  dashboard.includes('/js/upload.js?v=20261112a') && dashboard.includes('/js/library.js?v=20261111a') && dashboard.includes('/js/collections.js?v=20261111a') && dashboard.includes('/css/collections.css?v=20261112b'),
   'dashboard carrega os assets atualizados de upload, fila e Coletas');
-check(sw.includes("'/js/upload-queue.js?v=20261105a'") && sw.includes("'/css/upload-queue.css?v=20261031b'") &&
+check(sw.includes("'/js/upload-queue.js?v=20261105a'") && sw.includes("'/css/upload-queue.css?v=20261112b'") &&
   sw.includes("'/js/upload.js?v=20261112a'") && sw.includes("'/js/library.js?v=20261111a'") &&
   sw.includes("'/js/collection-upload.js?v=20261111a'") && sw.includes("'/js/collections.js?v=20261111a'"),
   'Service Worker inclui os assets atualizados de upload, fila e Coletas');
@@ -69,13 +69,14 @@ check(dmUpload.includes('onCancelable(false);') && dmUpload.includes('onCancelab
 check(personal.includes("directThread?.addEventListener('drop'") && personal.includes('sendDirectFiles(files)') &&
   personal.includes('event.shiftKey') && personal.includes('result.cancelled'),
   'drag-and-drop envia anexos, Shift+Enter mantém quebras de linha e cancelamento não envia mensagem de texto');
-check(common.includes("const normalizeTheme = theme => ['system', 'light', 'dark'].includes(theme) ? theme : 'dark'"),
-  'tema escuro é o padrão inicial e escolhas locais salvas continuam válidas');
-check(personal.includes("const defaults = { theme: 'dark'") && personal.includes("!prefs.has_preferences") &&
+check(common.includes("return value === 'dark' || value === 'green' || value === 'verde' ? 'dark' : 'light'") &&
+  common.includes('data-theme-preference'),
+  'tema principal é preto e branco e o verde é o segundo tema');
+check(personal.includes("const defaults = { theme: 'light'") && personal.includes("!prefs.has_preferences") &&
   personal.includes("getAttribute('data-theme-preference') || defaults.theme"),
   'preferência explícita local é preservada antes de salvar preferências da conta');
-check(server.includes("? row.theme : 'dark'") && server.includes("? b.theme : 'dark'"),
-  'API usa tema escuro como padrão sem substituir tema válido salvo na conta');
+check(server.includes("row.theme === 'dark' ? 'dark' : 'light'") && server.includes("b.theme === 'dark' ? 'dark' : 'light'"),
+  'API usa preto e branco como padrão e preserva o tema verde salvo');
 
 if (failures) {
   console.error(`\n${failures} falha(s).`);

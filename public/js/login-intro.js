@@ -2,17 +2,18 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'fileshare-login-intro-seen-v4';
+  const STORAGE_KEY = 'fileshare-login-intro-seen-v6-laser';
   const SCENE_DURATION = 5200;
   const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const scenes = [
     {
-      eyebrow: 'Uma nova era de compartilhar',
-      title: ['O futuro', 'chegou.'],
-      copy: 'Arquivos, pessoas e ideias colidem em um espaço feito para fluir.',
-      tag: 'INÍCIO',
-      hue: 158
+      eyebrow: 'Bem-vindo ao Arquive Online',
+      title: ['Seu espaço.', 'Seu universo.'],
+      copy: 'Uma nova dimensão para compartilhar, colaborar e guardar o que importa.',
+      tag: 'ARQUIVE',
+      hue: 158,
+      logo3d: true
     },
     {
       eyebrow: 'Envio sem limites de atrito',
@@ -43,7 +44,7 @@
       hue: 165
     },
     {
-      eyebrow: 'Bem-vindo ao Arquive Online',
+      eyebrow: 'Pronto para começar',
       title: ['Entre e', 'faça história.'],
       copy: 'Sua próxima grande troca começa agora.',
       tag: 'ENTRAR',
@@ -399,13 +400,15 @@
 
     scenes.forEach((s, i) => {
       const article = document.createElement('article');
-      article.className = 'epic-scene' + (i === 0 ? ' active' : '') + (s.final ? ' final' : '');
+      article.className = 'epic-scene' + (i === 0 ? ' active' : '') + (s.final ? ' final' : '') + (s.logo3d ? ' has-logo3d' : '');
       article.dataset.index = String(i);
       article.setAttribute('aria-hidden', i === 0 ? 'false' : 'true');
       const words1 = s.title[0].split(' ').map(w => `<span class="w">${w}</span>`).join(' ');
       const words2 = s.title[1].split(' ').map(w => `<span class="w accent">${w}</span>`).join(' ');
+      const logoBlock = s.logo3d ? `<div class="epic-logo3d-wrap"><canvas id="epicLogo3d" aria-label="Animação 3D da logo Arquive Online"></canvas></div>` : '';
       article.innerHTML = `
-        <div class="epic-scene-inner">
+        <div class="epic-scene-inner${s.logo3d ? ' epic-scene-logo' : ''}">
+          ${logoBlock}
           <div class="epic-kicker"><span class="epic-kicker-line"></span><span class="epic-kicker-text">${s.eyebrow}</span></div>
           <h1 class="epic-title"><span class="line">${words1}</span><span class="line">${words2}</span></h1>
           <p class="epic-copy">${s.copy}</p>
@@ -426,6 +429,26 @@
     let currentHue = scenes[0].hue;
     const fx = createCanvasFX(wrap.querySelector('.epic-bg'), () => currentHue);
     fx.start();
+
+    let logo3d = null;
+    const logoCanvas = wrap.querySelector('#epicLogo3d');
+    if (logoCanvas && window.ArquiveLogo3D) {
+      try {
+        logo3d = new window.ArquiveLogo3D(logoCanvas, { duration: 5200 });
+        const startLogo = () => {
+          try {
+            if (!logoCanvas.isConnected) return;
+            logo3d.resize();
+            // ensure canvas has layout before playing
+            const r = logoCanvas.getBoundingClientRect();
+            if (!r.width || !r.height) { requestAnimationFrame(startLogo); return; }
+            logo3d.play();
+          } catch (e) {}
+        };
+        requestAnimationFrame(() => requestAnimationFrame(startLogo));
+        window.addEventListener('resize', () => { if (logo3d) try { logo3d.resize(); } catch (e) {} });
+      } catch (e) { logo3d = null; }
+    }
 
     const sceneEls = [...wrap.querySelectorAll('.epic-scene')];
     const segEls = [...wrap.querySelectorAll('.epic-seg')];
@@ -524,6 +547,7 @@
     function close() {
       cancelAnimationFrame(raf);
       fx.stop();
+      if (logo3d) try { logo3d.stop(); } catch (e) {}
       audio.close();
       wrap.classList.add('leaving');
       try { localStorage.setItem(STORAGE_KEY, '1'); } catch (_) {}

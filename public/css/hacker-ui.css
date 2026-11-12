@@ -74,7 +74,7 @@ html.bubble-on .cy-bubble, html.bubble-on .cy-dot { opacity: 1; }
 /* --- estados da retícula --- */
 .cy-bubble.is-link .cy-b-ring { --t: 15px; width: 46px; height: 46px; left: -23px; top: -23px; filter: drop-shadow(0 0 10px rgba(var(--bc), 1)); }
 .cy-bubble.is-link .cy-b-cross { opacity: .7; }
-.cy-bubble.is-link .cy-b-tag { background: rgb(var(--bc)); color: #06120b; }
+.cy-bubble.is-link .cy-b-tag { background: rgb(var(--bc)); color: var(--on-primary); }
 
 /* modo texto: a moldura vira um cursor de bloco (I-beam) */
 .cy-bubble.is-text .cy-b-ring { --t: 7px; width: 3px; height: 30px; left: -1.5px; top: -15px; }
@@ -124,7 +124,7 @@ html.has-bubble[data-theme="dark"] .cy-ripple { border-color: rgba(53,242,139,.9
    2. BOTÕES COM IDENTIDADE POR FUNÇÃO
    ---------------------------------------------------------------------
    upload   → ciano      (#22d3ee)  ·  subir arquivo
-   download → verde      (#22c55e)  ·  baixar / exportar
+   download → verde      (var(--primary))  ·  baixar / exportar
    share    → violeta    (#a78bfa)  ·  copiar link / compartilhar
    delete   → vermelho   (#f87171)  ·  excluir / revogar
    auth     → âmbar      (#fbbf24)  ·  entrar / criar conta / salvar senha
@@ -229,7 +229,7 @@ html .btn-danger:hover::after, html .btn-green:hover::after { left: 130%; }
 html .btn-upload:hover, html .btn-download:hover, html .btn-share:hover,
 html .btn-delete:hover, html .btn-new:hover, html .btn-auth:hover,
 html .btn-danger:hover, html .btn-green:hover {
-  color: #04120b !important;
+  color: var(--on-primary) !important;
   background: linear-gradient(135deg, rgba(var(--fn), .95), rgba(var(--fn), .7));
   box-shadow: 0 6px 20px rgba(var(--fn), .35), inset 0 0 0 1px rgba(255,255,255,.12);
   transform: translateY(-1px);
@@ -248,7 +248,7 @@ html .btn-danger:active, html .btn-green:active { transform: translateY(0); }
 .btn.btn-green:hover,
 html .btn-upload:hover, html .btn-download:hover, html .btn-share:hover,
 html .btn-delete:hover, html .btn-new:hover, html .btn-danger:hover,
-html .btn-green:hover { color: #04120b !important; }
+html .btn-green:hover { color: var(--on-primary) !important; }
 /* "criar" e auth usam tinta escura própria no hover */
 .btn.btn-new:hover, html .btn-new:hover { color: #1c1200 !important; }
 
@@ -272,7 +272,7 @@ html .btn-green:hover { color: #04120b !important; }
 
 .btn-upload:hover, .btn-download:hover, .btn-share:hover, .btn-delete:hover,
 .btn-new:hover, .btn-auth:hover, .btn.btn-danger:hover, .btn.btn-green:hover {
-  color: #04120b !important;
+  color: var(--on-primary) !important;
   background: linear-gradient(135deg, rgba(var(--fn), .95), rgba(var(--fn), .7));
   box-shadow: 0 6px 20px rgba(var(--fn), .35), inset 0 0 0 1px rgba(255,255,255,.12);
   transform: translateY(-1px);
@@ -302,7 +302,7 @@ body.auth-page .btn-success {
   --fn: var(--fn-auth);
   border: 1px solid rgba(var(--fn), .5);
   border-radius: 2px; clip-path: none;
-  color: #04120b !important;
+  color: var(--on-primary) !important;
   background: linear-gradient(135deg, rgba(var(--fn), .95), rgba(var(--fn), .68));
   box-shadow: 0 8px 24px rgba(var(--fn), .28);
   font-family: var(--disp, Orbitron, sans-serif);
@@ -345,7 +345,7 @@ html[data-theme="dark"] .btn.btn-new::after {
 }
 html[data-theme="dark"] .btn.btn-new:hover {
   background: linear-gradient(135deg, rgba(251, 191, 36, .26), rgba(251, 191, 36, .14));
-  color: #04120b !important;
+  color: var(--on-primary) !important;
 }
 html[data-theme="dark"] .btn.btn-new:hover::before {
   background: rgb(251, 191, 36);
@@ -359,7 +359,7 @@ html[data-theme="dark"] .btn-sm.btn-new {
   color: var(--ink) !important;
 }
 html[data-theme="dark"] .btn-sm.btn-new:hover {
-  color: #04120b !important;
+  color: var(--on-primary) !important;
 }
 /* perigo em contorno (excluir discreto) */
 .btn-outline.btn-danger, .btn.btn-outline.btn-danger, .btn-outline.is-danger {
@@ -453,7 +453,7 @@ html[data-gfx="low"] .btn-share, html[data-gfx="low"] .btn-delete,
   padding: 3px 8px;
   border: 1px solid rgba(var(--cy-rgb), .35);
   border-radius: 5px;
-  color: rgb(var(--cy, #e22c3b));
+  color: rgb(var(--cy, var(--primary)));
   background: rgba(var(--cy-rgb), .07);
   font-family: var(--mono, monospace);
   font-size: 11px;
@@ -517,7 +517,7 @@ html[data-gfx="low"] .btn-share::after, html[data-gfx="low"] .btn-delete::after,
 html[data-gfx="low"] .btn-new::after, html[data-gfx="low"] .btn-auth::after,
 html[data-gfx="low"] .btn.btn-danger::after, html[data-gfx="low"] .btn.btn-green::after { display: none; }
 
-.btn.btn-green:hover { color: #04120b !important; }
+.btn.btn-green:hover { color: var(--on-primary) !important; }
 
 /* botão pequeno: recorte menor */
 .btn-sm.btn-upload, .btn-sm.btn-download, .btn-sm.btn-share,
@@ -544,7 +544,7 @@ html[data-gfx="low"] .cy-b-ring { filter: none; }
 .cy-b-tag {
   position: absolute; left: 20px; top: 14px; padding: 1px 6px; white-space: nowrap;
   font: 700 10px/1.5 var(--mono, 'Share Tech Mono', monospace); letter-spacing: .06em;
-  color: #06120b; background: rgb(var(--bc2)); border-radius: 0;
+  color: var(--on-primary); background: rgb(var(--bc2)); border-radius: 0;
   clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
   opacity: 0; transform: translateY(-2px);
   transition: opacity .15s ease, transform .15s ease;
