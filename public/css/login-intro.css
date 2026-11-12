@@ -440,3 +440,10 @@ html[data-theme="light"] .splash-intro {
   color: #f5fff9;
 }
 /* splash still looks cinematic/dark for game feel even in light theme */
+
+
+
+/* Splash safety overrides (no skip, never block inputs) */
+.splash-intro .splash-actions { display: none !important; }
+.splash-intro { cursor: default; }
+.splash-intro.leaving, .splash-intro[aria-hidden="true"] { pointer-events: none !important; }
