@@ -75,9 +75,16 @@
 
   // ---------- showTab ----------
   const LOAD = { stats: () => { window.loadStats && window.loadStats(); overview(); }, users: () => loadUsersPlus(true), rooms: () => window.loadRooms && window.loadRooms(), files: () => loadFiles(), chat: () => { crSig = ''; chatSig = ''; chatInit(); }, log: () => loadLog(), comms: loadComms, system: loadComms };
+  // A aba "Salas privadas e amizades" (admin-social.js) já envolve o showTab
+  // original. Encadear em vez de substituir mantém aquela aba funcionando e
+  // preserva o destaque correto do menu para as abas criadas aqui.
+  const baseShowTab = window.showTab;
   window.showTab = function (name) {
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    if (typeof baseShowTab === 'function') baseShowTab(name);
+    else {
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    }
     const t = $('tab-' + name); if (t) t.classList.add('active');
     document.querySelectorAll('.nav-item').forEach(n => { if ((n.getAttribute('onclick') || '').indexOf("'" + name + "'") > -1) n.classList.add('active'); });
     if (LOAD[name]) LOAD[name]();

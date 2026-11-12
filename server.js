@@ -236,11 +236,6 @@ async function selectGoogleDriveAccount(sizeBytes, { excludeAccountIds = [] } = 
   }
   return account;
 }
-async function googleDriveStorage(accountId) {
-  if (accountId) return getGoogleDriveStorage(accountId);
-  const account = await selectGoogleDriveAccount(0);
-  return getGoogleDriveStorage(account.id);
-}
 async function getGoogleDriveStorageForFile(storedName) {
   const accountId = driveAccountIdFromRef(storedName);
   if (accountId) return { drive: await getGoogleDriveStorage(accountId), accountId };
@@ -1960,7 +1955,6 @@ async function clearLoginRateLimits(ipKey, accountKey) {
 // Registra ações de usuários (uploads, salas, arquivos) antes de responder — seguro em serverless
 function classifyAct(req) {
   const p = req.path, m = req.method;
-  let r;
   if (m === 'POST' && p === '/api/rooms') return [(req.body && req.body.type === 'private') ? 'sala_privada_criada' : 'sala_criada', req.body && req.body.name];
   if (m === 'POST' && /^\/api\/rooms\/[^/]+\/files$/.test(p)) return ['upload', (req.files || []).map(f => f.originalname).join(', ') || 'arquivo'];
   if (m === 'POST' && /^\/api\/rooms\/[^/]+\/files\/register$/.test(p)) return ['upload', (req.body && (req.body.name || req.body.original_name)) || 'arquivo'];
@@ -2327,8 +2321,7 @@ app.get('/api/admin/google-drive/status', asAdmin, wrap(async (req, res) => {
           ? Math.max(0, refreshedLimit - refreshedUsed)
           : null,
         accountCount: responseAccounts.length
-      },
-      storage_quota: { legacy_compatible: true }
+      }
     });
   } catch (error) {
     return res.json({ configured, connected, verified: false, checked_at: new Date().toISOString(),
@@ -3936,7 +3929,6 @@ app.post('/api/coletas/enviar/:token/upload-token', publicCollectionAccess, wrap
   if (!blobEnabled()) return res.status(501).json({ error: 'Upload multipart indisponível neste ambiente.' });
   const recipient = req.collectionRecipient;
   try {
-    const action = req.body && req.body.type;
     // O SDK @vercel/blob 2.8.0 envia { type, payload: { pathname, ... } }; aceita também o formato plano.
     const sdkPayload = (req.body && req.body.payload) || {};
     const pathname = String(sdkPayload.pathname || (req.body && req.body.pathname) || '');
@@ -5197,24 +5189,11 @@ app.post('/api/admin/rooms/:id/extend', asAdmin, wrap(async (req, res) => {
   await logAct(req, 'sala_tempo_alterado', room.name + ' +' + minutes + ' min');
   res.json({ success: true });
 }));
-app.post('/api/admin/rooms/:id/visibility', asAdmin, wrap(async (req, res) => {
-  const room = await one('SELECT id, name FROM rooms WHERE id = $1', [req.params.id]);
-  if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
-  const pub = req.body && req.body.is_public ? 1 : 0;
-  await q('UPDATE rooms SET is_public = $1 WHERE id = $2', [pub, room.id]);
-  await logAct(req, 'sala_visibilidade', room.name + ' → ' + (pub ? 'pública' : 'privada'));
-  res.json({ success: true });
-}));
 app.post('/api/admin/rooms/:id/clear-chat', asAdmin, wrap(async (req, res) => {
   const room = await one('SELECT id, name FROM rooms WHERE id = $1', [req.params.id]);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada' });
   await q('DELETE FROM messages WHERE room_id = $1', [room.id]);
   await logAct(req, 'chat_limpo', room.name);
-  res.json({ success: true });
-}));
-app.delete('/api/admin/messages/:id', asAdmin, wrap(async (req, res) => {
-  await q('DELETE FROM messages WHERE id = $1', [req.params.id]);
-  await logAct(req, 'mensagem_removida', req.params.id.slice(0, 8));
   res.json({ success: true });
 }));
 app.get('/api/admin/rooms-lite', asAdmin, wrap(async (req, res) => {
