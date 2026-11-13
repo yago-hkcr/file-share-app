@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v29-smart-gfx';
+const CACHE_NAME = 'fileshare-v30-intro-every-load';
 const ASSETS = [
   '/css/social.css?v=20261112b',
   '/css/upload-queue.css?v=20261112b',
@@ -24,7 +24,7 @@ const ASSETS = [
   '/css/theme-v2.css?v=20261112b',
   '/js/common.js?v=20261112j',
   '/js/bg-3d.js?v=20261112d',
-  '/js/logo-3d-anim.js?v=20261112e',
+  '/js/logo-3d-anim.js?v=20261112f',
   '/js/auth-3d-float.js?v=20261112h',
   '/js/adaptive.js?v=20261014a',
   '/js/mobile.js?v=20261014o',
@@ -45,7 +45,7 @@ const ASSETS = [
   '/js/announce.js?v=20261107d',
   '/js/cyber.js?v=20261112a',
   '/manifest.json',
-  '/js/login-intro.js?v=20261112h',
+  '/js/login-intro.js?v=20261112i',
   '/favicon.png',
   '/favicon-48.png',
   '/apple-touch-icon.png'

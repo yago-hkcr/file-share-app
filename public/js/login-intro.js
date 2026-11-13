@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'fileshare-login-intro-seen-v9-smooth-laser';
+  // Sempre exibe a introdução do laser a cada abertura do site (para todos).
   var INTRO_DURATION = 5600;
 
   function prefersReducedMotion() {
@@ -18,9 +18,6 @@
 
   function mount() {
     var reduced = prefersReducedMotion();
-    try {
-      if (localStorage.getItem(STORAGE_KEY) === '1') return;
-    } catch (e) { return; }
 
     // Remove any stale intro overlay from previous broken runs
     try {
@@ -61,10 +58,6 @@
     var closeTimer = 0;
     var completeFallback = 0;
 
-    function markSeen() {
-      try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) {}
-    }
-
     function forceRemove() {
       try {
         if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
@@ -79,7 +72,6 @@
       try { clearTimeout(closeTimer); } catch (e) {}
       try { clearTimeout(completeFallback); } catch (e) {}
       try { if (logo3d && logo3d.stop) logo3d.stop(); } catch (e) {}
-      markSeen();
       try { overlay.classList.add('leaving'); overlay.style.pointerEvents = 'none'; } catch (e) {}
       // transition/motion out, then remove and enable typing
       setTimeout(function () {
@@ -101,7 +93,7 @@
         if (hint) hint.innerHTML = '<span class="splash-hint-dot"></span> Acessando...';
       } catch (e) {}
       // short pause for "motion" then enter
-      closeTimer = setTimeout(doClose, reduced ? 350 : 900);
+      closeTimer = setTimeout(doClose, reduced ? 300 : 500);
     }
 
     function startLogo() {
@@ -154,7 +146,7 @@
     }, reduced ? 1600 : INTRO_DURATION + 1100);
 
     // Extra hard removal guarantee
-    setTimeout(function () { if (!closed) { markSeen(); doClose(); } }, reduced ? 4500 : 12000);
+    setTimeout(function () { if (!closed) doClose(); }, reduced ? 4500 : 12000);
 
     try {
       startLogo();
