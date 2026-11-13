@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'fileshare-login-intro-seen-v8-laser-splash';
+  var STORAGE_KEY = 'fileshare-login-intro-seen-v9-smooth-laser';
   var INTRO_DURATION = 5600;
 
   function prefersReducedMotion() {
@@ -59,6 +59,7 @@
     var completed = false;
     var hardTimer = 0;
     var closeTimer = 0;
+    var completeFallback = 0;
 
     function markSeen() {
       try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) {}
@@ -76,6 +77,7 @@
       closed = true;
       try { clearTimeout(hardTimer); } catch (e) {}
       try { clearTimeout(closeTimer); } catch (e) {}
+      try { clearTimeout(completeFallback); } catch (e) {}
       try { if (logo3d && logo3d.stop) logo3d.stop(); } catch (e) {}
       markSeen();
       try { overlay.classList.add('leaving'); overlay.style.pointerEvents = 'none'; } catch (e) {}
@@ -145,6 +147,11 @@
         if (!completed) onComplete(); else doClose();
       }
     }, reduced ? 3000 : 9000);
+
+    // Independent of requestAnimationFrame: end the intro even if the canvas loop stalls.
+    completeFallback = setTimeout(function () {
+      if (!closed && !completed) onComplete();
+    }, reduced ? 1600 : INTRO_DURATION + 1100);
 
     // Extra hard removal guarantee
     setTimeout(function () { if (!closed) { markSeen(); doClose(); } }, reduced ? 4500 : 12000);
