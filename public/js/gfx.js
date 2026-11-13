@@ -1,33 +1,71 @@
-// Nivel de graficos: minimal, basic, low, medium ou high.
-// Detecta automaticamente a capacidade do PC e adapta os graficos.
+// Nivel de graficos: minimal, basic, low, medium e high.
+// Detecção AUTOMÁTICA da capacidade do aparelho + ajuste contínuo:
+//   1. Lê sinais do dispositivo (núcleos, memória, GPU, tela, rede, bateria).
+//   2. Mede o FPS real da página (não um canvas sintético) depois que ela assenta.
+//   3. Reajusta sozinho se o site começar a engasgar (ou se sobrar folga).
+// O usuário pode fixar um nível manualmente; nesse caso a automação respeita.
 (function () {
   'use strict';
   var KEY = 'fileshare-gfx';
-  var root = document.documentElement;
+  var MANUAL_KEY = 'fileshare-gfx-manual';
+  var DETECTED_KEY = 'fileshare-gfx-detected';
   var LEVELS = ['minimal', 'basic', 'low', 'medium', 'high'];
+  var root = document.documentElement;
 
-  function normalize(value) {
-    return LEVELS.indexOf(value) >= 0 ? value : 'high';
+  var currentLevel = 'high';
+  var detectedLevel = 'high';
+  var userManual = false;
+  var adjustments = 0;
+  var watchdog = 0;
+  var badSamples = 0;
+  var busy = false;
+
+  function normalize(value) { return LEVELS.indexOf(value) >= 0 ? value : 'high'; }
+  function levelIndex(level) { return LEVELS.indexOf(normalize(level)); }
+  function clampLevel(level) { return LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level))]; }
+  function store(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+  function readStored(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+
+  function paintButtons(level) {
+    document.querySelectorAll('[data-gfx-option]').forEach(function (btn) {
+      // No modo automático só o botão "Automático" fica destacado; o nível
+      // aplicado aparece no texto de status.
+      var active = userManual && btn.dataset.gfxOption === level;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
+    document.querySelectorAll('[data-gfx-auto]').forEach(function (btn) {
+      btn.classList.toggle('is-active', !userManual);
+      btn.setAttribute('aria-pressed', String(!userManual));
+    });
   }
 
-  function current() {
-    try {
-      var v = localStorage.getItem(KEY);
-      if (v === null) return null;
-      return normalize(v);
-    } catch (e) { return null; }
+  function status(message) {
+    var el = document.getElementById('gfxAutoStatus');
+    if (el && message) el.textContent = message;
+    return message;
   }
 
   function apply(level) {
     var gfx = normalize(level);
+    currentLevel = gfx;
     root.removeAttribute('data-gfx');
     if (gfx !== 'high') root.setAttribute('data-gfx', gfx);
-    document.querySelectorAll('[data-gfx-option]').forEach(function (btn) {
-      btn.classList.toggle('is-active', btn.dataset.gfxOption === gfx);
-      btn.setAttribute('aria-pressed', String(btn.dataset.gfxOption === gfx));
-    });
+    // Classe única usada por scripts de efeito (fx/cyber/bg-3d) para parar loops.
+    if (levelIndex(gfx) <= levelIndex('low')) root.classList.add('gfx-lite');
+    else root.classList.remove('gfx-lite');
+    paintButtons(gfx);
+    try { window.dispatchEvent(new CustomEvent('fileshare:gfx-change', { detail: { level: gfx, auto: !userManual } })); } catch (e) {}
     return gfx;
   }
+
+  function commit(level) {
+    var gfx = apply(level);
+    store(KEY, gfx);
+    return gfx;
+  }
+
+  // ------------------------------------------------------------------ sinais
   function detectCapabilities() {
     var signals = {
       cores: navigator.hardwareConcurrency || 2,
@@ -40,6 +78,8 @@
       pixelRatio: window.devicePixelRatio || 1,
       connection: (navigator.connection && navigator.connection.effectiveType) || '4g',
       saveData: (navigator.connection && navigator.connection.saveData) || false,
+      batteryLevel: 1,
+      charging: true
     };
     try {
       var canvas = document.createElement('canvas');
@@ -57,40 +97,9 @@
     } catch (e) {
       signals.gpu = 'unknown';
     }
-    signals.batteryLevel = 1;
-    signals.charging = true;
     return signals;
   }
-  function runBenchmark() {
-    return new Promise(function (resolve) {
-      var canvas = document.createElement('canvas');
-      canvas.width = 200;
-      canvas.height = 200;
-      var ctx = canvas.getContext('2d');
-      var frames = 0;
-      var start = performance.now();
-      var duration = 500;
-      function frame() {
-        var now = performance.now();
-        if (now - start >= duration) {
-          var fps = (frames / ((now - start) / 1000));
-          resolve(Math.round(fps));
-          return;
-        }
-        ctx.fillStyle = 'rgba(0,0,0,0.1)';
-        ctx.fillRect(0, 0, 200, 200);
-        for (var i = 0; i < 50; i++) {
-          ctx.fillStyle = 'rgba(' + (Math.random() * 255 | 0) + ',' + (Math.random() * 255 | 0) + ',' + (Math.random() * 255 | 0) + ',0.5)';
-          ctx.beginPath();
-          ctx.arc(Math.random() * 200, Math.random() * 200, Math.random() * 10 + 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        frames++;
-        requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
-    });
-  }
+
   function detectRecommendedLevel(signals) {
     if (!signals) signals = detectCapabilities();
     var score = 0;
@@ -131,96 +140,207 @@
     if (score <= 7) return 'medium';
     return 'high';
   }
-  function autoDetect() {
-    var saved = current();
-    if (saved !== null) {
-      apply(saved);
-      return saved;
-    }
-    var signals = detectCapabilities();
-    var finish = function () {
-      var detected = detectRecommendedLevel(signals);
-      try { localStorage.setItem('fileshare-gfx-detected', detected); } catch (e) {}
-      apply(detected);
-      try { localStorage.setItem(KEY, detected); } catch (e) {}
-      runBenchmark().then(function (fps) {
-        var adjusted = detected;
-        if (fps < 15) adjusted = 'minimal';
-        else if (fps < 25) {
-          if (LEVELS.indexOf(adjusted) > LEVELS.indexOf('basic')) adjusted = 'basic';
-        } else if (fps < 40) {
-          if (LEVELS.indexOf(adjusted) > LEVELS.indexOf('low')) adjusted = 'low';
-        }
-        apply(adjusted);
-        try { localStorage.setItem(KEY, adjusted); } catch (e) {}
-      });
-      return detected;
-    };
-    if (navigator.getBattery) {
-      try {
-        var p = navigator.getBattery();
-        if (p && typeof p.then === 'function') {
-          p.then(function (battery) {
-            signals.batteryLevel = battery.level;
-            signals.charging = battery.charging;
-            finish();
-          }).catch(function () { finish(); });
-          return null;
-        }
-      } catch (e) {}
-    }
-    return finish();
+
+  // --------------------------------------------------------------------- FPS
+  // Mede o FPS REAL da página pela mediana do intervalo entre frames.
+  // A mediana ignora picos isolados de carregamento (o benchmark antigo media
+  // canvas sintético durante o load e rebaixava aparelhos bons por engano).
+  function sampleFps(duration) {
+    return new Promise(function (resolve) {
+      var ms = duration || 1200;
+      if (document.hidden) { resolve(0); return; }
+      var times = [];
+      var last = 0;
+      var start = performance.now();
+      var settled = false;
+      function finish() {
+        if (settled) return;
+        settled = true;
+        if (times.length < 5) { resolve(0); return; }
+        times.sort(function (a, b) { return a - b; });
+        var median = times[Math.floor(times.length / 2)];
+        resolve(median > 0 ? Math.round(1000 / median) : 0);
+      }
+      function frame(t) {
+        if (settled) return;
+        if (document.hidden) { finish(); return; }
+        if (last) times.push(t - last);
+        last = t;
+        if (performance.now() - start >= ms) { finish(); return; }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+      setTimeout(finish, ms + 700);
+    });
   }
 
+  function adjustForFps(base, fps) {
+    var idx = levelIndex(base);
+    if (!fps) return base;
+    if (fps < 20) return clampLevel(idx - 3);
+    if (fps < 30) return clampLevel(idx - 2);
+    if (fps < 40) return clampLevel(idx - 1);
+    return base;
+  }
+
+  // ------------------------------------------------------------------ intro
+  function whenIntroDone(cb) {
+    var tries = 0;
+    (function check() {
+      var splash = document.getElementById('splashIntro');
+      if (!splash || !splash.isConnected) { cb(); return; }
+      if (++tries > 40) { cb(); return; }
+      setTimeout(check, 400);
+    })();
+  }
+
+  function refine() {
+    if (userManual) return;
+    whenIntroDone(function () {
+      setTimeout(function () {
+        sampleFps(1400).then(function (fps) {
+          if (userManual || !fps) return;
+          var tuned = adjustForFps(detectedLevel, fps);
+          commit(tuned);
+          status('Automático · nível ' + tuned + ' · ' + fps + ' fps medidos');
+        });
+      }, 900);
+    });
+  }
+
+  function autoDetect() {
+    var signals = detectCapabilities();
+    detectedLevel = detectRecommendedLevel(signals);
+    store(DETECTED_KEY, detectedLevel);
+    commit(detectedLevel);
+    status('Automático · nível ' + detectedLevel + ' detectado');
+    refine();
+    startWatchdog();
+    return detectedLevel;
+  }
+
+  // -------------------------------------------------------------- watchdog
+  // Acompanha o desempenho real e só CORRIGE PARA BAIXO quando o site engasga.
+  // Subir sozinho de novo faria o nível oscilar (sobe -> pesa -> cai -> alivia),
+  // então o aumento acontece apenas se o usuário pedir "Automático" de novo.
+  function startWatchdog() {
+    if (watchdog) return;
+    watchdog = setInterval(function () {
+      if (userManual || busy || document.hidden || adjustments > 4) return;
+      busy = true;
+      sampleFps(1200).then(function (fps) {
+        busy = false;
+        if (!fps || userManual || document.hidden) return;
+        if (fps < 30) {
+          badSamples++;
+          // Histerese: só rebaixa após duas medições ruins seguidas.
+          if (badSamples >= 2) {
+            var next = adjustForFps(currentLevel, fps);
+            if (next !== currentLevel) {
+              commit(next);
+              adjustments++;
+              badSamples = 0;
+              status('Automático · nível ' + next + ' · ajustado para ' + fps + ' fps');
+            }
+          }
+        } else {
+          badSamples = 0;
+        }
+      });
+    }, 8000);
+  }
+
+  // ------------------------------------------------------------------- API
   window.fileShareGfx = function (level) {
-    var gfx = apply(level);
-    try { localStorage.setItem(KEY, gfx); } catch (e) {}
+    userManual = true;
+    store(MANUAL_KEY, '1');
+    var gfx = commit(level);
+    status('Manual · nível ' + gfx);
     return gfx;
   };
 
+  window.fileShareGfxAuto = function () {
+    userManual = false;
+    try { localStorage.removeItem(MANUAL_KEY); } catch (e) {}
+    adjustments = 0;
+    badSamples = 0;
+    var level = autoDetect();
+    if (typeof window.toast === 'function') window.toast('Gráficos automáticos: nível ' + level);
+    return level;
+  };
+
   window.fileShareGfxDetect = function () {
-    var detected = detectRecommendedLevel();
-    runBenchmark().then(function (fps) {
-      var adjusted = detected;
-      if (fps < 15) adjusted = 'minimal';
-      else if (fps < 25) {
-        if (LEVELS.indexOf(adjusted) > LEVELS.indexOf('basic')) adjusted = 'basic';
-      } else if (fps < 40) {
-        if (LEVELS.indexOf(adjusted) > LEVELS.indexOf('low')) adjusted = 'low';
-      }
-      window.fileShareGfx(adjusted);
-      if (typeof window.toast === 'function') window.toast('Graficos ajustados automaticamente para: ' + adjusted);
-    });
-    return detected;
+    return window.fileShareGfxAuto();
   };
 
-  window.fileShareGfxInfo = function () {
-    return detectCapabilities();
+  // Repinta o destaque dos botões (usado pelas Configurações do painel).
+  window.fileShareGfxPaint = function () {
+    paintButtons(currentLevel);
+    return currentLevel;
   };
 
-  autoDetect();
-  document.addEventListener('click', function (event) {
-    var openBtn = event.target.closest && event.target.closest('#authSettingsBtn');
-    if (openBtn) {
-      var modal = document.getElementById('gfxModal');
-      if (modal) { modal.style.display = 'flex'; modal.setAttribute('aria-hidden', 'false'); }
+  window.fileShareGfxInfo = function () {    return {
+      level: currentLevel,
+      detected: detectedLevel,
+      manual: userManual,
+      signals: detectCapabilities()
+    };
+  };
+
+  // ------------------------------------------------------------- inicialização
+  (function boot() {
+    var storedLevel = readStored(KEY);
+    userManual = readStored(MANUAL_KEY) === '1';
+    if (userManual && storedLevel !== null) {
+      apply(normalize(storedLevel));
+      status('Manual · nível ' + currentLevel);
+      startWatchdog();
       return;
     }
-    if (event.target.closest && event.target.closest('[data-gfx-close]')) {
+    // Sem escolha manual: detecta a cada carregamento (o aparelho/energia mudam).
+    autoDetect();
+  })();
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target.closest) return;
+
+    if (target.closest('#authSettingsBtn')) {
+      var modal = document.getElementById('gfxModal');
+      if (modal) {
+        modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+        paintButtons(currentLevel);
+      }
+      return;
+    }
+    if (target.closest('[data-gfx-close]')) {
       var modal2 = document.getElementById('gfxModal');
       if (modal2) { modal2.style.display = 'none'; modal2.setAttribute('aria-hidden', 'true'); }
       return;
     }
-    var option = event.target.closest && event.target.closest('[data-gfx-option]');
+    if (target.closest('[data-gfx-auto]')) {
+      window.fileShareGfxAuto();
+      return;
+    }
+    var option = target.closest('[data-gfx-option]');
     if (option) {
       window.fileShareGfx(option.dataset.gfxOption);
-      if (typeof window.toast === 'function') window.toast('Graficos ajustados.');
+      if (typeof window.toast === 'function') window.toast('Gráficos ajustados.');
     }
   });
 
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
     var modal = document.getElementById('gfxModal');
-    if (modal && modal.style.display !== 'none') { modal.style.display = 'none'; modal.setAttribute('aria-hidden', 'true'); }
+    if (modal && modal.style.display !== 'none') {
+      modal.style.display = 'none';
+      modal.setAttribute('aria-hidden', 'true');
+    }
+  });
+
+  // Reavalia ao voltar para a aba (economiza quando a página ficou parada).
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) badSamples = 0;
   });
 })();

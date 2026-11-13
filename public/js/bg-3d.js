@@ -10,8 +10,31 @@
   window.__arquiveBg3dInit = true;
 
   var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var canvas, ctx, W = 0, H = 0, dpr = 1, raf = 0, t0 = 0;
+  var canvas, ctx, W = 0, H = 0, dpr = 1, raf = 0, t0 = 0, lastDraw = 0, running = false;
   var particles = [], cubes = [];
+
+  // Nível de gráficos definido pela detecção automática (gfx.js).
+  function gfxLevel() {
+    var l = document.documentElement.getAttribute('data-gfx');
+    return l || 'high';
+  }
+  function lite() {
+    var l = gfxLevel();
+    return l === 'minimal' || l === 'basic';
+  }
+  // Intervalo mínimo entre desenhos (limita o FPS conforme o nível)
+  function minFrameMs() {
+    var l = gfxLevel();
+    if (l === 'low') return 1000 / 30;
+    if (l === 'medium') return 1000 / 45;
+    return 0;
+  }
+  function densityScale() {
+    var l = gfxLevel();
+    if (l === 'low') return 0.45;
+    if (l === 'medium') return 0.75;
+    return 1;
+  }
 
   function themeIsDark() {
     return document.documentElement.getAttribute('data-theme') === 'dark';
@@ -60,7 +83,8 @@
   function rand(a, b) { return a + Math.random() * (b - a); }
 
   function seed() {
-    var count = Math.min(220, Math.floor((W * H) / 9000));
+    var d = densityScale();
+    var count = Math.min(220, Math.floor((W * H) / 9000 * d));
     particles = [];
     for (var i = 0; i < count; i++) {
       particles.push({
@@ -70,7 +94,8 @@
       });
     }
     cubes = [];
-    var cc = Math.min(28, Math.floor(W / 60));
+    var cc = Math.min(28, Math.floor(W / 60 * d));
+    if (gfxLevel() === 'low') cc = Math.min(cc, 8);
     for (var j = 0; j < cc; j++) {
       cubes.push({
         x: rand(-1.2, 1.2), y: rand(-0.2, 1.0), z: rand(0.4, 2.2),
@@ -184,14 +209,40 @@
     return !!(el && el.isConnected && !el.classList.contains('leaving'));
   }
 
+  function stopLoop() {
+    running = false;
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+  }
+
+  function startLoop() {
+    if (running || reduced || lite() || !ctx) return;
+    running = true;
+    t0 = 0;
+    raf = requestAnimationFrame(frame);
+  }
+
   function frame(ts) {
+    if (!running) return;
+    if (lite()) { stopLoop(); return; }
+    if (document.hidden) { raf = requestAnimationFrame(frame); return; }
     if (!t0) t0 = ts;
     // Pause heavy background rendering while the centered splash intro is on screen
     if (splashActive()) {
-      if (!reduced) raf = requestAnimationFrame(frame);
+      raf = requestAnimationFrame(frame);
       return;
     }
-    var time = ts - t0;
+    var gap = minFrameMs();
+    if (gap && ts - lastDraw < gap) {
+      raf = requestAnimationFrame(frame);
+      return;
+    }
+    lastDraw = ts;
+    drawScene(ts - t0);
+    raf = requestAnimationFrame(frame);
+  }
+
+  function drawScene(time) {
+    if (!ctx) return;
     var pal = palette();
     var dark = themeIsDark();
     ctx.clearRect(0, 0, W, H);
@@ -205,7 +256,7 @@
 
     drawGrid(time, pal, dark);
     drawParticles(time, pal, dark);
-    drawCubes(time, pal, dark);
+    if (gfxLevel() !== 'low') drawCubes(time, pal, dark);
 
     var fade = ctx.createLinearGradient(0, 0, 0, H);
     fade.addColorStop(0, pal.fog + (dark ? '0.18)' : '0.22)'));
@@ -218,28 +269,39 @@
     vig.addColorStop(0, 'rgba(0,0,0,0)');
     vig.addColorStop(1, 'rgba(0,0,0,' + (dark ? '0.28' : '0.10') + ')');
     ctx.fillStyle = vig; ctx.fillRect(0,0,W,H);
-
-    if (!reduced) raf = requestAnimationFrame(frame);
   }
 
   function start() {
     try {
       initCanvas();
+      if (lite()) return;
       if (reduced) {
-        // draw once when splash is gone
+        // Desenha um único quadro (sem loop) quando o splash sair.
         var tryOnce = function (ts) {
           if (splashActive()) { requestAnimationFrame(tryOnce); return; }
-          frame(ts || performance.now());
+          if (lite()) return;
+          drawScene((ts || performance.now()) - (t0 || (t0 = ts || performance.now())));
         };
         requestAnimationFrame(tryOnce);
       } else {
-        raf = requestAnimationFrame(frame);
+        startLoop();
       }
     } catch (e) { /* background is decorative; never break the app */ }
   }
 
   window.addEventListener('resize', function () { try { resize(); if (reduced) requestAnimationFrame(frame); } catch (e) {} }, { passive: true });
   window.addEventListener('fileshare:theme-change', function () { try { seed(); if (reduced) requestAnimationFrame(frame); } catch (e) {} });
+  // Reage à detecção automática de desempenho: para/retoma o fundo.
+  window.addEventListener('fileshare:gfx-change', function () {
+    try {
+      if (lite()) { stopLoop(); if (ctx) ctx.clearRect(0, 0, W, H); return; }
+      seed();
+      startLoop();
+    } catch (e) {}
+  });
+  document.addEventListener('visibilitychange', function () {
+    try { if (!document.hidden) startLoop(); } catch (e) {}
+  });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();

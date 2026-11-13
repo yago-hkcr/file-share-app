@@ -50,6 +50,8 @@
     function frame(t) {
       if (!running) return;
       requestAnimationFrame(frame);
+      // Detecção automática pode rebaixar o nível em tempo real: para de desenhar.
+      if (root.classList.contains('gfx-lite')) return;
       if (t - last < 33) return; // ~30 fps
       const t0 = performance.now(); last = t;
       if (++tick % 90 === 0) color();

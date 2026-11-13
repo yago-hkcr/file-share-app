@@ -108,7 +108,7 @@ html[data-gfx="low"] *, html[data-gfx="low"] *::before, html[data-gfx="low"] *::
 html[data-gfx="medium"] .fx-orb, html[data-gfx="medium"] .fx-pointer-glow { display: none !important; }
 html[data-gfx="medium"] #fxCanvas { opacity: .55; }
 /* Engrenagem ancorada ao canto superior direito do cartao (dentro dele), sempre enquadrada. */
-body.auth-page .auth-card > .auth-settings-btn { position: absolute !important; top: 14px; right: 16px; z-index: 6; display: grid; place-items: center; width: 42px; height: 42px; min-width: 42px; min-height: 42px; padding: 0; border: 1px solid var(--cy); border-radius: 2px; color: var(--cy); background: rgba(5,10,7,.55); line-height: 1; animation: none !important; transform: none !important; }
+body.auth-page .auth-card > .auth-settings-btn { position: absolute !important; top: 14px; right: 16px; z-index: 20; display: grid; place-items: center; width: 42px; height: 42px; min-width: 42px; min-height: 42px; padding: 0; border: 1px solid var(--cy); border-radius: 10px; color: var(--cy); background: rgba(5,10,7,.55); line-height: 1; animation: none !important; transform: none !important; }
 body.auth-page .auth-card > .auth-settings-btn:hover { background: rgba(5,10,7,.85); }
 body.auth-page .auth-settings-btn i { display: block; line-height: 1; }
 .gfx-modal-card { width: min(430px, 100%); }
@@ -118,6 +118,11 @@ body.auth-page .auth-settings-btn i { display: block; line-height: 1; }
 .gfx-option i { margin-top: 2px; }
 .gfx-option strong { display: block; font-size: 14px; }
 .gfx-option small { display: block; font-size: 12px; opacity: .75; }
+.gfx-option-auto { border-style: dashed; }
+.gfx-option-auto.is-active { border-style: solid; }
+.gfx-auto-status { min-height: 1em; margin-top: 10px; font-size: 12px; opacity: .78; }
+/* Fundo 3D desligado nos níveis mais leves (economia real de CPU/GPU) */
+html[data-gfx="minimal"] #site-bg-3d, html[data-gfx="basic"] #site-bg-3d { display: none !important; }
 html.fx-lite .fx-orb { display: none; }
 @media (max-width: 700px) { .fx-orb { opacity: .14; } .fx-pointer-glow { width:min(92vw,430px); mix-blend-mode:normal; } }
 html.fx-lite .fx-pointer-glow { opacity:.6; }
