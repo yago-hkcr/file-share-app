@@ -325,14 +325,20 @@ body.auth-page .recovery-link {
 
 
 /* ===================== 3D FLOATING AUTH CARD (stable) ===================== */
+/* O container NÃO usa perspectiva 3D própria: com `perspective` + `preserve-3d`
+   o Chrome resolvia os cliques no plano do container (.auth-container), deixando
+   o botão de engrenagem (e a superfície do card) sem receber clique.
+   A perspectiva agora vive na transformação do próprio card (flat) e o container
+   fica transparente a cliques. */
 body.auth-page .auth-container {
-  perspective: 1200px;
-  perspective-origin: 50% 42%;
-  transform-style: preserve-3d;
+  perspective: none;
+  transform-style: flat;
+  pointer-events: none;
 }
 body.auth-page .auth-card,
 body.auth-page .auth-showcase {
-  transform-style: preserve-3d;
+  pointer-events: auto;
+  transform-style: flat;
   --tilt-x: 4deg;
   --tilt-y: -6deg;
   --float-y: 0px;
@@ -342,7 +348,7 @@ body.auth-page .auth-showcase {
 }
 body.auth-page .auth-card {
   /* JS drives --tilt-x/--tilt-y/--float-y/--card-scale for smooth float + hover tilt */
-  transform: translate3d(0, var(--float-y), 0) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) rotateZ(var(--tilt-z)) scale(var(--card-scale));
+  transform: perspective(1200px) translate3d(0, var(--float-y), 0) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) rotateZ(var(--tilt-z)) scale(var(--card-scale));
   transition: box-shadow .35s ease, filter .35s ease;
   border: 1px solid rgba(var(--cy-rgb), .28);
   border-bottom-color: rgba(0,0,0,.35);
@@ -373,7 +379,12 @@ body.auth-page .auth-card::after {
   transform: translateZ(1px);
   opacity: .95;
 }
-body.auth-page .auth-card > * { transform-style: preserve-3d; }
+body.auth-page .auth-card > * { transform-style: flat; }
+/* Botão de configurações sempre acima e clicável */
+body.auth-page .auth-card > .auth-settings-btn {
+  z-index: 20;
+  transform: none !important;
+}
 body.auth-page .auth-card .auth-icon {
   transform: translateZ(55px);
   box-shadow:
@@ -406,7 +417,7 @@ body.auth-page .auth-card.is-tilting {
 
 /* Showcase panel as a 3D card */
 body.auth-page .auth-showcase {
-  transform: translate3d(0, var(--float-y), -20px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) scale(1);
+  transform: perspective(1200px) translate3d(0, var(--float-y), -20px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) scale(1);
   border-radius: 24px;
   border: 1px solid rgba(var(--cy-rgb), .18);
   background: linear-gradient(160deg, rgba(var(--cy-rgb), .06), rgba(0,0,0,0) 40%), var(--auth-panel);
@@ -498,9 +509,9 @@ body.auth-page .auth-card .btn-success:active {
   }
 }
 @media (max-width: 900px) {
-  body.auth-page .auth-container { perspective: 900px; }
-  body.auth-page .auth-card .auth-icon { transform: translateZ(30px); }
-  body.auth-page .auth-card .auth-header h1 { transform: translateZ(22px); }
-  body.auth-page .auth-card form { transform: translateZ(18px); }
+  body.auth-page .auth-container { perspective: none; }
+  body.auth-page .auth-card .auth-icon { transform: none; }
+  body.auth-page .auth-card .auth-header h1 { transform: none; }
+  body.auth-page .auth-card form { transform: none; }
 }
 

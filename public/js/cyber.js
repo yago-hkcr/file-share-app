@@ -79,6 +79,8 @@
 
   function frame(t) {
     requestAnimationFrame(frame);
+    // Rebaixamento automático em tempo real: interrompe a chuva.
+    if (root.classList.contains('gfx-lite')) return;
     const step = 55; // mesma velocidade do login/cadastro
     if (document.hidden || body.classList.contains('auth-exit') || t - last < step) return; // pausa fora da tela e durante a saída do login
     last = t;
