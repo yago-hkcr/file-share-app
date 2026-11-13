@@ -64,7 +64,9 @@
   Logo3D.prototype.resize = function () {
     var c = this.canvas;
     var r = c.getBoundingClientRect();
-    this.dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    // Aparelhos fracos (poucos núcleos/memória) desenham com menos pixels.
+    var weak = (navigator.hardwareConcurrency || 4) <= 4 || (navigator.deviceMemory || 8) <= 4;
+    this.dpr = Math.min(window.devicePixelRatio || 1, weak ? 1.25 : 1.75);
     this.W = Math.max(1, Math.floor((r.width || 600) * this.dpr));
     this.H = Math.max(1, Math.floor((r.height || 420) * this.dpr));
     c.width = this.W; c.height = this.H;
@@ -208,10 +210,15 @@
     ctx.fillText('SEU ESPAÇO · SUAS CONEXÕES', cx, ty + 30 * scale);
     ctx.restore();
     if (ta < 1) {
+      // Borda do "wipe" do texto como um brilho radial (sem faixa retangular)
       var edgeX = cx - wipeW / 2 + wipeW;
-      var eg = ctx.createLinearGradient(edgeX - 18, 0, edgeX + 18, 0);
-      eg.addColorStop(0, 'rgba(34,211,238,0)'); eg.addColorStop(0.5, 'rgba(255,255,255,' + 0.85 + ')'); eg.addColorStop(1, 'rgba(34,211,238,0)');
-      ctx.fillStyle = eg; ctx.fillRect(edgeX - 18, ty - 55 * scale, 36, 110 * scale);
+      var er = 26 * scale;
+      var eg = ctx.createRadialGradient(edgeX, ty, 0, edgeX, ty, er);
+      eg.addColorStop(0, 'rgba(255,255,255,0.75)');
+      eg.addColorStop(0.45, 'rgba(34,211,238,0.22)');
+      eg.addColorStop(1, 'rgba(34,211,238,0)');
+      ctx.fillStyle = eg;
+      ctx.fillRect(edgeX - er, ty - er, er * 2, er * 2);
     }
   };
 
@@ -234,11 +241,14 @@
     var cx = W / 2, cy = H * 0.44;
     var scale = Math.min(W, H) / 520;
 
+    // Brilho de varredura em gradiente radial: chega a alpha 0 dentro do canvas,
+    // então não aparece nenhuma borda/retângulo recortado.
     var sweepP = clamp(progress / 0.85, 0, 1);
-    var sweepY = -H * 0.1 + sweepP * H * 1.2;
-    var sg = ctx.createLinearGradient(0, sweepY - 40 * this.dpr, 0, sweepY + 40 * this.dpr);
-    sg.addColorStop(0, 'rgba(' + accent2 + ',0)');
-    sg.addColorStop(0.5, 'rgba(' + accent2 + ',' + 0.13 + ')');
+    var sweepY = -H * 0.05 + sweepP * H * 1.1;
+    var sweepR = Math.min(W, H) * 0.62;
+    var sg = ctx.createRadialGradient(cx, sweepY, 0, cx, sweepY, sweepR);
+    sg.addColorStop(0, 'rgba(' + accent2 + ',0.10)');
+    sg.addColorStop(0.55, 'rgba(' + accent2 + ',0.04)');
     sg.addColorStop(1, 'rgba(' + accent2 + ',0)');
     ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
 
@@ -265,17 +275,25 @@
 
     if (tip && traceP < 1) {
       ctx.save();
-      var beamStartX = -20 * this.dpr, beamStartY = sweepY;
+      // O feixe nasce bem fora do canvas e o núcleo branco só aparece perto da
+      // ponta: assim nada é "cortado" na borda do canvas.
+      var beamStartX = -W * 0.6, beamStartY = sweepY;
       var grad = ctx.createLinearGradient(beamStartX, beamStartY, tip.x, tip.y);
       grad.addColorStop(0, 'rgba(' + accent2 + ',0)');
-      grad.addColorStop(0.7, 'rgba(' + accent2 + ',' + 0.22 + ')');
+      grad.addColorStop(0.35, 'rgba(' + accent2 + ',0.06)');
+      grad.addColorStop(0.8, 'rgba(' + accent2 + ',' + 0.20 + ')');
       grad.addColorStop(1, 'rgba(255,255,255,' + 0.55 + ')');
       ctx.strokeStyle = grad; ctx.lineWidth = 2.2 * this.dpr;
       ctx.shadowColor = 'rgba(' + accent2 + ',0.9)'; ctx.shadowBlur = 18;
       ctx.beginPath(); ctx.moveTo(beamStartX, beamStartY); ctx.lineTo(tip.x, tip.y); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,' + 0.78 + ')';
+      // Núcleo branco apenas no último trecho do feixe
+      var coreX = lerp(beamStartX, tip.x, 0.62), coreY = lerp(beamStartY, tip.y, 0.62);
+      var coreGrad = ctx.createLinearGradient(coreX, coreY, tip.x, tip.y);
+      coreGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      coreGrad.addColorStop(1, 'rgba(255,255,255,' + 0.78 + ')');
+      ctx.strokeStyle = coreGrad;
       ctx.lineWidth = 1; ctx.shadowBlur = 4;
-      ctx.beginPath(); ctx.moveTo(beamStartX, beamStartY); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(coreX, coreY); ctx.lineTo(tip.x, tip.y); ctx.stroke();
       ctx.restore();
       this.drawLaserTip(tip.x, tip.y, dark, 1);
       if (!reduceMotion && Math.random() < 0.35) this.spawnSparks(tip.x, tip.y, 1, accent);
@@ -285,11 +303,15 @@
       var pulse = 0.5 + 0.5 * Math.sin(elapsed * 0.004);
       this.drawFullLogo(cx, cy, scale, dark, easeOutCubic(solidP), pulse);
       if (solidP < 0.22) {
-        ctx.save();
-        ctx.globalAlpha = (1 - solidP / 0.22) * 0.16;
-        ctx.fillStyle = '#eafff8';
+        // Flash radial (sem preencher o canvas inteiro, que desenhava um quadrado)
+        var flashA = (1 - solidP / 0.22) * 0.16;
+        var flashR = Math.min(W, H) * 0.7;
+        var fg = ctx.createRadialGradient(cx, cy, 0, cx, cy, flashR);
+        fg.addColorStop(0, 'rgba(234,255,248,' + flashA.toFixed(3) + ')');
+        fg.addColorStop(0.65, 'rgba(234,255,248,' + (flashA * 0.4).toFixed(3) + ')');
+        fg.addColorStop(1, 'rgba(234,255,248,0)');
+        ctx.fillStyle = fg;
         ctx.fillRect(0, 0, W, H);
-        ctx.restore();
       }
     }
 
