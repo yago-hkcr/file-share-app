@@ -189,6 +189,7 @@
     if (ta <= 0) return;
     var ctx = this.ctx;
     var accent = '74,222,128';
+    var accent2 = '34,211,238';
     var ty = cy + 175 * scale;
     ctx.save();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -226,6 +227,8 @@
     var accent2 = '34,211,238';
     var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+    // A single draw error must never freeze the intro (it used to break the rAF chain).
+    try {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
     var cx = W / 2, cy = H * 0.44;
@@ -292,6 +295,9 @@
 
     this.updateAndDrawSparks(0.016, dark);
     this.drawText(cx, cy, scale, dark, clamp((progress - 0.62) / 0.28, 0, 1));
+    } catch (frameErr) {
+      try { console.warn('[logo3d] frame error', frameErr); } catch (e3) {}
+    }
 
     if (progress < 1) {
       self.raf = requestAnimationFrame(function (t) { self.render(t); });
@@ -299,13 +305,8 @@
       self.done = true; self.playing = false;
       if (!reduceMotion) {
         self.raf = requestAnimationFrame(function (t) { self.idle(t); });
-      } else if (self.opts.onComplete) {
-        try { self.opts.onComplete(); } catch (e) {}
       }
-      if (self.opts.onComplete && !reduceMotion) {
-        // onComplete called after main sequence; idle continues
-        try { self.opts.onComplete(); } catch (e2) {}
-      }
+      if (self.opts.onComplete) { try { self.opts.onComplete(); } catch (e) {} }
     }
   };
 
@@ -320,15 +321,19 @@
     var scale = Math.min(W, H) / 520;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    var pulse = 0.5 + 0.5 * Math.sin(elapsed * 0.003);
-    self.drawFullLogo(cx, cy, scale, dark, 1, pulse);
-    self.drawText(cx, cy, scale, dark, 1);
-    if (Math.random() < 0.04) {
-      var nds = [{ x: 0, y: -95 }, { x: -82, y: 58 }, { x: 82, y: 58 }, { x: 0, y: 8 }];
-      var nd = nds[Math.floor(Math.random() * nds.length)];
-      self.spawnSparks(cx + nd.x * scale, cy + nd.y * scale, 1, accent);
+    try {
+      var pulse = 0.5 + 0.5 * Math.sin(elapsed * 0.003);
+      self.drawFullLogo(cx, cy, scale, dark, 1, pulse);
+      self.drawText(cx, cy, scale, dark, 1);
+      if (Math.random() < 0.04) {
+        var nds = [{ x: 0, y: -95 }, { x: -82, y: 58 }, { x: 82, y: 58 }, { x: 0, y: 8 }];
+        var nd = nds[Math.floor(Math.random() * nds.length)];
+        self.spawnSparks(cx + nd.x * scale, cy + nd.y * scale, 1, accent);
+      }
+      self.updateAndDrawSparks(0.016, dark);
+    } catch (idleErr) {
+      try { console.warn('[logo3d] idle error', idleErr); } catch (e4) {}
     }
-    self.updateAndDrawSparks(0.016, dark);
     self.raf = requestAnimationFrame(function (t) { self.idle(t); });
   };
 
