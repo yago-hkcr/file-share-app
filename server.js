@@ -2055,27 +2055,10 @@ function writeZipChunk(res, chunk) {
     res.once('drain', onDrain); res.once('close', onClose); res.once('error', onError);
   });
 }
-async function streamCollectionZip(res, rows, title) {
-  const usedNames = new Map(), usedParticipants = new Map(), participantFolders = new Map();
-  const entries = rows.map(row => {
-    const participantLabel = String(row.participant_name || 'Participante').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 80) || 'Participante';
-    const recipientId = String(row.recipient_id || participantLabel);
-    let participant = participantFolders.get(recipientId);
-    if (!participant) {
-      const participantKey = participantLabel.toLowerCase();
-      const participantCount = (usedParticipants.get(participantKey) || 0) + 1;
-      usedParticipants.set(participantKey, participantCount);
-      participant = participantCount === 1 ? participantLabel : `${participantLabel} (${participantCount})`;
-      participantFolders.set(recipientId, participant);
-    }
-    const original = cleanCollectionFileName(row.original_name);
-    const key = participant.toLowerCase() + '/' + original.toLowerCase();
-    const count = (usedNames.get(key) || 0) + 1; usedNames.set(key, count);
-    const dot = original.lastIndexOf('.');
-    const fileName = count === 1 ? original : (dot > 0 ? original.slice(0, dot) + ' (' + count + ')' + original.slice(dot) : original + ' (' + count + ')');
-    const name = Buffer.from(participant + '/' + fileName, 'utf8');
-    return { ...row, size: num(row.size), name };
-  });
+// Escreve um ZIP transmitindo cada arquivo (ZIP64 quando necessário). Cada
+// entrada informa como abrir sua origem: Blob, Postgres ou Google Drive.
+// Criado para as Coletas e reaproveitado pelo "baixar tudo" das salas.
+async function writeZipArchive(res, entries) {
   const totalSize = entries.reduce((sum, entry) => sum + entry.size + 92 + entry.name.length * 2, 22);
   const zip64TotalSize = totalSize + entries.length * 56 + 76;
   if (!Number.isSafeInteger(totalSize) || !Number.isSafeInteger(zip64TotalSize)) throw Object.assign(new Error('Esta coleta excede o limite de tamanho de um arquivo ZIP.'), { status: 413 });
@@ -2096,28 +2079,16 @@ async function streamCollectionZip(res, rows, title) {
     await writeZipChunk(res, local); position += local.length;
 
     let crc = 0xffffffff, size = 0;
-    let source;
-    if (isBlobPath(entry.library_stored_name || entry.stored_name)) {
-      const { get } = await blobSdk();
-      const stored = await get(entry.library_stored_name || entry.stored_name, { access: 'private' });
-      if (!stored || !stored.stream) throw new Error('Um dos arquivos da coleta não está disponível.');
-      source = Readable.fromWeb(stored.stream);
-    } else if (entry.library_item_id) {
-      const stored = await one("SELECT encode(data, 'base64') AS data FROM personal_library_blobs WHERE item_id = $1", [entry.library_item_id]);
-      if (!stored) throw new Error('Um dos arquivos da coleta não está disponível.');
-      source = Readable.from([Buffer.from(stored.data, 'base64')]);
-    } else {
-      const stored = await one("SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1", [entry.id]);
-      if (!stored) throw new Error('Um dos arquivos da coleta não está disponível.');
-      source = Readable.from([Buffer.from(stored.data, 'base64')]);
-    }
+    // A origem é aberta só agora: arquivos são lidos em série, nunca todos de
+    // uma vez (memória constante mesmo com dezenas de arquivos grandes).
+    const source = await entry.open();
     for await (const part of source) {
       const chunk = Buffer.isBuffer(part) ? part : Buffer.from(part);
       size += chunk.length; position += chunk.length; crc = updateZipCrc(crc, chunk);
-      if (size > entry.size) throw new Error('Um arquivo da coleta excedeu o tamanho registrado.');
+      if (size > entry.size) throw new Error(entry.sizeMessage || 'Um arquivo excedeu o tamanho registrado.');
       await writeZipChunk(res, chunk);
     }
-    if (size !== entry.size) throw new Error('Um arquivo da coleta chegou incompleto.');
+    if (size !== entry.size) throw new Error(entry.incompleteMessage || 'Um arquivo chegou incompleto.');
     crc = (crc ^ 0xffffffff) >>> 0;
     const descriptor = Buffer.alloc(zip64 ? 24 : 16);
     descriptor.writeUInt32LE(0x08074b50, 0); descriptor.writeUInt32LE(crc, 4);
@@ -2171,9 +2142,104 @@ async function streamCollectionZip(res, rows, title) {
   await once(res, 'finish');
 }
 
+// Nome único dentro do ZIP (evita sobrescrever "foto.jpg" de duas pessoas).
+function uniqueZipName(original, used, key) {
+  const count = (used.get(key) || 0) + 1;
+  used.set(key, count);
+  if (count === 1) return original;
+  const dot = original.lastIndexOf('.');
+  return dot > 0 ? original.slice(0, dot) + ' (' + count + ')' + original.slice(dot) : original + ' (' + count + ')';
+}
+
+async function streamCollectionZip(res, rows, title) {
+  const usedParticipants = new Map(), participantFolders = new Map(), usedNames = new Map();
+  const entries = rows.map(row => {
+    const participantLabel = String(row.participant_name || 'Participante').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 80) || 'Participante';
+    const recipientId = String(row.recipient_id || participantLabel);
+    let participant = participantFolders.get(recipientId);
+    if (!participant) {
+      const participantKey = participantLabel.toLowerCase();
+      const participantCount = (usedParticipants.get(participantKey) || 0) + 1;
+      usedParticipants.set(participantKey, participantCount);
+      participant = participantCount === 1 ? participantLabel : `${participantLabel} (${participantCount})`;
+      participantFolders.set(recipientId, participant);
+    }
+    const original = cleanCollectionFileName(row.original_name);
+    const fileName = uniqueZipName(original, usedNames, participant.toLowerCase() + '/' + original.toLowerCase());
+    return {
+      name: Buffer.from(participant + '/' + fileName, 'utf8'),
+      size: num(row.size),
+      uploaded_at: row.uploaded_at,
+      open: async () => {
+        if (isBlobPath(row.library_stored_name || row.stored_name)) {
+          const { get } = await blobSdk();
+          const stored = await get(row.library_stored_name || row.stored_name, { access: 'private' });
+          if (!stored || !stored.stream) throw new Error('Um dos arquivos da coleta não está disponível.');
+          return Readable.fromWeb(stored.stream);
+        }
+        if (row.library_item_id) {
+          const stored = await one("SELECT encode(data, 'base64') AS data FROM personal_library_blobs WHERE item_id = $1", [row.library_item_id]);
+          if (!stored) throw new Error('Um dos arquivos da coleta não está disponível.');
+          return Readable.from([Buffer.from(stored.data, 'base64')]);
+        }
+        const stored = await one("SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1", [row.id]);
+        if (!stored) throw new Error('Um dos arquivos da coleta não está disponível.');
+        return Readable.from([Buffer.from(stored.data, 'base64')]);
+      },
+      sizeMessage: 'Um arquivo da coleta excedeu o tamanho registrado.',
+      incompleteMessage: 'Um arquivo da coleta chegou incompleto.'
+    };
+  });
+  return writeZipArchive(res, entries);
+}
+
+// Abre a origem de um arquivo de sala: Google Drive, Vercel Blob ou Postgres.
+async function openRoomFileStream(file) {
+  if (isDriveFileRef(file.stored_name)) {
+    const fileId = driveFileIdFromRef(file.stored_name);
+    const { drive, accountId } = await getGoogleDriveStorageForFile(file.stored_name);
+    const response = await drive.getFile(fileId);
+    const declared = Number(response.headers.get('content-length')) || 0;
+    if (declared > 0) driveMeter.addEgress(accountId, declared);
+    if (!response.body) throw new Error('O arquivo "' + file.original_name + '" não está disponível no Google Drive.');
+    return Readable.fromWeb(response.body);
+  }
+  if (isBlobPath(file.stored_name)) {
+    const { get } = await blobSdk();
+    const stored = await get(file.stored_name, { access: 'private' });
+    if (!stored || !stored.stream) throw new Error('O arquivo "' + file.original_name + '" não está disponível.');
+    return Readable.fromWeb(stored.stream);
+  }
+  const stored = await one("SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1", [file.id]);
+  if (!stored) throw new Error('O arquivo "' + file.original_name + '" não está disponível.');
+  return Readable.from([Buffer.from(stored.data, 'base64')]);
+}
+
+// "Baixar tudo" da sala: um ZIP com todos os arquivos, na ordem da lista.
+async function streamRoomZip(res, files) {
+  const usedNames = new Map();
+  const entries = files.map(file => {
+    const original = cleanCollectionFileName(file.original_name) || 'arquivo';
+    const fileName = uniqueZipName(original, usedNames, original.toLowerCase());
+    return {
+      name: Buffer.from(fileName, 'utf8'),
+      size: num(file.size),
+      uploaded_at: file.uploaded_at,
+      open: () => openRoomFileStream(file),
+      sizeMessage: 'O arquivo "' + fileName + '" excedeu o tamanho registrado.',
+      incompleteMessage: 'O arquivo "' + fileName + '" chegou incompleto. Tente novamente.'
+    };
+  });
+  return writeZipArchive(res, entries);
+}
+
 // ZIPs are assembled inside the Vercel Function (30 s limit). Keep the raw
 // payload within the same safe bound as the Postgres multipart fallback.
 const MAX_COLLECTION_ZIP_BYTES = MAX_FILE_BYTES;
+// Mesma limitação vale para o ZIP da sala: 1 GB / 300 arquivos cabem nos 30 s
+// da função. Acima disso o painel oferece baixar um por um.
+const MAX_ROOM_ZIP_BYTES = 1024 * 1024 * 1024;
+const MAX_ROOM_ZIP_FILES = 300;
 
 
 async function generateSlug(name) {
@@ -4794,6 +4860,54 @@ app.patch('/api/files/:id', requireAuth, wrap(async (req, res) => {
   if (!name) return res.status(400).json({ error: 'Digite um nome para o arquivo' });
   await q('UPDATE files SET original_name = $1 WHERE id = $2', [name, file.id]);
   res.json({ success: true, id: file.id, original_name: name });
+}));
+
+// "Baixar tudo" da sala em um ZIP. O painel consulta a prévia antes para
+// avisar quando o volume passa do que cabe na função (30 s).
+app.get('/api/rooms/:id/zip/info', asMember, wrap(async (req, res) => {
+  const room = await one('SELECT id, name FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada.' });
+  if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Sem permissão para baixar os arquivos desta sala.' });
+  const stats = await one('SELECT COUNT(*)::int AS count, COALESCE(SUM(size), 0)::bigint AS bytes FROM files WHERE room_id = $1', [room.id]);
+  const count = Number(stats && stats.count) || 0;
+  const bytes = num(stats && stats.bytes);
+  res.set('Cache-Control', 'private, no-store');
+  res.json({
+    count,
+    bytes,
+    zip: count > 0 && bytes <= MAX_ROOM_ZIP_BYTES && count <= MAX_ROOM_ZIP_FILES,
+    zip_limit_bytes: MAX_ROOM_ZIP_BYTES,
+    zip_limit_files: MAX_ROOM_ZIP_FILES
+  });
+}));
+
+app.get('/api/rooms/:id/zip', asMember, wrap(async (req, res) => {
+  const room = await one('SELECT id, name FROM rooms WHERE id = $1', [req.params.id]);
+  if (!room) return res.status(404).json({ error: 'Sala não encontrada.' });
+  if (!(await canUseRoom(req.user, room.id))) return res.status(403).json({ error: 'Sem permissão para baixar os arquivos desta sala.' });
+  const files = await q(`SELECT id, original_name, stored_name, size, uploaded_at FROM files
+    WHERE room_id = $1 ORDER BY uploaded_at, id`, [room.id]);
+  if (!files.length) return res.status(404).json({ error: 'Esta sala ainda não tem arquivos para baixar.' });
+  const bytes = files.reduce((sum, file) => sum + num(file.size), 0);
+  if (bytes > MAX_ROOM_ZIP_BYTES || files.length > MAX_ROOM_ZIP_FILES) {
+    return res.status(413).json({
+      error: 'Esta sala tem ' + formatBytes(bytes) + ' em ' + files.length + ' arquivo(s): o ZIP é montado dentro da função e vai até '
+        + formatBytes(MAX_ROOM_ZIP_BYTES) + '. Baixe os arquivos individualmente ou em partes menores.'
+    });
+  }
+  const safeName = cleanCollectionFileName(room.name).replace(/\.[^.]+$/, '').slice(0, 80) || 'sala';
+  const ascii = safeName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_') + '.zip';
+  res.status(200);
+  res.set({
+    'Content-Type': 'application/zip',
+    'Cache-Control': 'private, no-store',
+    'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(safeName + '.zip')}`
+  });
+  try { await streamRoomZip(res, files); }
+  catch (error) {
+    if (res.headersSent) return res.destroy(error);
+    res.status(error.status || 500).json({ error: error.message || 'Não foi possível montar o ZIP da sala.' });
+  }
 }));
 
 app.get('/download/:fileId', asMember, wrap(async (req, res) => {

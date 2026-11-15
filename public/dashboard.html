@@ -78,6 +78,12 @@
       .form-row input { min-width:0; width:100%; }
       .form-row .btn { width:auto; }
     }
+      #roomModal .section-title { flex-wrap: wrap; row-gap: 8px; }
+      #roomModal .section-title::after { display: none; }
+      #roomModal .section-action { margin-left: auto; min-height: 34px; }
+      @media (max-width: 640px) {
+        #roomModal .section-action { width: 100%; margin-left: 0; min-height: 42px; justify-content: center; }
+      }
   </style>
   <link rel="stylesheet" href="/css/mobile.css?v=20261112a">
   <script src="/js/mobile.js?v=20261014o" defer></script>
@@ -252,7 +258,7 @@
             <input id="chatFileInput" type="file" multiple hidden accept="image/*,video/*,audio/*,application/pdf,*/*" capture>
           </label>
         </form>
-        <div class="section-title"><i class="fas fa-folder-open"></i> Arquivos <span id="fileCount" class="section-count"></span></div>
+        <div class="section-title"><i class="fas fa-folder-open"></i> Arquivos <span id="fileCount" class="section-count"></span><button class="btn btn-sm btn-outline section-action" id="downloadRoomBtn" type="button" onclick="downloadRoomZip()" title="Baixar todos os arquivos da sala em um ZIP" disabled><i class="fas fa-file-zipper"></i> <span>Baixar tudo</span></button></div>
         <div id="roomFiles" class="file-list"></div>
         <div class="section-title"><i class="fas fa-comments"></i> Chat da sala</div>
         <div class="chat-conversation-controls" id="roomChatControls">
@@ -536,6 +542,7 @@
       if (requestId !== filesRequestId || roomId !== currentRoom) return;
       const room = rooms.find(item => item.id === roomId);
       if (!room) { toast('Esta sala expirou ou foi removida', 'error'); closeRoom(); loadRooms(); return; }
+      updateRoomDownloadButton(room.files.length);
       const sig = JSON.stringify(room.files); if (sig === lastFilesSig) return; lastFilesSig = sig;
       document.getElementById('fileCount').textContent = '(' + room.files.length + ')';
       const list = document.getElementById('roomFiles'); list.innerHTML = renderRoomFiles(room.files);
@@ -544,6 +551,66 @@
         button.setAttribute('aria-expanded', String(!expanded)); content.hidden = expanded;
       }));
     }
+    function updateRoomDownloadButton(count) {
+      const button = document.getElementById('downloadRoomBtn');
+      if (!button) return;
+      const total = Number(count) || 0;
+      button.disabled = total === 0;
+      button.title = total ? 'Baixar os ' + total + ' arquivo(s) da sala em um ZIP' : 'A sala ainda não tem arquivos';
+      const label = button.querySelector('span');
+      if (label) label.textContent = total ? 'Baixar tudo (' + total + ')' : 'Baixar tudo';
+    }
+
+    // "Baixar tudo" da sala. O ZIP é transmitido pelo servidor; quando o volume
+    // passa do limite da função, o próprio servidor avisa e oferecemos um por um.
+    async function downloadRoomZip() {
+      const roomId = currentRoom;
+      if (!roomId) return;
+      const button = document.getElementById('downloadRoomBtn');
+      if (button) button.disabled = true;
+      try {
+        const info = await api('/api/rooms/' + encodeURIComponent(roomId) + '/zip/info');
+        if (!info || !info.count) { toast('A sala ainda não tem arquivos para baixar.', 'warning'); return; }
+        if (!info.zip) {
+          const pergunta = 'Esta sala tem ' + info.count + ' arquivo(s) e ' + formatSize(info.bytes) + '.\n'
+            + 'O ZIP é montado no servidor e vai até ' + formatSize(info.zip_limit_bytes) + '.\n\n'
+            + 'Baixar os arquivos um por um agora? O navegador pode pedir permissão para vários downloads.';
+          if (confirm(pergunta)) downloadRoomFilesOneByOne(roomId);
+          return;
+        }
+        // Link direto: o navegador faz streaming, sem carregar o ZIP na memória.
+        const link = document.createElement('a');
+        link.href = '/api/rooms/' + encodeURIComponent(roomId) + '/zip';
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        toast('Montando o ZIP com ' + info.count + ' arquivo(s)…');
+      } catch (error) {
+        toast(error && error.message ? error.message : 'Não foi possível preparar o download.', 'error');
+      } finally {
+        if (button) button.disabled = false;
+        if (currentRoom === roomId) loadFiles().catch(() => {});
+      }
+    }
+
+    function downloadRoomFilesOneByOne(roomId) {
+      api('/api/rooms').then(rooms => {
+        const room = rooms.find(item => item.id === roomId);
+        const files = (room && room.files) || [];
+        if (!files.length) { toast('A sala ainda não tem arquivos para baixar.', 'warning'); return; }
+        files.forEach((file, index) => setTimeout(() => {
+          const frame = document.createElement('iframe');
+          frame.hidden = true;
+          frame.setAttribute('aria-hidden', 'true');
+          frame.src = '/download/' + encodeURIComponent(file.id);
+          document.body.appendChild(frame);
+          setTimeout(() => frame.remove(), 120000);
+        }, index * 800));
+        toast('Baixando ' + files.length + ' arquivo(s)…');
+      }).catch(error => toast(error && error.message ? error.message : 'Não foi possível listar os arquivos.', 'error'));
+    }
+
     async function deleteFile(id) { if (!confirm('Excluir este arquivo?')) return; try { await api('/api/files/' + id, { method:'DELETE' }); toast('Arquivo excluído'); lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); } catch (error) { toast(error.message, 'error'); } }
     let newRoomMinutes = 5;
     function showCreateRoom() { document.getElementById('createRoomModal').style.display = 'flex'; document.getElementById('newRoomName').focus(); }

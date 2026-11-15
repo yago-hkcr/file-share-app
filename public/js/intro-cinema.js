@@ -231,7 +231,7 @@
       visual:
         '<div class="v-rooms">' +
           '<svg class="v-link" viewBox="0 0 100 100" aria-hidden="true"><line x1="50" y1="50" x2="50" y2="12"/><line x1="50" y1="50" x2="20" y2="84"/><line x1="50" y1="50" x2="80" y2="84"/></svg>' +
-          '<div class="v-hub"><span><i class="fas fa-folder-open"></i></span><small>EQUIPE</small></div>' +
+          '<div class="v-hub"><i class="fas fa-folder-open"></i><small>EQUIPE</small></div>' +
           '<div class="v-peer" data-pos="0" style="--i:0"><i class="fas fa-user"></i></div>' +
           '<div class="v-peer" data-pos="1" style="--i:1"><i class="fas fa-user"></i></div>' +
           '<div class="v-peer" data-pos="2" style="--i:2"><i class="fas fa-user"></i></div>' +
@@ -243,7 +243,7 @@
       text: 'Envie um link com prazo. A pessoa manda o que você pediu e não vê nada além do próprio envio.',
       visual:
         '<div class="v-collect">' +
-          '<div class="v-chip"><i class="fas fa-link"></i> arquive.online/enviar/design-2026</div>' +
+          '<div class="v-chip"><i class="fas fa-link"></i><span class="v-chip-text">arquive.online/enviar/design-2026</span></div>' +
           '<div class="v-flow"><span><i class="fas fa-caret-right"></i></span><span><i class="fas fa-caret-right"></i></span><span><i class="fas fa-caret-right"></i></span></div>' +
           '<div class="v-drop"><i class="fas fa-file-image" style="--i:0"></i><i class="fas fa-file-pdf" style="--i:1"></i><i class="fas fa-file-video" style="--i:2"></i></div>' +
           '<div class="v-lock"><i class="fas fa-lock"></i> cada um vê só o seu</div>' +

@@ -139,40 +139,44 @@
 .cine-visual {
   position: relative;
   aspect-ratio: 1 / 1;
-  width: min(100%, 380px);
+  width: min(100%, 360px);
   justify-self: center;
   display: grid; place-items: center;
+  padding: 3%;
 }
+/* Halo, não moldura: o conteúdo pode passar por cima do anel sem parecer
+   cortado (era o que acontecia no celular). */
 .cine-visual::before {
   content: "";
-  position: absolute; inset: 6%;
+  position: absolute; inset: 0;
   border-radius: 50%;
-  border: 1px solid rgba(34, 211, 238, .28);
-  box-shadow: 0 0 60px rgba(34, 197, 94, .18) inset;
+  border: 1px solid rgba(34, 211, 238, .16);
+  background: radial-gradient(circle at 50% 50%, rgba(34, 197, 94, .14), rgba(4, 16, 10, 0) 68%);
 }
 .cine-visual::after {
   content: "";
-  position: absolute; inset: 6%;
+  position: absolute; inset: 0;
   border-radius: 50%;
-  border: 2px solid transparent;
-  border-top-color: rgba(74, 222, 128, .8);
-  border-right-color: rgba(34, 211, 238, .35);
-  animation: cineSpin 7s linear infinite;
+  border: 1.5px solid transparent;
+  border-top-color: rgba(74, 222, 128, .55);
+  border-right-color: rgba(34, 211, 238, .22);
+  animation: cineSpin 9s linear infinite;
 }
 @keyframes cineSpin { to { transform: rotate(360deg); } }
 
 /* cena 1 — envio */
-.v-upload { width: 78%; display: grid; gap: 10px; justify-items: center; }
+.v-upload { width: 82%; display: grid; gap: 9px; justify-items: center; }
 .v-file {
-  width: 100%; display: flex; align-items: center; gap: 10px;
-  padding: 12px 14px; border-radius: 14px;
+  width: 100%; display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 11px 13px; border-radius: 14px;
   background: rgba(6, 30, 18, .85);
   border: 1px solid rgba(74, 222, 128, .28);
   box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
 }
 .v-file i { color: #4ade80; font-size: 20px; }
-.v-file b { display: block; font-size: 13px; font-weight: 600; }
-.v-file small { color: #7ba890; font-size: 11px; }
+.v-file span { min-width: 0; }
+.v-file b { display: block; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v-file small { display: block; color: #7ba890; font-size: 11px; }
 .v-bar { width: 100%; height: 6px; border-radius: 999px; background: rgba(148, 163, 184, .2); overflow: hidden; }
 .v-bar i { display: block; height: 100%; width: 100%; border-radius: inherit; background: linear-gradient(90deg, #22d3ee, #4ade80); }
 .cine-scene.is-active .v-bar i { animation: vFill 4.2s cubic-bezier(.35, .05, .1, 1) both; }
@@ -181,26 +185,26 @@
 .v-meta b { color: #eafff3; font-variant-numeric: tabular-nums; }
 
 /* cena 2 — salas */
-.v-rooms { position: relative; width: 82%; aspect-ratio: 1; display: grid; place-items: center; }
+.v-rooms { position: relative; width: 86%; aspect-ratio: 1; display: grid; place-items: center; }
 .v-hub {
   width: 96px; height: 96px; border-radius: 24px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
   background: linear-gradient(160deg, rgba(34, 197, 94, .28), rgba(6, 30, 18, .9));
   border: 1px solid rgba(74, 222, 128, .5);
   box-shadow: 0 0 40px rgba(74, 222, 128, .28);
   text-align: center;
 }
-.v-hub i { font-size: 25px; line-height: 1; color: #bbf7d0; }
-.v-hub small { font-size: 8.5px; line-height: 1; letter-spacing: .14em; color: #86efac; }
+.v-hub i { display: grid; place-items: center; height: 26px; font-size: 21px; line-height: 1; color: #bbf7d0; }
+.v-hub small { display: block; font-size: 8px; line-height: 1; letter-spacing: .13em; color: #86efac; }
 .v-peer {
   position: absolute; width: 46px; height: 46px; border-radius: 50%;
   display: grid; place-items: center; font-size: 15px; color: #d1fae5;
   background: rgba(6, 30, 18, .95); border: 1px solid rgba(34, 211, 238, .45);
 }
 .cine-scene.is-active .v-peer { animation: vPop .5s cubic-bezier(.2, 1.4, .4, 1) both; animation-delay: calc(var(--i) * 160ms + 500ms); }
-.v-peer[data-pos="0"] { top: 4%; left: 50%; translate: -50% 0; }
-.v-peer[data-pos="1"] { bottom: 8%; left: 12%; }
-.v-peer[data-pos="2"] { bottom: 8%; right: 12%; }
+.v-peer[data-pos="0"] { top: 2%; left: 50%; translate: -50% 0; }
+.v-peer[data-pos="1"] { bottom: 6%; left: 9%; }
+.v-peer[data-pos="2"] { bottom: 6%; right: 9%; }
 @keyframes vPop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
 .v-link { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .v-link line, .v-link path { stroke: rgba(74, 222, 128, .6); stroke-width: 1.4; stroke-dasharray: 4 6; fill: none; opacity: .6; }
@@ -209,13 +213,14 @@
 @keyframes vDash { to { stroke-dashoffset: -40; } }
 
 /* cena 3 — coletas */
-.v-collect { width: 80%; display: grid; gap: 12px; justify-items: stretch; }
+.v-collect { width: 86%; display: grid; gap: 10px; justify-items: stretch; }
 .v-chip {
   display: flex; align-items: center; gap: 8px; padding: 9px 13px; border-radius: 999px;
   background: rgba(6, 30, 18, .9); border: 1px solid rgba(34, 211, 238, .4);
-  font-size: 11px; color: #a5f3fc; letter-spacing: .02em;
-  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: 11px; color: #a5f3fc; letter-spacing: .02em; min-width: 0;
 }
+.v-chip i { flex: 0 0 auto; }
+.v-chip-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .v-chip i { color: #22d3ee; }
 .v-flow { display: flex; align-items: center; justify-content: center; gap: 8px; color: #4ade80; font-size: 13px; }
 .v-flow span { animation: vArrow 1.4s ease-in-out infinite; }
@@ -237,10 +242,11 @@
   font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #86efac;
   padding: 6px 12px; border-radius: 999px; background: rgba(34, 197, 94, .12);
   border: 1px solid rgba(74, 222, 128, .3);
+  white-space: nowrap;
 }
 
 /* cena 4 — acervo */
-.v-shelf { width: 84%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.v-shelf { width: 76%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
 .v-tile {
   aspect-ratio: 1; border-radius: 14px; display: grid; place-items: center;
   background: rgba(6, 30, 18, .9); border: 1px solid rgba(74, 222, 128, .22);
@@ -251,9 +257,9 @@
 .v-tile:nth-child(2n) { border-color: rgba(34, 211, 238, .3); color: #a5f3fc; }
 
 /* cena 5 — marca */
-.v-brand { display: grid; place-items: center; gap: 16px; text-align: center; }
+.v-brand { display: grid; place-items: center; gap: 14px; text-align: center; width: 100%; }
 .v-mark {
-  width: 118px; height: 118px; border-radius: 34px; display: grid; place-items: center;
+  width: 108px; height: 108px; border-radius: 32px; display: grid; place-items: center;
   background: radial-gradient(circle at 30% 25%, rgba(74, 222, 128, .35), rgba(4, 16, 10, .95));
   border: 1px solid rgba(74, 222, 128, .55);
   box-shadow: 0 0 70px rgba(74, 222, 128, .35), 0 0 120px rgba(34, 211, 238, .18);
@@ -266,8 +272,8 @@
   animation: vPulse 2.4s ease-out infinite;
 }
 @keyframes vPulse { 0% { transform: scale(.94); opacity: .9; } 100% { transform: scale(1.12); opacity: 0; } }
-.v-word { font-family: Orbitron, Inter, sans-serif; font-weight: 800; letter-spacing: .12em; font-size: 15px; color: #bbf7d0; }
-.v-word small { display: block; margin-top: 6px; letter-spacing: .3em; font-size: 9px; color: #4b8f6d; }
+.v-word { font-family: Orbitron, Inter, sans-serif; font-weight: 800; letter-spacing: .1em; font-size: 13px; color: #bbf7d0; }
+.v-word small { display: block; margin-top: 6px; letter-spacing: .22em; font-size: 8px; color: #63b48c; }
 
 /* ---------- porta de entrada ---------- */
 .cine-gate {
@@ -314,9 +320,16 @@
 
 @media (max-width: 760px) {
   .cine-foot-note { font-size: 9px; letter-spacing: .1em; padding: 8px 12px 12px; }
-  .cine-scene { grid-template-columns: 1fr; gap: 10px; text-align: center; }
+  .cine-scene { grid-template-columns: 1fr; gap: 8px; text-align: center; }
   .cine-copy { order: 2; }
-  .cine-visual { order: 1; width: min(56vw, 220px); }
+  .cine-visual { order: 1; width: min(62vw, 250px); }
+  .v-mark { width: 92px; height: 92px; border-radius: 28px; font-size: 36px; }
+  .v-hub { width: 86px; height: 86px; border-radius: 22px; gap: 13px; }
+  .v-hub i { height: 24px; font-size: 19px; }
+  .v-peer { width: 42px; height: 42px; }
+  .v-lock { font-size: 9px; letter-spacing: .06em; padding: 5px 10px; }
+  .v-chip { font-size: 10px; }
+  .v-shelf { width: 72%; }
   .cine-text { margin: 0 auto; }
   .cine-kicker { justify-content: center; }
   .cine-title { font-size: clamp(24px, 7vw, 34px); margin-bottom: 10px; }
