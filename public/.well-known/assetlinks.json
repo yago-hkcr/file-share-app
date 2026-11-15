@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "online.arquive.app",
+        "sha256_cert_fingerprints": ["90:36:C6:9F:9E:17:CF:FA:2F:C8:78:83:AB:62:0F:AC:AC:4F:B5:24:C4:78:E5:C4:1A:D8:A4:4B:A3:FC:0A:18"]
+      }
+    }]
