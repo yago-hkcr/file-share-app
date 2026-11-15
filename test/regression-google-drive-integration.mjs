@@ -150,6 +150,14 @@ assert.match(driveTransport, /directBlocked = true/, 'falha de CORS volta para o
 assert.match(server, /app\.post\('\/api\/admin\/google-drive\/accounts\/:id\/test'/, 'dá para testar uma conta isoladamente');
 assert.match(admin, /googleDriveDirectUpload/, 'painel permite desligar o envio direto sem deploy');
 assert.match(admin, /runGoogleDriveReconcile\(\)/, 'painel dispara a verificação de integridade');
+// Página pública de privacidade exigida pelo Google para publicar o app.
+const privacy = read('public', 'privacidade.html');
+assert.match(server, /app\.get\('\/privacidade'/, 'a política de privacidade é servida em URL pública');
+assert.match(privacy, /Limited Use|Uso limitado/i, 'a política declara o uso limitado dos dados do Google');
+assert.match(privacy, /drive\.file/, 'a política explica o escopo usado no Drive');
+assert.match(privacy, /myaccount\.google\.com\/permissions/, 'a política ensina a revogar o acesso ao Google');
+assert.match(server, /MAIL_FROM/, 'o contato da política usa o serviço de e-mail configurado');
+
 assert.match(admin, /value="best_fit"/, 'painel oferece o modo de menor conta que cabe');
 assert.match(admin, /id="googleDriveCapacityMax"/, 'painel mostra o maior arquivo que cabe');
 assert.match(admin, /id="googleDrivePoolNotice"/, 'painel avisa sobre cota compartilhada/ilimitada');

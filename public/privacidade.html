@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Arquive Online - Política de Privacidade</title>
+  <meta name="description" content="Como o Arquive Online coleta, usa, armazena e exclui dados, incluindo o uso do Google Drive.">
+  <style>
+    :root{--bg:#f6f7f9;--panel:#fff;--ink:#14181d;--muted:#5b6572;--line:#e3e7ec;--accent:#1f7a3f;--accent-soft:rgba(31,122,63,.1)}
+    @media (prefers-color-scheme:dark){:root{--bg:#0d1117;--panel:#141a22;--ink:#e8eef5;--muted:#9aa7b5;--line:#232c38;--accent:#4ade80;--accent-soft:rgba(74,222,128,.12)}}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+    a{color:var(--accent)}
+    .wrap{max-width:840px;margin:0 auto;padding:28px 22px 72px}
+    header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:34px}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.06em;font-size:13px;text-decoration:none;color:var(--ink)}
+    .brand .mark{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent);font-size:15px}
+    .back{font-size:13px;text-decoration:none;color:var(--muted)}
+    .back:hover{color:var(--accent)}
+    h1{font-size:30px;line-height:1.2;margin:0 0 8px}
+    .updated{color:var(--muted);font-size:13px;margin:0 0 26px}
+    .lead{font-size:17px;color:var(--muted);margin:0 0 28px}
+    section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin:0 0 16px}
+    h2{font-size:17px;margin:0 0 12px}
+    h3{font-size:14px;margin:18px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+    p,li{font-size:15px}
+    p{margin:0 0 10px}
+    ul{margin:0 0 10px;padding-left:20px}
+    li{margin:0 0 6px}
+    .callout{border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 10px 10px 0;padding:14px 16px;margin:14px 0}
+    .callout p:last-child{margin-bottom:0}
+    code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--accent-soft);padding:1px 6px;border-radius:5px}
+    footer{margin-top:28px;color:var(--muted);font-size:13px;text-align:center}
+    @media (max-width:520px){h1{font-size:24px}.wrap{padding:22px 16px 56px}section{padding:18px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="/"><span class="mark">◈</span> ARQUIVE ONLINE</a>
+      <a class="back" href="/">← Voltar ao site</a>
+    </header>
+
+    <h1>Política de Privacidade</h1>
+    <p class="updated">Última atualização: 15 de novembro de 2026</p>
+    <p class="lead">Esta política explica quais dados o Arquive Online trata, para que serve cada um, onde ficam guardados e como você pode pedir acesso ou exclusão.</p>
+
+    <section>
+      <h2>1. Quem somos</h2>
+      <p>O Arquive Online é um serviço privado de compartilhamento de arquivos, com salas, mensagens, coletas de arquivos e um acervo pessoal. O serviço é operado pelo responsável pelo site <a href="https://www.arquive.online">arquive.online</a>.</p>
+      <p>Contato para qualquer assunto de privacidade: <a href="mailto:contato@arquive.online">contato@arquive.online</a>.</p>
+    </section>
+
+    <section>
+      <h2>2. Dados que tratamos</h2>
+      <h3>Conta</h3>
+      <ul>
+        <li>Nome de usuário, e-mail, senha (guardada apenas como hash, nunca em texto legível), papel na plataforma e status de aprovação.</li>
+        <li>Foto de perfil, se você enviar uma, e preferências de aparência e notificações.</li>
+      </ul>
+      <h3>Uso do serviço</h3>
+      <ul>
+        <li>Salas, mensagens, coletas, destinatários e convites que você cria.</li>
+        <li>Registros de acesso (data, endereço IP, navegador) usados para segurança e prevenção de abuso.</li>
+        <li>Cookies estritamente necessários: um cookie de sessão e, se você marcar “lembrar de mim”, um token de longa duração. Ambos são <code>HttpOnly</code> e não são usados para publicidade.</li>
+      </ul>
+      <h3>Arquivos</h3>
+      <ul>
+        <li>Nome, tamanho, tipo, data de envio e destino do arquivo.</li>
+        <li>O conteúdo do arquivo, armazenado em contas do Google Drive administradas pelo serviço ou no provedor de armazenamento contratado para hospedagem.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>3. Google Drive e dados do Google</h2>
+      <p>Para guardar os arquivos enviados, o serviço usa a API do Google Drive com o escopo <code>drive.file</code>. Esse escopo permite ao aplicativo criar, ler, copiar e excluir <strong>apenas os arquivos que ele mesmo criou</strong>. O aplicativo não lista, não lê e não altera outros arquivos da conta Google.</p>
+      <div class="callout">
+        <p><strong>Uso limitado (Limited Use).</strong> O uso das informações recebidas das APIs do Google obedece à <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Política de Dados do Usuário dos Serviços de API do Google</a>, incluindo os requisitos de Uso Limitado. Os dados do Google são usados exclusivamente para armazenar, entregar e excluir os arquivos que você envia por este serviço.</p>
+      </div>
+      <p>Não usamos dados do Google para publicidade, não os vendemos, não os transferimos a terceiros fora do necessário para operar o serviço, não os usamos para treinar modelos de aprendizado de máquina e não permitimos que pessoas leiam esses dados, exceto quando você autoriza explicitamente, quando há obrigação legal, por motivo de segurança ou quando é necessário para fornecer um recurso que você pediu.</p>
+      <p>Os tokens de acesso ao Google ficam cifrados no servidor (AES-256-GCM) e nunca são enviados ao navegador. Você pode revogar o acesso do aplicativo a qualquer momento em <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a>.</p>
+    </section>
+
+    <section>
+      <h2>4. Para que usamos os dados</h2>
+      <ul>
+        <li>Autenticar você e manter sua sessão.</li>
+        <li>Entregar, compartilhar e excluir os arquivos conforme as ações que você faz nas salas, coletas e no acervo.</li>
+        <li>Enviar notificações do próprio serviço e e-mails de recuperação de senha.</li>
+        <li>Proteger o serviço: limitar tentativas de login, registrar acessos e investigar abuso.</li>
+        <li>Medir capacidade de armazenamento e uso das APIs para manter o serviço funcionando.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. Compartilhamento com terceiros</h2>
+      <p>Não vendemos dados pessoais. Usamos apenas fornecedores necessários para operar o serviço:</p>
+      <ul>
+        <li><strong>Google</strong> — armazenamento dos arquivos no Google Drive e login/autorização das contas administrativas.</li>
+        <li><strong>Provedor de hospedagem e banco de dados</strong> — execução da aplicação e armazenamento das informações de conta, salas e metadados dos arquivos.</li>
+        <li><strong>Serviço de envio de e-mail</strong> — entrega de mensagens transacionais, como recuperação de senha.</li>
+      </ul>
+      <p>Cada fornecedor trata os dados apenas na medida necessária para prestar o serviço contratado.</p>
+    </section>
+
+    <section>
+      <h2>6. Retenção e exclusão</h2>
+      <ul>
+        <li><strong>Arquivos:</strong> ficam guardados enquanto existirem na sala, na coleta ou no acervo. Ao excluir, o serviço apaga o arquivo no armazenamento e mantém uma fila de repetição caso o provedor falhe.</li>
+        <li><strong>Mensagens temporárias:</strong> expiram automaticamente no prazo definido ao enviá-las.</li>
+        <li><strong>Salas e coletas:</strong> podem ter prazo de validade; ao expirar, o conteúdo é removido.</li>
+        <li><strong>Registros de segurança:</strong> mantidos por até 30 dias.</li>
+        <li><strong>Conta:</strong> excluída a pedido do titular, junto com os dados associados. Arquivos que já foram copiados para o acervo de outra pessoa permanecem com ela.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>7. Segurança</h2>
+      <p>O acesso ao site usa HTTPS. Senhas são guardadas com hash <code>bcrypt</code>. Tokens do Google são cifrados no servidor. O acesso a arquivos exige sessão autenticada e permissão na sala ou na coleta correspondente, e os links de download são servidos pela própria aplicação, não por URLs públicas permanentes.</p>
+    </section>
+
+    <section>
+      <h2>8. Seus direitos (LGPD)</h2>
+      <p>Você pode pedir acesso, correção, portabilidade ou exclusão dos seus dados, além de revogar consentimentos, pelo e-mail <a href="mailto:contato@arquive.online">contato@arquive.online</a>. Respondemos no prazo previsto na Lei Geral de Proteção de Dados (Lei 13.709/2018).</p>
+    </section>
+
+    <section>
+      <h2>9. Alterações desta política</h2>
+      <p>Se esta política mudar, a data de atualização no topo será alterada e as mudanças relevantes serão comunicadas dentro do serviço.</p>
+    </section>
+
+    <footer>Arquive Online · <a href="/">arquive.online</a></footer>
+  </div>
+</body>
+</html>

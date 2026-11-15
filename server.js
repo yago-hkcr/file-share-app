@@ -2255,6 +2255,11 @@ app.get('/', wrap(async (req, res) => {
   res.sendFile(page('index.html'));
 }));
 app.get('/register', (req, res) => res.sendFile(page('register.html')));
+// Página pública exigida pelo Google OAuth (homepage/privacy policy do app).
+app.get('/privacidade', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.sendFile(page('privacidade.html'));
+});
 app.get('/forgot-password', (req, res) => res.sendFile(page('forgot-password.html')));
 app.get('/reset-password', (req, res) => res.sendFile(page('reset-password.html')));
 // Compatibilidade: o login fica na raiz ("/"); /login apenas redireciona para lá.
