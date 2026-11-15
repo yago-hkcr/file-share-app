@@ -40,6 +40,9 @@ const fetchImpl = async (url, options = {}) => {
   if (target.includes('/drive/v3/files?') && target.includes('Arquive+Online')) {
     return response(200, { body: { files: [{ id: 'folderRoot123', name: 'Arquive Online' }] } });
   }
+  if (target.startsWith('https://www.googleapis.com/drive/v3/files?') && new URL(target).searchParams.get('q') === 'trashed = false') {
+    return response(200, { body: { files: [{ id: 'appFile123', name: 'a.bin', appProperties: { fileshareUploadId: 'u1' } }] } });
+  }
   if (target.includes('/drive/v3/files?') && target.includes('mimeType')) {
     return response(200, { body: { files: [] } });
   }
@@ -107,6 +110,16 @@ await assert.rejects(() => storage.getFileMetadata('deadFile123'), error => {
 
 const ids = await storage.generateIds(2);
 assert.deepEqual(ids, ['generatedFileId123']);
+
+// A listagem para reconciliação não usa "appProperties has { key=... }" (o
+// Drive rejeita chave sem valor nesse campo com HTTP 400; invalid).
+const listed = await storage.listAppFiles({ pageSize: 200 });
+assert.equal(listed.files[0].id, 'appFile123');
+const listUrl = new URL(calls.find(call => new URL(call.url).searchParams.get('q') === 'trashed = false').url);
+assert.equal(listUrl.searchParams.get('q'), 'trashed = false');
+assert.equal(listUrl.searchParams.get('pageSize'), '200');
+assert.equal(listUrl.searchParams.get('spaces'), 'drive');
+assert.equal(listUrl.searchParams.get('q').includes('appProperties'), false);
 assert.equal(DRIVE_DIRECT_CHUNK_BYTES, 16 * 1024 * 1024, 'blocos maiores no envio direto');
 
 console.log('Retry, erros por reason, pasta, ID pré-gerado e CORS do Drive passaram.');

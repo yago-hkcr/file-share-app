@@ -215,13 +215,18 @@ async function getGoogleDriveStorage(accountId) {
 
 // Marca a conta com o motivo do último erro. Erros de autorização tiram a conta
 // da rotação até uma nova conexão; os demais só registram o motivo.
-async function markGoogleDriveAccountError(accountId, error) {
+async function markGoogleDriveAccountError(accountId, error, operation = '') {
   const info = classifyGoogleDriveError(error);
+  const label = [info.status || '', info.reason || info.kind || ''].filter(Boolean).join(' ');
   if (accountId) {
     await q(`UPDATE google_drive_accounts SET last_error_at = $1, last_error_reason = $2,
         needs_reauth = CASE WHEN $3 = 1 THEN 1 ELSE needs_reauth END
-      WHERE id = $4`, [ts(), String(info.reason || info.kind || '').slice(0, 80), info.kind === 'auth' ? 1 : 0, accountId])
+      WHERE id = $4`, [ts(), label.slice(0, 80), info.kind === 'auth' ? 1 : 0, accountId])
       .catch(() => {});
+    // Diagnóstico no log da função (sem tokens nem URLs de sessão).
+    if (operation || info.kind !== 'quota') {
+      console.error(`Drive erro${operation ? ' em ' + operation : ''} (conta ${String(accountId).slice(0, 8)}): ${label || info.kind}`);
+    }
   }
   return info;
 }
@@ -440,7 +445,7 @@ async function refreshGoogleDriveAccountQuota(accountId, { force = false } = {})
     return about;
   } catch (error) {
     googleDriveQuotaRefresh.at.set(key, startedAt);
-    await markGoogleDriveAccountError(key, error);
+    await markGoogleDriveAccountError(key, error, 'about.get');
     throw error;
   } finally {
     googleDriveQuotaRefresh.inflight.delete(key);
@@ -580,7 +585,7 @@ async function createDriveUploadSession({ userId, destinationType, roomId = null
       lastError = error;
       await q("UPDATE google_drive_uploads SET status = 'failed', updated_at = $1 WHERE upload_id = $2 AND status = 'uploading'", [ts(), uploadId]).catch(() => {});
       await releaseGoogleDriveReservation(account.id, requestedBytes);
-      const info = await markGoogleDriveAccountError(account.id, error);
+      const info = await markGoogleDriveAccountError(account.id, error, 'nova sessão');
       excluded.add(String(account.id));
       if (info.kind === 'quota') {
         await refreshGoogleDriveAccountQuota(account.id, { force: true }).catch(() => {});
@@ -685,7 +690,7 @@ async function uploadBufferToDrive({ name, mimeType, buffer, uploadId }) {
       if (!file || !file.id) throw new Error('Google Drive não retornou o identificador do arquivo enviado.');
       return driveFileRef(file.id, account.id);
     } catch (error) {
-      const info = await markGoogleDriveAccountError(account.id, error);
+      const info = await markGoogleDriveAccountError(account.id, error, 'upload-buffer');
       if (info.kind === 'quota') {
         excluded.push(String(account.id));
         await refreshGoogleDriveAccountQuota(account.id, { force: true }).catch(() => {});
@@ -2734,17 +2739,18 @@ app.post('/api/admin/google-drive/reconcile', asAdmin, wrap(async (req, res) => 
         for (const file of page.files || []) {
           seen.add(file.id);
           const uploadId = file.appProperties && file.appProperties.fileshareUploadId;
-          const row = uploadId
-            ? await one('SELECT upload_id FROM google_drive_uploads WHERE upload_id = $1 LIMIT 1', [String(uploadId)])
-            : null;
+          // Arquivo visível ao app sem o marcador: só informa, não é órfão.
+          if (!uploadId) { report.unattributed = (report.unattributed || 0) + 1; continue; }
+          const row = await one('SELECT upload_id FROM google_drive_uploads WHERE upload_id = $1 LIMIT 1', [String(uploadId)]);
           if (!row) report.orphans.push({ accountId: account.id, fileId: file.id, name: file.name, size: Number(file.size) || 0, createdTime: file.createdTime || null });
         }
         pageToken = page.nextPageToken || '';
         if (seen.size >= 5000) { report.truncated = true; break; }
       } while (pageToken);
     } catch (error) {
-      const info = await markGoogleDriveAccountError(account.id, error);
-      report.accounts.push({ id: account.id, error: info.kind, reason: info.reason });
+      const info = await markGoogleDriveAccountError(account.id, error, 'listar arquivos');
+      report.accountErrors = (report.accountErrors || 0) + 1;
+      report.accounts.push({ id: account.id, error: info.kind, reason: info.reason, status: info.status || 0 });
       continue;
     }
     const rows = await q(`SELECT upload_id, file_id FROM google_drive_uploads
@@ -3615,7 +3621,7 @@ app.post('/api/google-drive/uploads/:uploadId/status', asMember, wrap(async (req
     return res.json({ complete: false, next_offset: state.nextOffset });
   } catch (error) {
     const accountId = upload.drive_account_id;
-    const info = await markGoogleDriveAccountError(accountId, error);
+    const info = await markGoogleDriveAccountError(accountId, error, 'consulta de status');
     if (info.kind === 'quota' || info.kind === 'auth') {
       if (info.kind === 'quota') await refreshGoogleDriveAccountQuota(accountId, { force: true }).catch(() => {});
       const replacement = await restartDriveUploadSession(upload, req.user.id, accountId);
@@ -3660,7 +3666,7 @@ app.post('/api/google-drive/uploads/:uploadId/chunk', asMember, express.raw({ ty
   try {
     result = await drive.uploadChunkFromServer(upload.session_url, total, start, req.body);
   } catch (error) {
-    const info = await markGoogleDriveAccountError(accountId, error);
+    const info = await markGoogleDriveAccountError(accountId, error, 'bloco');
     // Qualquer 4xx do bloco invalida a sessão: abrir outra é a única saída.
     if (info.sessionInvalid) {
       const expired = await q("UPDATE google_drive_uploads SET status = 'failed', session_url_enc = '', updated_at = $1 WHERE upload_id = $2 AND user_id = $3 AND status = 'uploading' AND drive_account_id = $4 RETURNING upload_id", [ts(), upload.upload_id, req.user.id, accountId]);

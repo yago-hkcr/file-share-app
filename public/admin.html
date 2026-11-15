@@ -107,7 +107,7 @@
           <div><span class="storage-eyebrow">CENTRAL DE CONTROLE</span><h2><i class="fas fa-cloud"></i> Armazenamento</h2>
             <p class="storage-subtitle">Conecte contas do Google Drive para aumentar o armazenamento total disponível para anexos.</p></div>
           <div class="storage-heading-actions">
-            <button id="googleDriveRefresh" class="btn btn-outline storage-refresh" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Atualizar status</button>
+            <button id="googleDriveRefresh" class="btn btn-outline storage-refresh" type="button" onclick="loadGoogleDriveStatus(true)"><i class="fas fa-rotate"></i> Atualizar status</button>
             <button id="googleDriveReconcile" class="btn btn-outline storage-refresh" type="button" onclick="runGoogleDriveReconcile()"><i class="fas fa-shield-halved"></i> Verificar integridade</button>
             <a id="googleDriveConnectNew" class="btn btn-green" href="#" onclick="connectNewGoogleDrive(event)" hidden><i class="fab fa-google-drive"></i> Conectar outra conta</a>
           </div>
@@ -397,13 +397,15 @@
         if (!response.ok) throw new Error(data.error || 'Não foi possível verificar a integridade.');
         const orphans = Array.isArray(data.orphans) ? data.orphans.length : 0;
         const missing = Array.isArray(data.missing) ? data.missing.length : 0;
+        const accountErrors = Number(data.accountErrors) || 0;
         const lines = [
           orphans ? orphans + ' arquivo(s) no Drive fora do banco (órfãos)' : 'Nenhum arquivo órfão encontrado',
           missing ? missing + ' link(s) quebrado(s) no banco' : 'Nenhum link quebrado encontrado'
         ];
+        if (accountErrors) lines.push(accountErrors + ' conta(s) não puderam ser lidas agora');
         if (text) text.textContent = lines.join(' · ') + (data.truncated ? ' · verificação parcial (limite de tempo)' : '') + '.';
         if (box) box.hidden = false;
-        showToast(orphans || missing ? 'Verificação concluída com avisos.' : 'Integridade confirmada.', orphans || missing ? 'warning' : 'success');
+        showToast(orphans || missing || accountErrors ? 'Verificação concluída com avisos.' : 'Integridade confirmada.', orphans || missing || accountErrors ? 'warning' : 'success');
       } catch (error) {
         showToast(error.message || 'Não foi possível verificar a integridade.', 'error');
       } finally {
@@ -411,7 +413,9 @@
       }
     }
 
-    async function loadGoogleDriveStatus() {
+    // force=true refaz a leitura de cota agora (?refresh=1); a atualização
+    // automática usa o cache de 60s para não gastar cota de API sem motivo.
+    async function loadGoogleDriveStatus(force = false) {
       const badge = document.getElementById('googleDriveBadge');
       const refresh = document.getElementById('googleDriveRefresh');
       const notConfigured = document.getElementById('googleDriveNotConfigured');
@@ -428,7 +432,7 @@
       refresh.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Atualizando…';
       driveStatusRequest = (async () => {
         try {
-          const response = await fetch('/api/admin/google-drive/status', { cache: 'no-store' });
+          const response = await fetch('/api/admin/google-drive/status' + (force === true ? '?refresh=1' : ''), { cache: 'no-store' });
           if (response.status === 401) { window.location.href = '/'; return; }
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error('Não foi possível consultar as contas do Drive.');
