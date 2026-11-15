@@ -4,8 +4,12 @@
 // site), o navegador envia os blocos direto ao Google e o servidor deixa de
 // intermediar bytes. Se o navegador bloquear a origem, o primeiro bloco falha e
 // o envio continua pelo servidor, sem o usuário perceber.
+//
+// Caminho rápido: sessão recém-criada não pergunta a posição (já é 0), o último
+// bloco devolve o ID do arquivo e o registro no banco fecha o upload sem nenhuma
+// chamada extra ao Google.
 export async function uploadDriveFile(session, file, {
-  onProgress = () => {}, signal, onSessionChange = () => {}, fetchImpl = fetch
+  onProgress = () => {}, signal, onSessionChange = () => {}, fresh = false, fetchImpl = fetch
 } = {}) {
   const abortError = () => {
     const error = new Error('Envio cancelado.');
@@ -17,6 +21,7 @@ export async function uploadDriveFile(session, file, {
   const directSession = current => (current && current.direct && typeof current.direct.session_url === 'string'
     ? current.direct.session_url : '');
   let directBlocked = false;
+  let directVerified = false;
 
   const readStatus = async current => {
     assertNotAborted();
@@ -41,25 +46,43 @@ export async function uploadDriveFile(session, file, {
     return { complete: false, offset };
   };
 
-  // Retorna { complete } quando o Google aceita o bloco, { fallback: true }
-  // quando o envio direto não é possível e null quando pode repetir.
-  const sendDirectChunk = async (current, offset, end) => {
+  // Lê "bytes=0-123" do cabeçalho Range e devolve o próximo byte confirmado.
+  const rangeOffset = (response, fallback, minimum) => {
+    const header = response.headers && typeof response.headers.get === 'function'
+      ? response.headers.get('Range') : null;
+    const match = header && /bytes=\d+-(\d+)/i.exec(header);
+    if (!match) return fallback;
+    const next = Number(match[1]) + 1;
+    if (!Number.isSafeInteger(next) || next < minimum || next > fallback) return fallback;
+    return next;
+  };
+
+  // Retorna { complete, fileId } quando o Google aceita o bloco, { retry: true }
+  // para repetir o mesmo bloco e { fallback: true } quando o envio direto não é
+  // possível.
+  const sendDirectChunk = async (current, offset, end, attempt, verified) => {
     assertNotAborted();
+    const url = directSession(current);
     let response;
     try {
-      response = await fetchImpl(directSession(current), {
+      response = await fetchImpl(url, {
         method: 'PUT',
         headers: { 'Content-Range': 'bytes ' + offset + '-' + (end - 1) + '/' + file.size },
         body: file.slice(offset, end), signal
       });
     } catch (error) {
       if (signal && signal.aborted) throw abortError();
-      return { fallback: true };
+      // Queda de rede momentânea: repetir o mesmo bloco é seguro (o Google
+      // ignora bytes já recebidos) e evita uma consulta de estado no servidor.
+      // Só repete se o caminho direto já funcionou antes; na primeira tentativa
+      // o erro costuma ser CORS e insistir só atrasaria o fallback.
+      return attempt < 1 && verified ? { retry: true } : { fallback: true };
     }
-    if (response.status === 308) return null;
+    directVerified = true;
+    if (response.status === 308) return { offset: rangeOffset(response, end, offset) };
     if (response.ok) {
-      await response.json().catch(() => null);
-      return { complete: true };
+      const body = await response.json().catch(() => null);
+      return { complete: true, fileId: body && body.id ? String(body.id) : '' };
     }
     // 401/403/404/410: sessão ou CORS inválidos; 5xx pode ser repetido pelo
     // servidor. Em ambos os casos o caminho pelo servidor assume.
@@ -68,7 +91,9 @@ export async function uploadDriveFile(session, file, {
 
   let current = session;
   onSessionChange(current);
-  let state = await readStatus(current);
+  // Sessão recém-criada começa no byte 0: nada de ida e volta antes do
+  // primeiro byte. Sessões retomadas consultam o estado real.
+  let state = fresh ? { complete: false, offset: 0 } : await readStatus(current);
   let unchangedRetries = 0;
 
   while (true) {
@@ -77,14 +102,15 @@ export async function uploadDriveFile(session, file, {
       current = state.session;
       onSessionChange(current);
       onProgress(0);
-      state = await readStatus(current);
+      // Sessão nova em outra conta: também recomeça do zero, sem consulta.
+      state = { complete: false, offset: 0 };
       continue;
     }
-    if (state.complete) { onProgress(100); return; }
+    if (state.complete) { onProgress(100); return { complete: true, fileId: '' }; }
     const offset = state.offset;
     if (offset === file.size) {
       const confirmation = await readStatus(current);
-      if (confirmation.complete) { onProgress(100); return; }
+      if (confirmation.complete) { onProgress(100); return { complete: true, fileId: '' }; }
       if (confirmation.accountChanged || confirmation.offset !== file.size) {
         state = confirmation;
         continue;
@@ -94,27 +120,27 @@ export async function uploadDriveFile(session, file, {
 
     // 1) Caminho direto (navegador -> Google), quando disponível.
     if (!directBlocked && directSession(current)) {
-      const directChunk = Math.max(1024 * 1024, Number(current.direct.chunk_bytes) || 16 * 1024 * 1024);
+      const directChunk = Math.max(256 * 1024, Number(current.direct.chunk_bytes) || 16 * 1024 * 1024);
       const directEnd = Math.min(offset + directChunk, file.size);
-      const result = await sendDirectChunk(current, offset, directEnd);
+      let result = await sendDirectChunk(current, offset, directEnd, 0, directVerified);
+      if (result && result.retry) result = await sendDirectChunk(current, offset, directEnd, 1, directVerified);
       if (result && result.complete) {
-        // Confirma no servidor também: ele grava o ID e libera a reserva.
-        const confirmed = await readStatus(current).catch(() => null);
-        if (confirmed && confirmed.accountChanged) { state = confirmed; continue; }
+        // O registro no banco confirma o arquivo pelo ID devolvido aqui; não é
+        // preciso consultar o servidor de novo.
         onProgress(100);
-        return;
+        return { complete: true, fileId: result.fileId || '' };
       }
-      if (!result) {
-        state = { complete: false, offset: directEnd };
+      if (result && typeof result.offset === 'number') {
+        state = { complete: false, offset: result.offset };
         unchangedRetries = 0;
-        onProgress(Math.round(directEnd / file.size * 100));
+        onProgress(Math.round(result.offset / file.size * 100));
         continue;
       }
       // Falhou: o servidor continua de onde o Google confirmou.
       directBlocked = true;
       const reconciled = await readStatus(current).catch(() => null);
       if (reconciled && reconciled.accountChanged) { state = reconciled; continue; }
-      if (reconciled && reconciled.complete) { onProgress(100); return; }
+      if (reconciled && reconciled.complete) { onProgress(100); return { complete: true, fileId: '' }; }
       if (reconciled) state = reconciled;
       continue;
     }
@@ -155,7 +181,7 @@ export async function uploadDriveFile(session, file, {
       onSessionChange(current);
       directBlocked = false;
       onProgress(0);
-      state = await readStatus(current);
+      state = { complete: false, offset: 0 };
       unchangedRetries = 0;
       continue;
     }
@@ -168,7 +194,7 @@ export async function uploadDriveFile(session, file, {
       unchangedRetries = 0;
       continue;
     }
-    if (data.complete) { onProgress(100); return; }
+    if (data.complete) { onProgress(100); return { complete: true, fileId: '' }; }
 
     const nextOffset = Number(data.next_offset);
     if (!Number.isSafeInteger(nextOffset) || nextOffset < offset || nextOffset > end) {

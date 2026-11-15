@@ -127,11 +127,11 @@ assert.match(admin, /loadGoogleDriveDistribution\(accounts\)/);
 assert.match(admin, /saveGoogleDriveDistribution\(\)/);
 assert.match(admin, /O painel tentará verificar novamente automaticamente\./,
   'falhas temporárias mantêm a autorização e orientam uma nova verificação');
-assert.match(dashboard, /upload\.js\?v=20261112b/);
-assert.match(dashboard, /library\.js\?v=20261112a/);
-assert.match(serviceWorker, /upload\.js\?v=20261112b/);
-assert.match(serviceWorker, /google-drive-upload\.mjs\?v=20261112a/);
-assert.match(serviceWorker, /library\.js\?v=20261112a/);
+assert.match(dashboard, /upload\.js\?v=20261112c/);
+assert.match(dashboard, /library\.js\?v=20261112b/);
+assert.match(serviceWorker, /upload\.js\?v=20261112c/);
+assert.match(serviceWorker, /google-drive-upload\.mjs\?v=20261112b/);
+assert.match(serviceWorker, /library\.js\?v=20261112b/);
 
 
 // Novas garantias do pool: classificação de erro, cron, reconciliação e envio direto.
@@ -143,7 +143,12 @@ assert.match(server, /needs_reauth = 0,[\s\S]*?last_verified_at = EXCLUDED.conne
 assert.match(server, /await drive\.queryResumableUpload\(upload\.session_url, num\(upload\.size\)\)/, 'registro reconcilia o envio direto sem depender do navegador');
 assert.match(server, /app\.post\('\/api\/admin\/google-drive\/reconcile'/, 'painel consegue reconciliar banco x Drive');
 assert.match(server, /const directEnabled = await getDriveDirectUploadEnabled\(\)/, 'envio direto tem flag');
-assert.match(server, /session_url: sessionUrl, chunk_bytes: DRIVE_DIRECT_CHUNK_BYTES/, 'sessão direta usa blocos maiores');
+assert.match(server, /session_url: sessionUrl, chunk_bytes: directChunkBytes\(requestedBytes\)/, 'sessão direta usa blocos maiores');
+assert.match(server, /function directChunkBytes\(size\)[\s\S]*?return DRIVE_DIRECT_CHUNK_BYTES/, 'bloco cresce com o tamanho do arquivo');
+assert.match(server, /fresh: true,/, 'sessão nova avisa que o envio começa no byte 0');
+assert.match(server, /ALTER TABLE google_drive_uploads ADD COLUMN IF NOT EXISTS file_id_expected/, 'o ID do arquivo é conhecido antes do envio');
+assert.match(server, /provided === expected/, 'registro confirma o arquivo pelo ID pré-gerado, sem chamada extra ao Google');
+assert.match(server, /drive\.generateIds\(1\)\.catch\(\(\) => \[\]\),[\s\S]*?drive\.ensureUploadFolder\(\)/, 'ID e pasta do mês são resolvidos em paralelo');
 assert.match(server, /const TRASH|quota_trash_used_bytes/, 'uso da lixeira continua visível');
 assert.match(driveTransport, /current\.direct\.session_url/, 'o navegador usa a sessão direta quando liberada');
 assert.match(driveTransport, /directBlocked = true/, 'falha de CORS volta para o envio pelo servidor');

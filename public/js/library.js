@@ -29,7 +29,7 @@
   let driveTransportPromise = null;
 
   function loadGoogleDriveTransport() {
-    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261112a').catch(error => {
+    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261112b').catch(error => {
       driveTransportPromise = null;
       throw error;
     });
@@ -371,9 +371,9 @@
       xhr.onerror = () => reject(new Error('Falha de rede durante o envio'));
       xhr.send(file);
     });
-    const uploadDriveInChunks = async (session, file, onProgress, onSessionChange) => {
+    const uploadDriveInChunks = async (session, file, onProgress, onSessionChange, fresh) => {
       const transport = await loadGoogleDriveTransport();
-      await transport.uploadDriveFile(session, file, { onProgress, onSessionChange });
+      return transport.uploadDriveFile(session, file, { onProgress, onSessionChange, fresh: fresh === true });
     };
     const postJson = async (url, body) => {
       const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -396,8 +396,11 @@
         const prep = await postJson('/api/library/drive-upload-session', { name: file.name, size: file.size, mime: file.type, space_id: space.id, bookcase_id: bookcaseId });
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
         let driveSession = prep.data;
-        await uploadDriveInChunks(driveSession, file, progress, session => { driveSession = session; });
-        const done = await postJson('/api/library/drive-files/register', { upload_id: driveSession.upload_id });
+        const finished = await uploadDriveInChunks(driveSession, file, progress, session => { driveSession = session; }, true);
+        const done = await postJson('/api/library/drive-files/register', {
+          upload_id: driveSession.upload_id,
+          file_id: finished && finished.fileId ? finished.fileId : undefined
+        });
         if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
         return done.data;
       }

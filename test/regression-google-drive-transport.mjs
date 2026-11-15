@@ -84,31 +84,32 @@ const response = (status, data) => ({ status, ok: status >= 200 && status < 300,
   ]);
 }
 
-// A cota pode forçar nova sessão; nunca mistura offsets entre contas.
+// A cota pode forçar nova sessão; nunca mistura offsets entre contas e a
+// sessão nova recomeça do zero sem consultar o estado remoto.
 {
   const ids = [];
-  let firstSessionChunks = 0;
+  const ranges = [];
   let statusCalls = 0;
   await uploadDriveFile(session, file, {
     onSessionChange: current => ids.push(current.upload_id),
     fetchImpl: async (url, options) => {
       if (url.endsWith('/status')) {
         statusCalls++;
-        return response(200, statusCalls < 3
+        return response(200, statusCalls === 1
           ? { complete: false, next_offset: 0 }
           : { complete: true, next_offset: file.size });
       }
-      if (url.includes('/upload-a/')) {
-        firstSessionChunks++;
-        if (firstSessionChunks === 1) return response(409, {
-          state: 'account_changed', session: { upload_id: 'upload-b', chunk_bytes: 4 }
-        });
-      }
-      return response(200, { complete: false, next_offset: file.size });
+      ranges.push(options.headers['Content-Range']);
+      if (url.includes('/upload-a/')) return response(409, {
+        state: 'account_changed', session: { upload_id: 'upload-b', chunk_bytes: 4 }
+      });
+      const end = Number(/-(\d+)\//.exec(options.headers['Content-Range'])[1]) + 1;
+      return response(200, { complete: false, next_offset: end });
     }
   });
   assert.deepEqual(ids, ['upload-a', 'upload-b']);
-  assert.equal(statusCalls, 3);
+  assert.equal(statusCalls, 2, 'troca de conta não gasta consulta de estado');
+  assert.deepEqual(ranges, ['bytes 0-3/8', 'bytes 0-3/8', 'bytes 4-7/8']);
 }
 
 
@@ -118,7 +119,7 @@ const response = (status, data) => ({ status, ok: status >= 200 && status < 300,
   const directUrl = 'https://www.googleapis.com/upload/direct-1';
   const calls = [];
   let statusCalls = 0;
-  await uploadDriveFile(
+  const result = await uploadDriveFile(
     { upload_id: 'upload-d', chunk_bytes: 4, direct: { session_url: directUrl, chunk_bytes: 4 } },
     file,
     {
@@ -136,7 +137,29 @@ const response = (status, data) => ({ status, ok: status >= 200 && status < 300,
   );
   assert.equal(calls.filter(call => call.url === directUrl).length, 1, 'o arquivo vai direto ao Google');
   assert.equal(calls.some(call => call.url.endsWith('/chunk')), false, 'nada passa pelo servidor quando o direto funciona');
-  assert.equal(statusCalls, 2);
+  assert.equal(statusCalls, 1, 'o fim do envio direto não pede confirmação ao servidor');
+  assert.equal(result.fileId, 'driveFileDirect', 'o ID vem do próprio Google no último bloco');
+}
+
+// Sessão recém-criada: nem o estado inicial é consultado.
+{
+  const directUrl = 'https://www.googleapis.com/upload/direct-3';
+  const calls = [];
+  const result = await uploadDriveFile(
+    { upload_id: 'upload-f', chunk_bytes: 4, direct: { session_url: directUrl, chunk_bytes: 4 } },
+    file,
+    {
+      fresh: true,
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        assert.equal(url, directUrl, 'nada de ida ao servidor antes do primeiro byte');
+        return response(200, { id: 'driveFileFresh' });
+      }
+    }
+  );
+  assert.equal(calls.length, 1, 'arquivo pequeno: um único PUT ao Google');
+  assert.equal(calls[0].options.headers['Content-Range'], 'bytes 0-7/8');
+  assert.equal(result.fileId, 'driveFileFresh');
 }
 
 // Se o navegador bloquear a origem (CORS), o envio continua pelo servidor.

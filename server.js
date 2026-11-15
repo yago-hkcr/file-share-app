@@ -565,19 +565,28 @@ async function createDriveUploadSession({ userId, destinationType, roomId = null
     let sessionUrl = '';
     try {
       const drive = await getGoogleDriveStorage(account.id);
-      // ID gerado pelo próprio Drive + sessão nova: se a criação for repetida
-      // por timeout, o Google devolve o mesmo arquivo em vez de duplicar.
+      // ID do Drive e pasta do mês em paralelo: economiza uma ida e volta antes
+      // do primeiro byte. O ID também evita duplicata se a criação repetir.
       let fileId = '';
+      let folderId = '';
       if (directEnabled) {
-        try { fileId = (await drive.generateIds(1))[0] || ''; } catch (_) { fileId = ''; }
+        const [generated, folder] = await Promise.all([
+          drive.generateIds(1).catch(() => []),
+          drive.ensureUploadFolder().catch(() => '')
+        ]);
+        fileId = (generated && generated[0]) || '';
+        folderId = folder || '';
       }
       // Registra a reserva no banco antes de abrir a sessão remota, para que as
       // próximas sessões e instâncias serverless também a considerem.
       await q(`INSERT INTO google_drive_uploads
-          (upload_id, user_id, destination_type, room_id, space_id, bookcase_id, drive_account_id, original_name, size, mime_type, session_url_enc, status, created_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'','uploading',$11)`,
-      [uploadId, userId, destinationType, roomId, spaceId, bookcaseId, account.id, normalizedName, requestedBytes, normalizedMime, ts()]);
-      sessionUrl = await drive.startResumableUpload({ name: normalizedName, mimeType: normalizedMime, size: requestedBytes, uploadId, fileId, origin });
+          (upload_id, user_id, destination_type, room_id, space_id, bookcase_id, drive_account_id, original_name, size, mime_type, session_url_enc, status, created_at, file_id_expected)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'','uploading',$11,$12)`,
+      [uploadId, userId, destinationType, roomId, spaceId, bookcaseId, account.id, normalizedName, requestedBytes, normalizedMime, ts(), fileId || null]);
+      sessionUrl = await drive.startResumableUpload({
+        name: normalizedName, mimeType: normalizedMime, size: requestedBytes, uploadId, fileId, origin,
+        parents: folderId ? [folderId] : [], organize: !directEnabled
+      });
       const encryptedSessionUrl = encryptSecret(sessionUrl, sessionSecret());
       await q('UPDATE google_drive_uploads SET session_url_enc = $1, updated_at = $2 WHERE upload_id = $3 AND status = $4',
         [encryptedSessionUrl, ts(), uploadId, 'uploading']);
@@ -598,7 +607,10 @@ async function createDriveUploadSession({ userId, destinationType, roomId = null
       upload_id: uploadId,
       chunk_bytes: 4 * 1024 * 1024,
       max_bytes: MAX_BLOB_UPLOAD_BYTES,
-      direct: directEnabled ? { session_url: sessionUrl, chunk_bytes: DRIVE_DIRECT_CHUNK_BYTES } : null
+      // fresh: a sessão acabou de ser criada, o cliente já sabe que começa no
+      // byte 0 — não precisa perguntar ao servidor antes do primeiro bloco.
+      fresh: true,
+      direct: directEnabled ? { session_url: sessionUrl, chunk_bytes: directChunkBytes(requestedBytes) } : null
     };
   }
   if (lastError) throw lastError;
@@ -609,7 +621,7 @@ async function createDriveUploadSession({ userId, destinationType, roomId = null
 
 async function getDriveUploadSession(uploadId, userId) {
   const row = await one(`SELECT upload_id, user_id, destination_type, room_id, space_id, bookcase_id, original_name, size,
-       mime_type, session_url_enc, status, file_id, drive_account_id FROM google_drive_uploads WHERE upload_id = $1 AND user_id = $2`, [uploadId, userId]);
+       mime_type, session_url_enc, status, file_id, file_id_expected, drive_account_id FROM google_drive_uploads WHERE upload_id = $1 AND user_id = $2`, [uploadId, userId]);
   if (!row) return null;
   if (row.status === 'uploading' && row.session_url_enc) row.session_url = decryptSecret(row.session_url_enc, sessionSecret());
   return row;
@@ -618,6 +630,15 @@ async function getDriveUploadSession(uploadId, userId) {
 // Origem usada no CORS da sessão resumível. Sem ela o Drive não aceita o PUT
 // direto do navegador (envio direto); com ela, o servidor também continua
 // podendo enviar os blocos.
+// Blocos maiores = menos idas e voltas. Pequenos arquivos vão num único PUT;
+// acima de 256 MB o bloco sobe para 32 MB (múltiplo de 256 KB, como o Drive pede).
+function directChunkBytes(size) {
+  const value = Math.max(0, Number(size) || 0);
+  if (value <= 16 * 1024 * 1024) return Math.max(256 * 1024, Math.ceil(value / (256 * 1024)) * 256 * 1024);
+  if (value <= 256 * 1024 * 1024) return 16 * 1024 * 1024;
+  return DRIVE_DIRECT_CHUNK_BYTES;
+}
+
 function driveUploadOrigin(req) {
   const origin = String(req.get('origin') || '');
   if (origin && /^https?:\/\/[^/\s]{1,200}$/i.test(origin)) return origin;
@@ -644,34 +665,39 @@ async function restartDriveUploadSession(upload, userId, failedAccountId) {
   }
 }
 
-// Confirma o arquivo no Drive. No envio direto do navegador o servidor não vê
-// o último bloco, então o ID informado pelo cliente é validado pelo metadado
-// que só o próprio app gravou (fileshareUploadId + tamanho).
+// Confirma o arquivo no Drive. O caminho normal não faz nenhuma chamada ao
+// Google: o ID já foi gravado aqui (envio pelo servidor) ou é o ID pré-gerado
+// na abertura da sessão, devolvido pelo próprio Google ao navegador. Consultas
+// ao Google ficam só para os casos ambíguos (cliente sem o ID, CORS bloqueado).
 async function confirmDriveUploadFile(upload, body) {
   const { drive, accountId } = await getDriveUploadStorage(upload);
+  // O ID gravado pelo próprio servidor (via resposta do Google) já é confiável:
+  // nenhuma chamada extra é necessária.
   let fileId = validateDriveFileId(upload.file_id) ? upload.file_id : '';
-  let metadata = null;
   if (!fileId) {
-    let provided = String(body && body.file_id || '');
-    // O envio direto pode ter concluído sem o navegador conseguir confirmar
-    // (rede caindo no fim). A sessão ainda está guardada aqui: pergunte ao
-    // Google antes de recusar o registro.
-    if (!validateDriveFileId(provided) && upload.session_url) {
+    const provided = String(body && body.file_id || '');
+    const expected = String(upload.file_id_expected || '');
+    if (validateDriveFileId(provided) && expected && provided === expected) {
+      // ID pré-gerado na abertura da sessão: prova que o arquivo é desta sessão
+      // sem consultar o Google (o Drive recusa criar duas vezes o mesmo ID).
+      fileId = provided;
+    } else if (validateDriveFileId(provided)) {
+      const metadata = await drive.getFileMetadata(provided).catch(() => null);
+      if (!metadata || metadata.appProperties?.fileshareUploadId !== upload.upload_id || Number(metadata.size) !== num(upload.size)) return null;
+      fileId = provided;
+    } else if (upload.session_url) {
+      // Último recurso: o navegador não devolveu o ID (CORS) e a sessão ainda
+      // está guardada aqui. Pergunta ao Google antes de recusar o registro.
       const state = await drive.queryResumableUpload(upload.session_url, num(upload.size)).catch(() => null);
-      if (state && state.complete && state.file && validateDriveFileId(state.file.id)) provided = state.file.id;
+      if (state && state.complete && state.file && validateDriveFileId(state.file.id)) fileId = state.file.id;
     }
-    if (!validateDriveFileId(provided)) return null;
-    metadata = await drive.getFileMetadata(provided).catch(() => null);
-    if (!metadata || metadata.appProperties?.fileshareUploadId !== upload.upload_id || Number(metadata.size) !== num(upload.size)) return null;
+    if (!fileId) return null;
     const confirmed = await q(`UPDATE google_drive_uploads SET status = 'complete', file_id = $1, session_url_enc = '', updated_at = $2
-      WHERE upload_id = $3 AND user_id = $4 AND status = 'uploading' RETURNING upload_id`, [provided, ts(), upload.upload_id, upload.user_id]);
+      WHERE upload_id = $3 AND user_id = $4 AND status = 'uploading' RETURNING upload_id`, [fileId, ts(), upload.upload_id, upload.user_id]);
     if (!confirmed.length) return null;
-    fileId = provided;
-    upload.file_id = provided;
+    upload.file_id = fileId;
     upload.status = 'complete';
   }
-  metadata = metadata || await drive.getFileMetadata(fileId);
-  if (!metadata || metadata.appProperties?.fileshareUploadId !== upload.upload_id || Number(metadata.size) !== num(upload.size)) return null;
   await releaseGoogleDriveReservation(accountId, num(upload.size));
   return { drive, accountId, fileId };
 }
@@ -1296,6 +1322,9 @@ async function createTables() {
   // A tabela das sessões é criada em Promise.all acima; aplique a migração
   // somente depois para também funcionar em bancos instalados anteriormente.
   await q('ALTER TABLE google_drive_uploads ADD COLUMN IF NOT EXISTS drive_account_id TEXT');
+  // ID pré-gerado no início da sessão: permite confirmar o arquivo no registro
+  // sem uma chamada extra ao Google.
+  await q('ALTER TABLE google_drive_uploads ADD COLUMN IF NOT EXISTS file_id_expected TEXT');
   await q('CREATE INDEX IF NOT EXISTS idx_google_drive_uploads_account_status ON google_drive_uploads (drive_account_id, status)');
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_user_updated ON personal_library_items (user_id, updated_at)');
   await q('CREATE INDEX IF NOT EXISTS idx_personal_library_file ON personal_library_items (file_id)');

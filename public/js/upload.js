@@ -31,7 +31,7 @@
   }
 
   function loadGoogleDriveTransport() {
-    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261112a').catch(error => {
+    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261112b').catch(error => {
       driveTransportPromise = null;
       throw error;
     });
@@ -68,9 +68,11 @@
     return { status: response.status, ok: response.ok, data };
   }
 
-  async function uploadDriveInChunks(session, file, onProgress, signal, onSessionChange) {
+  // fresh: sessão recém-criada pelo servidor (posição 0 conhecida). Devolve o ID
+  // do arquivo devolvido pelo Google para o registro fechar sem chamada extra.
+  async function uploadDriveInChunks(session, file, onProgress, signal, onSessionChange, fresh) {
     const transport = await loadGoogleDriveTransport();
-    await transport.uploadDriveFile(session, file, { onProgress, signal, onSessionChange });
+    return transport.uploadDriveFile(session, file, { onProgress, signal, onSessionChange, fresh: fresh === true });
   }
 
   function postFormWithProgress(url, form, onProgress, signal) {
@@ -206,10 +208,14 @@
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
         if (typeof options.onCancelable === 'function') options.onCancelable(true);
         driveSession = prep.data;
-        await uploadDriveInChunks(driveSession, file, reportProgress, options.signal, session => { driveSession = session; });
+        const finished = await uploadDriveInChunks(driveSession, file, reportProgress, options.signal, session => { driveSession = session; }, true);
         if (typeof options.onCancelable === 'function') options.onCancelable(false);
         if (typeof options.onPhase === 'function') options.onPhase('finalizing');
-        const done = await postJson('/api/rooms/' + roomId + '/drive-files/register', { upload_id: driveSession.upload_id, chat_only: options.chatOnly ? 1 : 0 }, options.signal);
+        const done = await postJson('/api/rooms/' + roomId + '/drive-files/register', {
+          upload_id: driveSession.upload_id,
+          chat_only: options.chatOnly ? 1 : 0,
+          file_id: finished && finished.fileId ? finished.fileId : undefined
+        }, options.signal);
         if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
         uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: done.data.mime_type || file.type || 'application/octet-stream' });
         sent++;
@@ -497,10 +503,13 @@
               continue;
             }
           }
-          await uploadDriveInChunks(driveSession, file, reportProgress, options.signal, session => { driveSession = session; });
+          const finished = await uploadDriveInChunks(driveSession, file, reportProgress, options.signal, session => { driveSession = session; }, true);
           onCancelable(false);
           onPhase('finalizing');
-          const done = await postJson('/api/dm/' + friendId + '/drive-files/register', { upload_id: driveSession.upload_id }, options.signal);
+          const done = await postJson('/api/dm/' + friendId + '/drive-files/register', {
+            upload_id: driveSession.upload_id,
+            file_id: finished && finished.fileId ? finished.fileId : undefined
+          }, options.signal);
           if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
           uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: done.data.mime_type || file.type || 'application/octet-stream' });
           sent++;
