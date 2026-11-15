@@ -43,7 +43,7 @@ const ASSETS = [
   '/js/library.js?v=20261112b',
   '/js/dashboard-shell.js?v=20261014o',
   '/js/announce.js?v=20261107d',
-  '/js/cyber.js?v=20261112a',
+  '/js/cyber.js?v=20261112f',
   '/manifest.json',
   '/js/login-intro.js?v=20261113a',
   '/favicon.png',

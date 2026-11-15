@@ -64,15 +64,15 @@ html[data-theme="light"] body.auth-page {
 
 body.auth-page::before,
 body.auth-page::after { content: none !important; }
-#cyberRain { opacity: .28; }
-.cy-scan { opacity: .48; }
-.cy-scan::after { opacity: .8; }
-.cy-grid { opacity: .42; }
-/* Desktop: chuva e varredura mais visíveis; mobile mantém os valores base. */
+#cyberRain { opacity: .72; }
+.cy-scan { opacity: .42; }
+.cy-scan::after { opacity: .75; }
+.cy-grid { opacity: .34; }
+/* Desktop: campo hacker mais presente; mobile mantém os valores base. */
 @media (min-width: 769px) {
-  #cyberRain { opacity: .55; }
-  .cy-scan { opacity: .55; }
-  .cy-grid { opacity: .5; }
+  #cyberRain { opacity: .92; }
+  .cy-scan { opacity: .48; }
+  .cy-grid { opacity: .4; }
 }
 
 body.auth-page .auth-container {

@@ -1254,14 +1254,14 @@ body.auth-page {
     background: #04100a; background-image: radial-gradient(ellipse at 50% -10%, rgba(var(--cy-rgb),.22), transparent 55%);
 }
 body.auth-page::before, body.auth-page::after { content: none; }
-#cyberRain { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; opacity: .55; }
-/* Versão sutil criada pelo cyber.js para páginas internas: fica ATRÁS do conteúdo e bem discreta. */
-#cyberRain.cyber-subtle { z-index: -1; opacity: .45; }
-.cy-scan.cyber-subtle { z-index: -1; opacity: .4; }
-/* Desktop: o fundo cyber fica mais presente sem pesar (mobile mantém o equilíbrio). */
+#cyberRain { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; opacity: .9; }
+/* Versão criada pelo cyber.js para páginas internas: fica ATRÁS do conteúdo. */
+#cyberRain.cyber-subtle { z-index: -1; opacity: .7; }
+.cy-scan.cyber-subtle { z-index: -1; opacity: .38; }
+/* Desktop: o fundo hacker fica mais presente sem pesar (mobile mantém o equilíbrio). */
 @media (min-width: 769px) {
-  #cyberRain.cyber-subtle { opacity: .62; }
-  .cy-scan.cyber-subtle { opacity: .5; }
+  #cyberRain.cyber-subtle { opacity: .85; }
+  .cy-scan.cyber-subtle { opacity: .45; }
 }
 .cy-grid { position: fixed; left: -60%; right: -60%; bottom: 0; height: 70vh; z-index: 0; pointer-events: none;
   background-image: linear-gradient(rgba(var(--cy-rgb),.4) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--cy-rgb),.4) 1px, transparent 1px);
@@ -1366,20 +1366,19 @@ html.cy-interior > body.app-page, html.cy-interior > body.sala-page {
   background-image: linear-gradient(rgba(var(--cy-rgb),.06) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--cy-rgb),.06) 1px, transparent 1px), linear-gradient(135deg, rgba(var(--cy-rgb),.05), transparent 45%, rgba(var(--cy-rgb),.045));
   background-size: 46px 46px, 46px 46px, auto; background-attachment: fixed;
 }
-/* Nas páginas internas o cyber.js cria chuva (#cyberRain), piso (.cy-grid) e varredura
+/* Nas páginas internas o cyber.js cria o campo (#cyberRain), piso (.cy-grid) e varredura
    (.cy-scan) como filhos do <html>. Com z-index:-1 ficam atrás de TODO o conteúdo do
-   body (cartões, tabelas, header), como no login — e não cobrem nada. Opacidades
-   próximas às do auth-flow.css para o efeito ficar igual ao do cadastro/login. */
+   body (cartões, tabelas, header), como no login — e não cobrem nada. */
 html.cy-interior > #cyberRain,
 html.cy-interior > .cy-grid,
 html.cy-interior > .cy-scan { z-index: -1; }
-html.cy-interior > #cyberRain { opacity: .5; }
-html.cy-interior > .cy-grid { opacity: .42; }
-html.cy-interior > .cy-scan { opacity: .45; }
+html.cy-interior > #cyberRain { opacity: .72; }
+html.cy-interior > .cy-grid { opacity: .34; }
+html.cy-interior > .cy-scan { opacity: .38; }
 @media (min-width: 769px) {
-  html.cy-interior > #cyberRain { opacity: .55; }
-  html.cy-interior > .cy-grid { opacity: .5; }
-  html.cy-interior > .cy-scan { opacity: .5; }
+  html.cy-interior > #cyberRain { opacity: .82; }
+  html.cy-interior > .cy-grid { opacity: .4; }
+  html.cy-interior > .cy-scan { opacity: .45; }
 }
 
 /* cabeçalho: linha de neon correndo na base */
