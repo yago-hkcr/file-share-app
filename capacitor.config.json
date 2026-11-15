@@ -1,0 +1,23 @@
+{
+  "appId": "online.arquive.app",
+  "appName": "Arquive Online",
+  "webDir": "public",
+  "server": {
+    "url": "https://www.arquive.online",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#000000"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "backgroundColor": "#000000",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false
+    }
+  }
+}

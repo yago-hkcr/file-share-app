@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Arquive Online</string>
+    <string name="title_activity_main">Arquive Online</string>
+    <string name="package_name">online.arquive.app</string>
+    <string name="custom_url_scheme">online.arquive.app</string>
+</resources>
