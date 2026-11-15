@@ -1,12 +1,19 @@
-/* Arquive Online — game-style laser splash intro (centered, no skip). */
+/* Arquive Online — abertura de primeira visita.
+   Só aparece uma vez por dispositivo: splash do logo e, em seguida, a
+   apresentação animada com som (intro-cinema.js). Quem já usa o site abre
+   direto no login. Para rever: ?intro=1 ou ArquiveIntroCinema.reset(). */
 (function () {
   'use strict';
 
-  // Sempre exibe a introdução do laser a cada abertura do site (para todos).
-  var INTRO_DURATION = 5600;
+  var INTRO_DURATION = 5200;
+  var cinema = function () { return window.ArquiveIntroCinema || null; };
 
   function prefersReducedMotion() {
     return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  function forced() {
+    try { return /(?:^|[?&])intro=1(?:&|$)/.test(window.location.search); } catch (e) { return false; }
   }
 
   function focusLogin() {
@@ -16,8 +23,23 @@
     }
   }
 
+  function alreadySeen() {
+    var api = cinema();
+    if (api) return api.hasSeen();
+    try { return localStorage.getItem('arquive_intro_v1') === '1'; } catch (e) { return false; }
+  }
+
+  function markSeen() {
+    var api = cinema();
+    if (api) { api.markSeen(); return; }
+    try { localStorage.setItem('arquive_intro_v1', '1'); } catch (e) {}
+  }
+
   function mount() {
-    var reduced = prefersReducedMotion();
+    if (prefersReducedMotion()) { markSeen(); focusLogin(); return; }
+    if (!forced() && alreadySeen()) { focusLogin(); return; }
+
+    var reduced = false;
 
     // Remove any stale intro overlay from previous broken runs
     try {
@@ -54,6 +76,7 @@
     var logo3d = null;
     var closed = false;
     var completed = false;
+    var handedOff = false;
     var hardTimer = 0;
     var closeTimer = 0;
     var completeFallback = 0;
@@ -65,6 +88,24 @@
       } catch (e) {}
     }
 
+    // Depois do splash: apresenta o produto (com som) e devolve o foco ao login.
+    function handoff() {
+      if (handedOff) return;
+      handedOff = true;
+      var api = cinema();
+      if (!api || typeof api.welcome !== 'function') {
+        markSeen();
+        focusLogin();
+        return;
+      }
+      try {
+        api.welcome({ onDone: focusLogin });
+      } catch (e) {
+        markSeen();
+        focusLogin();
+      }
+    }
+
     function doClose() {
       if (closed) return;
       closed = true;
@@ -73,15 +114,15 @@
       try { clearTimeout(completeFallback); } catch (e) {}
       try { if (logo3d && logo3d.stop) logo3d.stop(); } catch (e) {}
       try { overlay.classList.add('leaving'); overlay.style.pointerEvents = 'none'; } catch (e) {}
-      // transition/motion out, then remove and enable typing
+      // transition/motion out, then hand over to the presentation
       setTimeout(function () {
         forceRemove();
-        focusLogin();
+        handoff();
       }, 650);
       // absolute guarantee removal even if transition callback logic fails
       setTimeout(function () {
         forceRemove();
-        focusLogin();
+        handoff();
       }, 1400);
     }
 
@@ -122,12 +163,8 @@
       }
     }
 
-    // No skip UI; keep Enter/Escape as accessibility-only emergency? user asked for no skip option.
-    // Still close on completion/fallbacks so user can type.
-    overlay.addEventListener('click', function (e) {
-      // prevent clicks passing through? overlay covers screen; allow default (no skip action)
-      e.stopPropagation();
-    });
+    // No skip UI: o splash é curto e a apresentação tem seu próprio "Pular".
+    overlay.addEventListener('click', function (e) { e.stopPropagation(); });
 
     window.addEventListener('resize', function () {
       try { if (logo3d && logo3d.resize) logo3d.resize(); } catch (e) {}

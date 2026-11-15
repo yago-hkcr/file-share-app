@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
 <link rel="stylesheet" href="/css/auth-flow.css?v=20261112i">
 <link rel="stylesheet" href="/css/hacker-ui.css?v=20261112b">
+<link rel="stylesheet" href="/css/intro-cinema.css?v=20261113d">
   <link rel="stylesheet" href="/css/theme-v2.css?v=20261112b">
 </head>
 <body class="auth-page">
@@ -59,6 +60,7 @@
       <div class="auth-footer">
         <p><a class="auth-switch" href="/forgot-password">Esqueceu a senha? <i class="fas fa-key" aria-hidden="true"></i></a></p>
         <p>Não tem conta? <a class="auth-switch" href="/register">Criar conta <i class="fas fa-arrow-right" aria-hidden="true"></i></a></p>
+        <p><a class="auth-switch" href="#" id="introReplay">Ver como funciona <i class="fas fa-play" aria-hidden="true"></i></a></p>
         <p><a class="auth-switch" href="/privacidade">Privacidade e uso de dados</a></p>
       </div>
     </div>
@@ -84,7 +86,7 @@
     </div>
   </div>
   <script src="/js/gfx.js?v=20261112b"></script>
-  <script src="/js/cyber.js?v=20261112a"></script><script src="/js/auth-flow.js?v=20261014a"></script><script src="/js/login-intro.js?v=20261112i"></script>
+  <script src="/js/cyber.js?v=20261112a"></script><script src="/js/auth-flow.js?v=20261014a"></script><script src="/js/intro-cinema.js?v=20261113c"></script><script src="/js/login-intro.js?v=20261113a"></script>
   <script>
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -110,6 +112,14 @@
         err.textContent = 'Erro de conexão';
         err.style.display = 'block';
       }
+    });
+  </script>
+  <script>
+    // Rever a apresentação (5 cenas). O áudio começa no toque do botão.
+    var introReplay = document.getElementById('introReplay');
+    if (introReplay) introReplay.addEventListener('click', function (event) {
+      event.preventDefault();
+      if (window.ArquiveIntroCinema) window.ArquiveIntroCinema.welcome({ onDone: function () {} });
     });
   </script>
   <script src="/js/cursor.js?v=20261014a"></script>

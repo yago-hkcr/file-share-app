@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v32-fast-upload';
+const CACHE_NAME = 'fileshare-v34-cinema-intro';
 const ASSETS = [
   '/css/social.css?v=20261112b',
   '/css/upload-queue.css?v=20261112b',
@@ -45,7 +45,7 @@ const ASSETS = [
   '/js/announce.js?v=20261107d',
   '/js/cyber.js?v=20261112a',
   '/manifest.json',
-  '/js/login-intro.js?v=20261112i',
+  '/js/login-intro.js?v=20261113a',
   '/favicon.png',
   '/favicon-48.png',
   '/apple-touch-icon.png'
