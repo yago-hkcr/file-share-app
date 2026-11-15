@@ -25,7 +25,7 @@
   <link rel="stylesheet" href="/css/admin-select.css?v=20261112b">
   <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014a">
   <link rel="stylesheet" href="/css/hacker-ui.css?v=20261112b">
-  <link rel="stylesheet" href="/css/admin-storage.css?v=20261112b">
+  <link rel="stylesheet" href="/css/admin-storage.css?v=20261112e">
   <link rel="stylesheet" href="/css/theme-v2.css?v=20261112b">
 </head>
 <body class="app-page">
@@ -108,6 +108,7 @@
             <p class="storage-subtitle">Conecte contas do Google Drive para aumentar o armazenamento total disponível para anexos.</p></div>
           <div class="storage-heading-actions">
             <button id="googleDriveRefresh" class="btn btn-outline storage-refresh" type="button" onclick="loadGoogleDriveStatus()"><i class="fas fa-rotate"></i> Atualizar status</button>
+            <button id="googleDriveReconcile" class="btn btn-outline storage-refresh" type="button" onclick="runGoogleDriveReconcile()"><i class="fas fa-shield-halved"></i> Verificar integridade</button>
             <a id="googleDriveConnectNew" class="btn btn-green" href="#" onclick="connectNewGoogleDrive(event)" hidden><i class="fab fa-google-drive"></i> Conectar outra conta</a>
           </div>
         </div>
@@ -121,10 +122,15 @@
             <label class="storage-description" for="googleDriveDistributionMode"><strong>Distribuição dos novos envios</strong></label>
             <select id="googleDriveDistributionMode" class="btn btn-outline" onchange="saveGoogleDriveDistribution()">
               <option value="most_free">Mais espaço livre (padrão)</option>
+              <option value="best_fit">Menor conta que ainda cabe</option>
               <option value="round_robin">Alternar entre contas</option>
               <option value="preferred">Priorizar uma conta</option>
             </select>
             <select id="googleDrivePreferredAccount" class="btn btn-outline" aria-label="Conta principal" onchange="saveGoogleDriveDistribution()" hidden></select>
+            <label class="storage-toggle" for="googleDriveDirectUpload">
+              <input type="checkbox" id="googleDriveDirectUpload" onchange="saveGoogleDriveDirectUpload()">
+              <span>Envio direto do navegador ao Drive (mais rápido; desligue se algum envio falhar)</span>
+            </label>
             <span id="googleDriveDistributionStatus" class="storage-description" role="status" aria-live="polite"></span>
           </div>
           <div id="googleDriveNotConfigured" class="storage-notice" hidden><i class="fas fa-circle-info"></i><span>As credenciais de integração do Google Drive ainda não foram configuradas neste ambiente.</span></div>
@@ -136,8 +142,13 @@
               <div class="storage-metric"><span><i class="fas fa-hard-drive"></i> Total utilizado</span><strong id="googleDriveTotalQuotaUsed">—</strong></div>
               <div class="storage-metric storage-metric-free"><span><i class="fas fa-circle-check"></i> Total disponível</span><strong id="googleDriveTotalQuotaFree">—</strong></div>
               <div class="storage-metric"><span><i class="fas fa-database"></i> Capacidade total</span><strong id="googleDriveTotalQuotaLimit">—</strong></div>
+              <div class="storage-metric"><span><i class="fas fa-file-arrow-up"></i> Maior arquivo que cabe agora</span><strong id="googleDriveCapacityMax">—</strong></div>
+              <div class="storage-metric"><span><i class="fas fa-box-archive"></i> Uso deste app</span><strong id="googleDriveAppUsage">—</strong></div>
+              <div class="storage-metric"><span><i class="fas fa-gauge-high"></i> Cota de API hoje</span><strong id="googleDriveApiUsage">—</strong></div>
             </div>
             <div class="storage-extra"><span><i class="fas fa-users"></i> <strong id="googleDriveAccountCount">0</strong> conta(s) conectada(s)</span></div>
+            <div id="googleDrivePoolNotice" class="storage-notice" hidden><i class="fas fa-circle-info"></i><span id="googleDrivePoolNoticeText"></span></div>
+            <div id="googleDriveReconcileResult" class="storage-notice" hidden><i class="fas fa-shield-halved"></i><span id="googleDriveReconcileText"></span></div>
           </div>
           <div id="googleDriveVerificationError" class="storage-notice storage-notice-error" hidden><i class="fas fa-triangle-exclamation"></i><span id="googleDriveVerificationMessage"></span></div>
           <div class="storage-actions"><span id="googleDriveAutoUpdate" class="storage-auto-update" aria-live="polite"><i class="fas fa-rotate"></i> Atualização automática ativada</span></div>
@@ -186,7 +197,7 @@
 
   <div id="toastContainer" class="toast-container"></div>
 
-  <script src="/js/upload.js?v=20261112a"></script>
+  <script src="/js/upload.js?v=20261112b"></script>
   <script>
     let lastUsersSig = '', lastRoomsSig = '', lastNotifsSig = '', uploading = 0;
     let driveStatusRequest = null, driveStatusSequence = 0, lastDriveStatus = null;
@@ -253,10 +264,10 @@
       return `${(bytes / (1024 ** index)).toLocaleString('pt-BR', { maximumFractionDigits: index > 1 ? 1 : 0 })} ${units[index]}`;
     }
 
-    let driveDistributionState = { mode: 'most_free', preferredAccountId: '' };
+    let driveDistributionState = { mode: 'most_free', preferredAccountId: '', directUpload: true };
     function updateGoogleDriveDistributionMessage(accountCount) {
       if (!accountCount) return;
-      const descriptions = { most_free: 'Mais espaço livre', round_robin: 'Alternar entre contas', preferred: 'Priorizar uma conta' };
+      const descriptions = { most_free: 'Mais espaço livre', best_fit: 'Menor conta que ainda cabe', round_robin: 'Alternar entre contas', preferred: 'Priorizar uma conta' };
       document.getElementById('googleDriveMessage').textContent = accountCount + ' conta(s) do Google Drive conectada(s). Distribuição: ' + (descriptions[driveDistributionState.mode] || descriptions.most_free) + '.';
     }
     async function loadGoogleDriveDistribution(accounts = []) {
@@ -274,22 +285,36 @@
         if (!response.ok) throw new Error('Não foi possível carregar a preferência de distribuição.');
         const data = await response.json();
         driveDistributionState = {
-          mode: ['most_free', 'round_robin', 'preferred'].includes(data.mode) ? data.mode : 'most_free',
-          preferredAccountId: String(data.preferredAccountId || '')
+          mode: ['most_free', 'best_fit', 'round_robin', 'preferred'].includes(data.mode) ? data.mode : 'most_free',
+          preferredAccountId: String(data.preferredAccountId || ''),
+          directUpload: data.directUpload !== false
         };
         if (driveDistributionState.mode === 'preferred' && !accounts.some(account => account.id === driveDistributionState.preferredAccountId)) {
           driveDistributionState.mode = 'most_free';
         }
+        const directToggle = document.getElementById('googleDriveDirectUpload');
+        if (directToggle) directToggle.checked = driveDistributionState.directUpload;
         modeSelect.value = driveDistributionState.mode;
+        syncDrivePreferredSelect();
         if (accounts.length) preferredSelect.value = accounts.some(account => account.id === driveDistributionState.preferredAccountId)
           ? driveDistributionState.preferredAccountId : accounts[0].id;
         preferredSelect.hidden = driveDistributionState.mode !== 'preferred' || accounts.length === 0;
+        syncDrivePreferredSelect();
         modeSelect.disabled = accounts.length === 0;
         document.getElementById('googleDriveDistributionStatus').textContent = '';
         updateGoogleDriveDistributionMessage(accounts.length);
       } catch (error) {
         document.getElementById('googleDriveDistributionStatus').textContent = error.message || 'Falha ao carregar distribuição.';
       }
+    }
+
+    // O select nativo é embrulhado pelo admin-select; esconder o nativo não
+    // esconde o gatilho. Mantém o wrapper sincronizado com a visibilidade.
+    function syncDrivePreferredSelect() {
+      const select = document.getElementById('googleDrivePreferredAccount');
+      if (!select || typeof select.closest !== 'function') return;
+      const wrapper = select.closest('.fs-select');
+      if (wrapper) wrapper.hidden = Boolean(select.hidden);
     }
 
     async function saveGoogleDriveDistribution() {
@@ -299,6 +324,7 @@
       const mode = modeSelect.value;
       const preferredAccountId = preferredSelect.value;
       preferredSelect.hidden = mode !== 'preferred' || !preferredAccountId;
+      syncDrivePreferredSelect();
       if (mode === 'preferred' && !preferredAccountId) {
         status.textContent = 'Conecte uma conta antes de escolher a conta principal.';
         return;
@@ -323,9 +349,65 @@
         modeSelect.value = driveDistributionState.mode;
         if (driveDistributionState.preferredAccountId) preferredSelect.value = driveDistributionState.preferredAccountId;
         preferredSelect.hidden = driveDistributionState.mode !== 'preferred';
+        syncDrivePreferredSelect();
       } finally {
         modeSelect.disabled = preferredSelect.options.length === 0;
         preferredSelect.disabled = false;
+      }
+    }
+
+    async function saveGoogleDriveDirectUpload() {
+      const toggle = document.getElementById('googleDriveDirectUpload');
+      const status = document.getElementById('googleDriveDistributionStatus');
+      if (!toggle) return;
+      const directUpload = Boolean(toggle.checked);
+      toggle.disabled = true;
+      if (status) status.textContent = 'Salvando…';
+      try {
+        const response = await fetch('/api/admin/google-drive/distribution', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ directUpload })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 401) { window.location.href = '/'; return; }
+        if (!response.ok) throw new Error(data.error || 'Não foi possível salvar o modo de envio.');
+        driveDistributionState.directUpload = data.directUpload !== false;
+        toggle.checked = driveDistributionState.directUpload;
+        if (status) status.textContent = driveDistributionState.directUpload
+          ? 'Envio direto ativado. Se o navegador bloquear, o envio continua pelo servidor.'
+          : 'Envio direto desativado: todos os blocos passam pelo servidor.';
+      } catch (error) {
+        toggle.checked = driveDistributionState.directUpload;
+        if (status) status.textContent = error.message || 'Não foi possível salvar o modo de envio.';
+      } finally {
+        toggle.disabled = false;
+      }
+    }
+
+    async function runGoogleDriveReconcile() {
+      const button = document.getElementById('googleDriveReconcile');
+      const box = document.getElementById('googleDriveReconcileResult');
+      const text = document.getElementById('googleDriveReconcileText');
+      if (button && button.disabled) return;
+      if (button) { button.disabled = true; button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando…'; }
+      try {
+        const response = await fetch('/api/admin/google-drive/reconcile', { method: 'POST', headers: { 'Accept': 'application/json' } });
+        if (response.status === 401) { window.location.href = '/'; return; }
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Não foi possível verificar a integridade.');
+        const orphans = Array.isArray(data.orphans) ? data.orphans.length : 0;
+        const missing = Array.isArray(data.missing) ? data.missing.length : 0;
+        const lines = [
+          orphans ? orphans + ' arquivo(s) no Drive fora do banco (órfãos)' : 'Nenhum arquivo órfão encontrado',
+          missing ? missing + ' link(s) quebrado(s) no banco' : 'Nenhum link quebrado encontrado'
+        ];
+        if (text) text.textContent = lines.join(' · ') + (data.truncated ? ' · verificação parcial (limite de tempo)' : '') + '.';
+        if (box) box.hidden = false;
+        showToast(orphans || missing ? 'Verificação concluída com avisos.' : 'Integridade confirmada.', orphans || missing ? 'warning' : 'success');
+      } catch (error) {
+        showToast(error.message || 'Não foi possível verificar a integridade.', 'error');
+      } finally {
+        if (button) { button.disabled = false; button.innerHTML = '<i class="fas fa-shield-halved"></i> Verificar integridade'; }
       }
     }
 
@@ -399,7 +481,7 @@
       }
 
       renderGoogleDriveAccounts(accounts, data.total);
-      renderGoogleDriveTotalQuota(data.total);
+      renderGoogleDriveTotalQuota(data.total, data.usage);
       loadGoogleDriveDistribution(accounts);
       document.getElementById('googleDriveConnectNew').hidden = false;
       const verificationFailed = Boolean(data.verification_failed || accounts.some(account => account.verificationFailed));
@@ -442,29 +524,43 @@
       for (const acc of accounts) {
         const card = document.createElement('div');
         card.className = 'storage-account-card';
-        const free = acc.freeBytes != null ? acc.freeBytes : null;
+        const unlimited = Boolean(acc.unlimited) || (acc.quotaLimitBytes == null && Boolean(acc.lastVerifiedAt));
+        const free = unlimited ? null : (acc.freeBytes != null ? acc.freeBytes : null);
         const used = acc.quotaUsedBytes != null ? acc.quotaUsedBytes : null;
-        const limit = acc.quotaLimitBytes != null ? acc.quotaLimitBytes : null;
+        const limit = unlimited ? null : (acc.quotaLimitBytes != null ? acc.quotaLimitBytes : null);
         const percent = used != null && limit != null && limit > 0 ? Math.min(100, used / limit * 100) : null;
-        const reauthorizationRequired = Boolean(acc.reauthorizationRequired);
+        const reauthorizationRequired = Boolean(acc.reauthorizationRequired || acc.needsReauth);
         const verificationFailed = Boolean(acc.verificationFailed);
+        const appUsed = acc.appUsedBytes != null ? Number(acc.appUsedBytes) : null;
+        const trashUsed = acc.quotaTrashUsedBytes != null ? Number(acc.quotaTrashUsedBytes) : 0;
+        const reserved = Number(acc.reservedBytes) || 0;
+        const statusClass = reauthorizationRequired ? ' is-error' : verificationFailed ? ' is-warning' : '';
+        const statusText = reauthorizationRequired
+          ? '<i class="fas fa-triangle-exclamation"></i> Reconexão necessária'
+          : verificationFailed ? '<i class="fas fa-clock"></i> Verificação temporariamente indisponível'
+          : acc.lastVerifiedAt ? '<i class="fas fa-shield-check"></i> Verificada' : '<i class="fas fa-link"></i> Autorização salva';
         card.innerHTML = '<div class="storage-account-card-header">' +
           '<div class="storage-account-card-avatar"><i class="fas fa-user"></i></div>' +
           '<div class="storage-account-card-info">' +
-          '<div class="storage-account-card-name">' + esc(acc.accountName || 'Conta sem nome') + '</div>' +
+          '<div class="storage-account-card-name">' + esc(acc.accountName || 'Conta sem nome') +
+          (unlimited ? ' <span class="storage-account-card-badge">Sem limite</span>' : '') + '</div>' +
           '<div class="storage-account-card-email">' + esc(acc.accountEmail || '—') + '</div>' +
-          '<div class="storage-account-card-status' + (reauthorizationRequired ? ' is-error' : verificationFailed ? ' is-warning' : '') + '">' +
-          (reauthorizationRequired ? '<i class="fas fa-triangle-exclamation"></i> Reconexão necessária' : verificationFailed ? '<i class="fas fa-clock"></i> Verificação temporariamente indisponível' : acc.lastVerifiedAt ? '<i class="fas fa-shield-check"></i> Verificada' : '<i class="fas fa-link"></i> Autorização salva') + '</div>' +
+          '<div class="storage-account-card-status' + statusClass + '">' + statusText +
+          (acc.lastErrorReason && !reauthorizationRequired ? ' · último erro: ' + esc(acc.lastErrorReason) : '') + '</div>' +
           '</div>' +
           (reauthorizationRequired ? '<button type="button" class="btn btn-sm btn-outline storage-account-card-reconnect" data-drive-reconnect title="Reconectar esta conta">Reconectar</button>' : '') +
           '<button type="button" class="btn btn-sm btn-danger storage-account-card-remove" data-drive-account-remove="' + esc(acc.id) + '" title="Remover conta"><i class="fas fa-trash-alt"></i></button>' +
           '</div>' +
           '<div class="storage-account-card-quota">' +
-          '<div class="storage-account-card-quota-row"><span>Uso da cota</span><strong>' + (percent != null ? percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% usado' : '—') + '</strong></div>' +
-          '<div class="storage-account-card-progress" style="--percent:' + (percent ?? 0) + '"><div class="storage-account-card-progress-bar"></div></div>' +
-          '<div class="storage-account-card-quota-row"><span>Utilizado</span><strong>' + formatDriveBytes(used) + '</strong></div>' +
-          '<div class="storage-account-card-quota-row"><span>Disponível</span><strong>' + (free != null ? formatDriveBytes(free) : '—') + '</strong></div>' +
-          '<div class="storage-account-card-quota-row"><span>Total</span><strong>' + formatDriveBytes(limit) + '</strong></div>' +
+          '<div class="storage-account-card-quota-row"><span>Uso da cota</span><strong>' +
+          (unlimited ? 'Sem limite informado' : percent != null ? percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% usado' : '—') + '</strong></div>' +
+          '<div class="storage-account-card-progress' + (unlimited ? ' is-unlimited' : '') + '" style="--percent:' + (percent ?? 0) + '"><div class="storage-account-card-progress-bar"></div></div>' +
+          '<div class="storage-account-card-quota-row"><span>Utilizado na conta</span><strong>' + formatDriveBytes(used) + '</strong></div>' +
+          '<div class="storage-account-card-quota-row"><span>Disponível</span><strong>' + (unlimited ? 'Ilimitado' : free != null ? formatDriveBytes(free) : '—') + '</strong></div>' +
+          '<div class="storage-account-card-quota-row"><span>Total</span><strong>' + (unlimited ? 'Ilimitado' : formatDriveBytes(limit)) + '</strong></div>' +
+          '<div class="storage-account-card-quota-row"><span>Uso deste app</span><strong>' + (appUsed != null ? formatDriveBytes(appUsed) : '—') + '</strong></div>' +
+          (trashUsed > 0 ? '<div class="storage-account-card-quota-row storage-account-card-quota-note"><span>Na lixeira do Drive</span><strong>' + formatDriveBytes(trashUsed) + '</strong></div>' : '') +
+          (reserved > 0 ? '<div class="storage-account-card-quota-row"><span>Reservado agora</span><strong>' + formatDriveBytes(reserved) + '</strong></div>' : '') +
           '</div>';
         list.appendChild(card);
       }
@@ -474,19 +570,46 @@
       document.getElementById('googleDriveBadge').className = 'storage-status-badge is-connected';
     }
 
-    function renderGoogleDriveTotalQuota(total) {
+    function renderGoogleDriveTotalQuota(total, usage = null) {
       const panel = document.getElementById('googleDriveTotalQuota');
       if (!total) { panel.hidden = true; return; }
       const limit = total.limitBytes != null ? Number(total.limitBytes) : null;
       const used = total.usedBytes != null ? Number(total.usedBytes) : null;
       const free = total.freeBytes != null ? Number(total.freeBytes) : null;
+      const unlimitedCount = Number(total.unlimitedCount) || 0;
       const percent = used != null && limit != null && limit > 0 ? Math.min(100, used / limit * 100) : null;
       panel.hidden = false;
       document.getElementById('googleDriveTotalQuotaUsed').textContent = formatDriveBytes(used);
-      document.getElementById('googleDriveTotalQuotaFree').textContent = free != null ? formatDriveBytes(free) : (limit != null ? 'Não informado' : '—');
-      document.getElementById('googleDriveTotalQuotaLimit').textContent = formatDriveBytes(limit);
-      document.getElementById('googleDriveTotalQuotaPercent').textContent = percent != null ? percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% usado' : '—';
+      document.getElementById('googleDriveTotalQuotaFree').textContent = unlimitedCount ? 'Ilimitado' : free != null ? formatDriveBytes(free) : (limit != null ? 'Não informado' : '—');
+      document.getElementById('googleDriveTotalQuotaLimit').textContent = unlimitedCount ? 'Ilimitado' : formatDriveBytes(limit);
+      document.getElementById('googleDriveTotalQuotaPercent').textContent = unlimitedCount ? 'Sem limite' : percent != null ? percent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% usado' : '—';
       document.getElementById('googleDriveAccountCount').textContent = total.accountCount != null ? total.accountCount : '0';
+      const maxFile = document.getElementById('googleDriveCapacityMax');
+      if (maxFile) maxFile.textContent = unlimitedCount ? 'Sem limite' : total.maxFileBytes != null ? formatDriveBytes(total.maxFileBytes) : '—';
+      const appUsage = document.getElementById('googleDriveAppUsage');
+      if (appUsage) appUsage.textContent = total.appUsedBytes != null ? formatDriveBytes(total.appUsedBytes) : '—';
+      const apiUsage = document.getElementById('googleDriveApiUsage');
+      if (apiUsage) {
+        const units = usage && usage.units != null ? Number(usage.units) : null;
+        apiUsage.textContent = units == null ? '—'
+          : units.toLocaleString('pt-BR') + ' un. · ' + formatDriveBytes(usage.bytes || 0) + ' de tráfego';
+      }
+      const notice = document.getElementById('googleDrivePoolNotice');
+      const noticeText = document.getElementById('googleDrivePoolNoticeText');
+      if (notice && noticeText) {
+        if (total.pooledQuotaWarning) {
+          noticeText.textContent = 'Duas ou mais contas mostram exatamente a mesma cota e o mesmo uso: provavelmente dividem o mesmo pool do Google Workspace. O total abaixo não deve ser somado.';
+          notice.hidden = false;
+        } else if (unlimitedCount) {
+          noticeText.textContent = 'Há conta(s) sem limite de cota informado pelo Google: os novos envios priorizam essas contas e não há teto somado de capacidade.';
+          notice.hidden = false;
+        } else if (free == null && total.accountCount) {
+          noticeText.textContent = 'A cota total ainda não foi informada por todas as contas. Atualize o status para tentar novamente.';
+          notice.hidden = false;
+        } else {
+          notice.hidden = true;
+        }
+      }
       const bar = document.getElementById('googleDriveTotalQuotaBar');
       bar.style.width = (percent ?? 0) + '%';
       bar.classList.toggle('is-near-limit', percent != null && percent >= 85);

@@ -29,7 +29,7 @@
   let driveTransportPromise = null;
 
   function loadGoogleDriveTransport() {
-    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261031b').catch(error => {
+    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261112a').catch(error => {
       driveTransportPromise = null;
       throw error;
     });

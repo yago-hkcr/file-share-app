@@ -39,10 +39,13 @@ async function createHarness(payload, fetchError = null, cachedStatus = null) {
     'googleDriveTotalQuotaBar', 'googleDriveAccountCount', 'googleDriveVerificationError',
     'googleDriveMessage', 'googleDriveVerificationMessage', 'googleDriveAutoUpdate', 'googleDriveDistributionMode',
     'googleDrivePreferredAccount', 'googleDriveDistributionStatus', 'tab-storage', 'notifPanel', 'notifBtn', 'notifBadge', 'notifList',
-    'tab-users', 'tab-rooms', 'markNotifsRead'
+    'tab-users', 'tab-rooms', 'markNotifsRead',
+    'googleDriveDirectUpload', 'googleDriveReconcile', 'googleDriveCapacityMax', 'googleDriveAppUsage',
+    'googleDriveApiUsage', 'googleDrivePoolNotice', 'googleDrivePoolNoticeText', 'googleDriveReconcileResult', 'googleDriveReconcileText'
   ];
   const elements = Object.fromEntries(ids.map(id => [id, createElement()]));
-  for (const id of ['googleDriveConnectNew', 'googleDriveNotConfigured', 'googleDriveTotalQuota', 'googleDriveVerificationError']) {
+  for (const id of ['googleDriveConnectNew', 'googleDriveNotConfigured', 'googleDriveTotalQuota', 'googleDriveVerificationError',
+    'googleDrivePoolNotice', 'googleDriveReconcileResult']) {
     elements[id].hidden = true;
   }
   const progressTrack = createElement();
@@ -95,7 +98,7 @@ async function createHarness(payload, fetchError = null, cachedStatus = null) {
 const connected = await createHarness({
   configured: true, connected: true, verified: true,
   accounts: [{ id: 'account_123', accountName: '<Conta>', accountEmail: 'drive@example.com', lastVerifiedAt: '2026-10-31 12:00:00', quotaUsedBytes: 300, quotaLimitBytes: 1000, freeBytes: 700 }],
-  total: { usedBytes: 300, limitBytes: 1000, freeBytes: 700, accountCount: 1 }
+  total: { usedBytes: 300, limitBytes: 1000, freeBytes: 700, accountCount: 1, maxFileBytes: 700, appUsedBytes: 0 }
 });
 assert.equal(connected.elements.googleDriveStatus.textContent, '1 conta(s) conectada(s)');
 assert.equal(connected.elements.googleDriveBadge.className, 'storage-status-badge is-connected');
@@ -107,6 +110,10 @@ assert.equal(connected.progressTrack.attributes['aria-valuenow'], '30');
 assert.equal(connected.elements.googleDriveConnectNew.hidden, false, 'permite conectar mais contas');
 assert.equal(connected.elements.googleDriveDistributionMode.disabled, false);
 assert.equal(connected.elements.googleDriveMessage.textContent.includes('Mais espaço livre'), true);
+assert.equal(connected.elements.googleDriveCapacityMax.textContent, '700 B', 'mostra o maior arquivo que cabe agora');
+assert.equal(connected.elements.googleDriveAppUsage.textContent, '0 B');
+assert.equal(connected.elements.googleDrivePoolNotice.hidden, true, 'sem aviso quando as cotas são individuais');
+assert.equal(connected.elements.googleDriveDirectUpload.checked, true, 'envio direto vem ligado por padrão');
 
 const noQuota = await createHarness({
   configured: true, connected: true, verified: true,
@@ -116,6 +123,31 @@ const noQuota = await createHarness({
 assert.equal(noQuota.elements.googleDriveTotalQuotaFree.textContent, '—');
 assert.equal(noQuota.elements.googleDriveTotalQuotaLimit.textContent, '—');
 assert.equal(noQuota.elements.googleDriveTotalQuotaPercent.textContent, '—');
+
+const unlimited = await createHarness({
+  configured: true, connected: true, verified: true,
+  accounts: [{ id: 'account_unlimited', accountName: 'Workspace', quotaUsedBytes: null, quotaLimitBytes: null, lastVerifiedAt: '2026-10-31 12:00:00', unlimited: true, appUsedBytes: 2048, reservedBytes: 1024 }],
+  total: { usedBytes: null, limitBytes: null, freeBytes: null, accountCount: 1, unlimitedCount: 1, maxFileBytes: null, appUsedBytes: 2048, reservedBytes: 1024 },
+  usage: { day: '2026-05-10', units: 1234, bytes: 5 * 1024 * 1024, accounts: [] }
+});
+assert.equal(unlimited.elements.googleDriveTotalQuotaFree.textContent, 'Ilimitado');
+assert.equal(unlimited.elements.googleDriveCapacityMax.textContent, 'Sem limite');
+assert.equal(unlimited.elements.googleDriveAppUsage.textContent, '2 KB');
+assert.match(unlimited.elements.googleDriveApiUsage.textContent, /1\.234 un\./, 'mostra as unidades de API do dia');
+assert.equal(unlimited.elements.googleDrivePoolNotice.hidden, false, 'avisa que a conta não tem limite informado');
+assert.match(unlimited.elements.googleDriveAccountsList.children[0].innerHTML, /Sem limite/);
+assert.match(unlimited.elements.googleDriveAccountsList.children[0].innerHTML, /Reservado agora/);
+
+const pooled = await createHarness({
+  configured: true, connected: true, verified: true,
+  accounts: [
+    { id: 'p1', accountName: 'A', quotaUsedBytes: 500, quotaLimitBytes: 1000, freeBytes: 500 },
+    { id: 'p2', accountName: 'B', quotaUsedBytes: 500, quotaLimitBytes: 1000, freeBytes: 500 }
+  ],
+  total: { usedBytes: 1000, limitBytes: 2000, freeBytes: 1000, accountCount: 2, unlimitedCount: 0, maxFileBytes: 500, appUsedBytes: 0, pooledQuotaWarning: true }
+});
+assert.equal(pooled.elements.googleDrivePoolNotice.hidden, false, 'avisa sobre cota compartilhada do Workspace');
+assert.match(pooled.elements.googleDrivePoolNoticeText.textContent, /mesmo pool/);
 
 const unconfigured = await createHarness({ configured: false, connected: false, verified: false, accounts: [], total: null });
 assert.equal(unconfigured.elements.googleDriveStatus.textContent, 'Integração indisponível');
@@ -161,4 +193,4 @@ assert.equal(cachedStatusLoadsAutomatically.elements.googleDriveAccountsList.chi
 const tokenUrl = new URL('https://www.googleapis.com/drive/v3/about?fields=user(displayName%2CemailAddress)');
 assert.equal(tokenUrl.hostname, 'www.googleapis.com');
 
-console.log('Estados conectado, cota desconhecida, não configurado, verificação pendente e erro transitório passaram.');
+console.log('Estados conectado, ilimitado, cota compartilhada, cota desconhecida, não configurado, verificação pendente e erro transitório passaram.');

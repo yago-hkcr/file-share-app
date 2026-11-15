@@ -31,7 +31,7 @@
   }
 
   function loadGoogleDriveTransport() {
-    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261031b').catch(error => {
+    if (!driveTransportPromise) driveTransportPromise = import('/js/google-drive-upload.mjs?v=20261112a').catch(error => {
       driveTransportPromise = null;
       throw error;
     });
@@ -394,7 +394,9 @@
     try {
       return await window.enqueueBackgroundUpload({
         kind: 'drive', stage: 'upload', destinationType: friendId ? 'dm' : 'room',
-        roomId: roomId || null, friendId: friendId || null, driveSession: session, file,
+        // A URL bearer do envio direto fica só na memória: a fila offline retoma
+        // pelo caminho do servidor, que guarda a sessão cifrada.
+        roomId: roomId || null, friendId: friendId || null, driveSession: session ? { ...session, direct: null } : session, file,
         name: file.name, size: file.size, mime: file.type || 'application/octet-stream',
         chatOnly: !!chatOnly, replyToId: replyToId || null,
         ownerId: String(document.body.dataset.userId || '')

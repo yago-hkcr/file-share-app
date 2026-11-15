@@ -111,4 +111,57 @@ const response = (status, data) => ({ status, ok: status >= 200 && status < 300,
   assert.equal(statusCalls, 3);
 }
 
-console.log('Transporte autenticado, confirmação final, reconciliação ambígua e troca de conta passaram.');
+
+// Envio direto: com sessão CORS liberada, os blocos vão do navegador ao Google
+// e o servidor só confirma o estado final.
+{
+  const directUrl = 'https://www.googleapis.com/upload/direct-1';
+  const calls = [];
+  let statusCalls = 0;
+  await uploadDriveFile(
+    { upload_id: 'upload-d', chunk_bytes: 4, direct: { session_url: directUrl, chunk_bytes: 4 } },
+    file,
+    {
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        if (url === directUrl) {
+          assert.equal(options.headers['Content-Range'], 'bytes 0-7/8', 'arquivo pequeno vai num único bloco direto');
+          return response(200, { id: 'driveFileDirect', size: '8' });
+        }
+        assert.equal(url.endsWith('/status'), true);
+        statusCalls++;
+        return response(200, statusCalls === 1 ? { complete: false, next_offset: 0 } : { complete: true, next_offset: file.size });
+      }
+    }
+  );
+  assert.equal(calls.filter(call => call.url === directUrl).length, 1, 'o arquivo vai direto ao Google');
+  assert.equal(calls.some(call => call.url.endsWith('/chunk')), false, 'nada passa pelo servidor quando o direto funciona');
+  assert.equal(statusCalls, 2);
+}
+
+// Se o navegador bloquear a origem (CORS), o envio continua pelo servidor.
+{
+  const directUrl = 'https://www.googleapis.com/upload/direct-2';
+  const calls = [];
+  let statusCalls = 0;
+  await uploadDriveFile(
+    { upload_id: 'upload-e', chunk_bytes: 4, direct: { session_url: directUrl, chunk_bytes: 4 } },
+    file,
+    {
+      fetchImpl: async (url, options) => {
+        calls.push(url);
+        if (url === directUrl) throw new TypeError('Failed to fetch');
+        if (url.endsWith('/status')) {
+          statusCalls++;
+          return response(200, statusCalls >= 3 ? { complete: true, next_offset: file.size } : { complete: false, next_offset: 0 });
+        }
+        assert.equal(options.headers['Content-Range'], 'bytes 0-7/8');
+        return response(200, { complete: false, next_offset: file.size });
+      }
+    }
+  );
+  assert.equal(calls.filter(url => url === directUrl).length, 1, 'tenta o direto uma única vez');
+  assert.equal(calls.some(url => url.endsWith('/chunk')), true, 'depois do bloqueio, envia pelo servidor');
+}
+
+console.log('Transporte autenticado, envio direto com fallback, reconciliação ambígua e troca de conta passaram.');

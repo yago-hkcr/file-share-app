@@ -52,19 +52,23 @@ assert.match(server, /drive_upload_enabled: driveEnabled, blob_upload_enabled: b
 assert.match(server, /app\.get\('\/api\/admin\/google-drive\/status', asAdmin/);
 assert.match(server, /verified: verifiedOk/);
 assert.match(server, /getGoogleDriveAccounts\(\{ includeInactive: true \}\)/);
-assert.match(server, /driveFileRef\(upload\.file_id, accountId\)/);
+assert.match(server, /driveFileRef\(fileId, accountId\)/, 'o registro usa o ID confirmado (inclusive no envio direto)');
+assert.match(server, /async function confirmDriveUploadFile\(upload, body\)/, 'o arquivo é confirmado por metadado antes de gravar');
 assert.match(server, /ALTER TABLE google_drive_uploads ADD COLUMN IF NOT EXISTS drive_account_id TEXT/);
-assert.match(server, /const reservationRows = await q\([\s\S]*?FROM google_drive_uploads[\s\S]*?WHERE status = 'uploading'/);
-assert.match(server, /SET status = 'failed',[\s\S]*?COALESCE\(updated_at, created_at\) <= \$1/);
+assert.match(server, /async function recomputeDriveReservations\(\)[\s\S]*?WHERE status = 'uploading'/, 'reservas são recalculadas a partir das sessões ativas');
+assert.match(server, /claimGoogleDriveReservation\([\s\S]*?UPDATE google_drive_accounts SET reserved_bytes = reserved_bytes \+ \$1/, 'a reserva de espaço é atômica no banco');
+assert.match(server, /needs_reauth = CASE WHEN \$3 = 1 THEN 1 ELSE needs_reauth END/, 'conta revogada sai da rotação');
+assert.match(server, /SET status = 'failed',[\s\S]*?COALESCE\(updated_at, created_at\) <= \$2/);
 assert.match(server, /app\.get\('\/api\/admin\/google-drive\/distribution'/);
 assert.match(server, /app\.post\('\/api\/admin\/google-drive\/distribution'/);
 assert.match(server, /status\(409\)\.json\(\{ state: 'account_changed'/);
 assert.match(server, /const claimed = await q\([\s\S]*?AND drive_account_id = \$4 RETURNING upload_id/);
 assert.match(server, /const advanced = await q\([\s\S]*?status = 'uploading' AND drive_account_id = \$4 RETURNING upload_id/);
 assert.match(server, /FROM google_drive_uploads[\s\S]*?WHERE status = 'uploading'/);
-assert.match(server, /selectGoogleDriveCandidate\(refreshed/);
+assert.match(server, /selectGoogleDriveCandidates\(accounts, \{/);
 assert.match(distribution, /most_free.*round_robin.*preferred/);
-assert.match(distribution, /storageQuotaExceeded/);
+assert.match(distribution, /classifyGoogleDriveError/, 'a distribuição delega a classificação de erro');
+assert.match(read('lib', 'google-drive-errors.js'), /storageQuotaExceeded/);
 assert.match(server, /storage_quota:/);
 assert.match(server, /\.getAbout\(\)/);
 assert.match(server, /verification_failed: true/);
@@ -100,8 +104,8 @@ assert.match(admin, /get\('drive_connected'\) === '1'/);
 assert.match(server, /res\.redirect\(302, `\$\{safeReturnOrigin\}\/admin\?drive_connected=1#storage`\)/);
 assert.match(server, /app\.delete\('\/api\/admin\/google-drive\/connection', asAdmin/);
 assert.match(admin, /admin-storage\.css/);
-assert.match(admin, /admin-storage\.css\?v=20261112b/, 'mudanças de layout invalidam o CSS antigo em cache');
-assert.match(admin, /hacker-ui\.css\?v=[^"']+"[^>]*>\s*<link rel="stylesheet" href="\/css\/admin-storage\.css\?v=20261112b"/,
+assert.match(admin, /admin-storage\.css\?v=20261112e/, 'mudanças de layout invalidam o CSS antigo em cache');
+assert.match(admin, /hacker-ui\.css\?v=[^"']+"[^>]*>\s*<link rel="stylesheet" href="\/css\/admin-storage\.css\?v=20261112e"/,
   'o CSS do painel é carregado depois dos estilos globais');
 assert.match(admin, /<span>Uso da cota<\/span>/, 'o cartão não repete o e-mail na linha de percentual');
 assert.match(adminStorageCss, /\.storage-account-card\{[^}]*display:grid/,
@@ -123,10 +127,31 @@ assert.match(admin, /loadGoogleDriveDistribution\(accounts\)/);
 assert.match(admin, /saveGoogleDriveDistribution\(\)/);
 assert.match(admin, /O painel tentará verificar novamente automaticamente\./,
   'falhas temporárias mantêm a autorização e orientam uma nova verificação');
-assert.match(dashboard, /upload\.js\?v=20261112a/);
-assert.match(dashboard, /library\.js\?v=20261111a/);
-assert.match(serviceWorker, /upload\.js\?v=20261112a/);
-assert.match(serviceWorker, /google-drive-upload\.mjs\?v=20261031b/);
-assert.match(serviceWorker, /library\.js\?v=20261111a/);
+assert.match(dashboard, /upload\.js\?v=20261112b/);
+assert.match(dashboard, /library\.js\?v=20261112a/);
+assert.match(serviceWorker, /upload\.js\?v=20261112b/);
+assert.match(serviceWorker, /google-drive-upload\.mjs\?v=20261112a/);
+assert.match(serviceWorker, /library\.js\?v=20261112a/);
+
+
+// Novas garantias do pool: classificação de erro, cron, reconciliação e envio direto.
+assert.match(server, /classifyGoogleDriveError/, 'erros do Drive são classificados por reason');
+assert.match(server, /CREATE TABLE IF NOT EXISTS google_drive_api_usage/, 'uso de API/egress é medido por dia e conta');
+assert.match(server, /ALTER TABLE google_drive_accounts ADD COLUMN IF NOT EXISTS reserved_bytes/, 'reserva de espaço por conta');
+assert.match(server, /app\.get\('\/api\/cron\/maintenance'/, 'manutenção roda fora da requisição do usuário');
+assert.match(server, /needs_reauth = 0,[\s\S]*?last_verified_at = EXCLUDED.connected_at/, 'reconectar a conta a devolve à rotação');
+assert.match(server, /await drive\.queryResumableUpload\(upload\.session_url, num\(upload\.size\)\)/, 'registro reconcilia o envio direto sem depender do navegador');
+assert.match(server, /app\.post\('\/api\/admin\/google-drive\/reconcile'/, 'painel consegue reconciliar banco x Drive');
+assert.match(server, /const directEnabled = await getDriveDirectUploadEnabled\(\)/, 'envio direto tem flag');
+assert.match(server, /session_url: sessionUrl, chunk_bytes: DRIVE_DIRECT_CHUNK_BYTES/, 'sessão direta usa blocos maiores');
+assert.match(server, /const TRASH|quota_trash_used_bytes/, 'uso da lixeira continua visível');
+assert.match(driveTransport, /current\.direct\.session_url/, 'o navegador usa a sessão direta quando liberada');
+assert.match(driveTransport, /directBlocked = true/, 'falha de CORS volta para o envio pelo servidor');
+assert.match(server, /app\.post\('\/api\/admin\/google-drive\/accounts\/:id\/test'/, 'dá para testar uma conta isoladamente');
+assert.match(admin, /googleDriveDirectUpload/, 'painel permite desligar o envio direto sem deploy');
+assert.match(admin, /runGoogleDriveReconcile\(\)/, 'painel dispara a verificação de integridade');
+assert.match(admin, /value="best_fit"/, 'painel oferece o modo de menor conta que cabe');
+assert.match(admin, /id="googleDriveCapacityMax"/, 'painel mostra o maior arquivo que cabe');
+assert.match(admin, /id="googleDrivePoolNotice"/, 'painel avisa sobre cota compartilhada/ilimitada');
 
 console.log('Todas as asserções da integração Google Drive passaram.');
