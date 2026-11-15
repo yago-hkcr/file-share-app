@@ -361,7 +361,6 @@ body.auth-page .auth-card {
     4px 4px 0 rgba(0,0,0,.12),
     6px 6px 0 rgba(0,0,0,.10),
     8px 10px 0 rgba(0,0,0,.08),
-    /* floating depth */
     0 40px 80px rgba(0, 0, 0, .38),
     0 18px 35px rgba(0, 0, 0, .24),
     0 0 0 1px rgba(var(--cy-rgb), .10),
@@ -441,23 +440,6 @@ body.auth-page .auth-showcase .auth-terminal {
   box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 2px 0 rgba(var(--cy-rgb),.10), 0 4px 0 rgba(0,0,0,.10), 0 8px 0 rgba(0,0,0,.08), 0 18px 40px rgba(0,0,0,.22), 0 0 20px rgba(var(--cy-rgb),.08);
 }
 
-/* Floor shadow under floating card (element injected by JS) */
-body.auth-page .auth-card-floor-shadow {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.28) 45%, rgba(0,0,0,0.0) 75%);
-  transform-origin: center;
-  z-index: 0;
-  filter: blur(26px);
-  opacity: 0.45;
-  will-change: transform, opacity, filter;
-}
-html[data-theme="light"] body.auth-page .auth-card-floor-shadow {
-  background: radial-gradient(ellipse at center, rgba(20,20,20,0.28) 0%, rgba(20,20,20,0.12) 45%, rgba(20,20,20,0.0) 75%);
-  opacity: 0.35;
-}
-body.auth-page .auth-card { z-index: 1; }
 
 /* 3D form elements inside auth cards */
 body.auth-page .auth-card .form-group input {

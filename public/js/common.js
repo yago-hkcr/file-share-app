@@ -235,30 +235,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addThemeButton);
   else addThemeButton();
 
-  // Global 3D animated background (decorative, fails silently).
-  function loadBg3d() {
-    if (window.__arquiveBg3dLoading || document.getElementById('site-bg-3d')) return;
-    window.__arquiveBg3dLoading = true;
-    try {
-      var s = document.createElement('script');
-      s.src = '/js/bg-3d.js?v=20261112d';
-      s.async = true;
-      document.head.appendChild(s);
-    } catch (e) {}
-  }
-  // Floating 3D tilt effect for auth pages.
-  function loadAuth3dFloat() {
-    if (window.__arquiveAuth3dLoading) return;
-    if (!document.body || !document.body.classList.contains('auth-page')) return;
-    window.__arquiveAuth3dLoading = true;
-    try {
-      var s = document.createElement('script');
-      s.src = '/js/auth-3d-float.js?v=20261112h';
-      s.async = true;
-      document.head.appendChild(s);
-    } catch (e) {}
-  }
-  function loadDecor() { loadBg3d(); loadAuth3dFloat(); }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadDecor);
-  else loadDecor();
+  // (decor antigo removido: fundo 3D/cubos e float do login substituídos pelo cyber.js)
 })();

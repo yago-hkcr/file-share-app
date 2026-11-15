@@ -28,10 +28,27 @@
     }
   }
 
-  // ---- Canvas de fundo ----
-  const interior = !reduce && !lowGfx && (body.classList.contains('app-page') || body.classList.contains('sala-page') || body.classList.contains('collection-page'));
+  function ensureBaseCss() {
+    if (document.getElementById('cyberBaseCss')) return;
+    const st = document.createElement('style');
+    st.id = 'cyberBaseCss';
+    st.textContent = [
+      '#cyberRain{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;}',
+      '.cy-grid{position:fixed;left:-60%;right:-60%;bottom:0;height:70vh;z-index:0;pointer-events:none;}',
+      '.cy-scan{position:fixed;inset:0;z-index:2;pointer-events:none;overflow:hidden;}',
+      'html.cy-interior>#cyberRain,html.cy-interior>.cy-grid,html.cy-interior>.cy-scan{z-index:-1;}',
+      'html.cy-interior>#cyberRain{opacity:.72;}',
+      'html.cy-interior>.cy-grid{opacity:.34;}',
+      'html.cy-interior>.cy-scan{opacity:.38;}',
+      '@media(prefers-reduced-motion:reduce){#cyberRain{display:none;}}'
+    ].join('');
+    document.head.appendChild(st);
+  }
+
+  // ---- Canvas de fundo (em todas as páginas) ----
   let canvas = document.getElementById('cyberRain');
-  if (!canvas && interior) {
+  if (!canvas && !reduce && !lowGfx) {
+    ensureBaseCss();
     canvas = document.createElement('canvas');
     canvas.id = 'cyberRain';
     canvas.setAttribute('aria-hidden', 'true');
@@ -45,6 +62,8 @@
     root.insertBefore(grid, body);
     root.insertBefore(scan, body);
     root.classList.add('cy-interior');
+  } else if (canvas) {
+    ensureBaseCss();
   }
   if (!canvas || reduce || lowGfx) return;
 
@@ -58,7 +77,6 @@
   let particles = [];
   const active = new Set();
 
-  // em aparelhos fracos: grade um pouco mais espaçada e raio menor = menos ativos, mesmo visual de campo
   const cell = weak ? 32 : (desktop ? 26 : 30);
   const fontSize = weak ? 15 : (desktop ? 15 : 14);
   const radius = weak ? 120 : (desktop ? 150 : 120);
@@ -142,7 +160,6 @@
   }
 
   function resize() {
-    // DPR 1 para máximo desempenho (visual do efeito preservado)
     const maxDpr = weak ? 1 : 1.5;
     dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
     w = window.innerWidth; h = window.innerHeight;
@@ -192,12 +209,11 @@
     new MutationObserver(scheduleThemeRender).observe(root, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
   }
 
-  // começa em 30fps para garantir fluidez; sobe se o aparelho sobrar
   let minFrame = 1000 / 30;
   let avgCost = 0;
 
   function drawGlow(c, ch, x, y, glow, dark) {
-    const o = 0.6 + glow * 1.4; // deslocamento do "bloom"
+    const o = 0.6 + glow * 1.4;
     c.fillText(ch, x - o, y);
     c.fillText(ch, x + o, y);
     c.fillText(ch, x, y - o);
@@ -284,7 +300,6 @@
         const glow = p.heat;
         if (glow > 0.015) {
           const a = Math.min(1, baseA + glow * (dark ? 1.0 : 0.85));
-          // brilho (bloom) sem shadowBlur: cópias deslocadas + núcleo
           ctx.fillStyle = 'rgba(' + rgb + ',' + (a * (0.22 + glow * 0.25)) + ')';
           drawGlow(ctx, p.ch, p.x, p.y, glow, dark);
           ctx.fillStyle = 'rgba(' + rgb + ',' + a + ')';
@@ -313,7 +328,7 @@
       const cost = performance.now() - t0;
       avgCost = avgCost ? (avgCost * 0.85 + cost * 0.15) : cost;
       if (avgCost > 14) minFrame = 1000 / 30;
-      else if (avgCost < 8 && !weak) minFrame = 1000 / 60; // só sobe se sobrar folga
+      else if (avgCost < 8 && !weak) minFrame = 1000 / 60;
     }
 
     if (pointer.active || active.size > 0) rafId = requestAnimationFrame(frame);

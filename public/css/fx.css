@@ -121,8 +121,6 @@ body.auth-page .auth-settings-btn i { display: block; line-height: 1; }
 .gfx-option-auto { border-style: dashed; }
 .gfx-option-auto.is-active { border-style: solid; }
 .gfx-auto-status { min-height: 1em; margin-top: 10px; font-size: 12px; opacity: .78; }
-/* Fundo 3D desligado nos níveis mais leves (economia real de CPU/GPU) */
-html[data-gfx="minimal"] #site-bg-3d, html[data-gfx="basic"] #site-bg-3d { display: none !important; }
 html.fx-lite .fx-orb { display: none; }
 @media (max-width: 700px) { .fx-orb { opacity: .14; } .fx-pointer-glow { width:min(92vw,430px); mix-blend-mode:normal; } }
 html.fx-lite .fx-pointer-glow { opacity:.6; }

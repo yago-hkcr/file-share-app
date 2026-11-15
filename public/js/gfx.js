@@ -51,7 +51,7 @@
     currentLevel = gfx;
     root.removeAttribute('data-gfx');
     if (gfx !== 'high') root.setAttribute('data-gfx', gfx);
-    // Classe única usada por scripts de efeito (fx/cyber/bg-3d) para parar loops.
+    // Classe única usada por scripts de efeito (fx/cyber) para parar loops.
     if (levelIndex(gfx) <= levelIndex('low')) root.classList.add('gfx-lite');
     else root.classList.remove('gfx-lite');
     paintButtons(gfx);
