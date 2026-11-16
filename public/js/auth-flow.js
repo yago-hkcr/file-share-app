@@ -69,6 +69,84 @@
     root.dataset.theme = event.detail && event.detail.theme === 'dark' ? 'dark' : 'light';
   });
 
+  // 3D flutuante + inclinação que acompanha o cursor nos cards de autenticação.
+  (function initAuthTilt() {
+    if (reduceMotion) return;
+    const cards = Array.from(document.querySelectorAll('.auth-card, .auth-showcase'));
+    if (!cards.length) return;
+
+    const finePointer = !window.matchMedia || window.matchMedia('(pointer: fine)').matches;
+    const base = { x: 4, y: -6, scale: 1 };
+
+    const states = cards.map((el, i) => ({
+      el,
+      hovering: false,
+      cx: base.x, cy: base.y, cs: base.scale, cf: 0,
+      tx: base.x, ty: base.y, ts: base.scale,
+      rect: null,
+      phase: i * 1.3
+    }));
+
+    const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+    const lerp = (a, b, t) => a + (b - a) * t;
+
+    function refreshRects() {
+      states.forEach(s => { s.rect = s.el.getBoundingClientRect(); });
+    }
+
+    states.forEach(s => {
+      const onEnter = () => {
+        s.hovering = true;
+        s.rect = s.el.getBoundingClientRect();
+        s.el.classList.add('is-tilting');
+        s.ts = 1.015;
+      };
+      const onLeave = () => {
+        s.hovering = false;
+        s.el.classList.remove('is-tilting');
+        s.tx = base.x; s.ty = base.y; s.ts = base.scale;
+      };
+      const onMove = (e) => {
+        if (!finePointer) return;
+        if (!s.rect) s.rect = s.el.getBoundingClientRect();
+        const r = s.rect;
+        const px = clamp((e.clientX - r.left) / r.width, 0, 1);
+        const py = clamp((e.clientY - r.top) / r.height, 0, 1);
+        const dx = (px - 0.5) * 2;
+        const dy = (py - 0.5) * 2;
+        const max = s.el.classList.contains('auth-showcase') ? 7 : 11;
+        s.ty = base.y + dx * max;
+        s.tx = base.x - dy * max;
+      };
+      s.el.addEventListener('pointerenter', onEnter);
+      s.el.addEventListener('pointerleave', onLeave);
+      s.el.addEventListener('pointermove', onMove);
+    });
+
+    window.addEventListener('resize', refreshRects, { passive: true });
+    window.addEventListener('scroll', refreshRects, { passive: true });
+
+    const start = performance.now();
+    function frame(now) {
+      const t = (now - start) / 1000;
+      for (const s of states) {
+        const floatAmp = s.hovering ? 3 : 6;
+        const targetFloat = Math.sin(t * 1.5 + s.phase) * floatAmp;
+        const k = s.hovering ? 0.12 : 0.08;
+        s.cx = lerp(s.cx, s.tx, k);
+        s.cy = lerp(s.cy, s.ty, k);
+        s.cs = lerp(s.cs, s.ts, k);
+        s.cf = lerp(s.cf, targetFloat, 0.08);
+        s.el.style.setProperty('--tilt-x', s.cx.toFixed(3) + 'deg');
+        s.el.style.setProperty('--tilt-y', s.cy.toFixed(3) + 'deg');
+        s.el.style.setProperty('--card-scale', s.cs.toFixed(4));
+        s.el.style.setProperty('--float-y', s.cf.toFixed(2) + 'px');
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+
   // Salvaguarda: as animações de entrada (fx.css) duram ~1.1s; se depois disso
   // algum campo ainda estiver preso no estado inicial (motor de animação
   // congelado em aparelhos lentos), a classe abaixo zera as animações e

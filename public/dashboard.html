@@ -25,66 +25,6 @@
   <link rel="stylesheet" href="/css/collections.css?v=20261112b">
   <link rel="stylesheet" href="/css/library.css?v=20261112b">
   <script src="/js/common.js?v=20261112k"></script><script src="/js/message-export.js?v=20261112a"></script><script src="/js/adaptive.js?v=20261014c"></script><script src="/js/onboarding.js?v=20261014o" defer></script>
-  <style>
-    .dashboard-content { max-width: 1180px; margin: 0 auto; padding: 32px; }
-    .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; }
-    .dashboard-intro h2 { color:var(--gray-900); margin-bottom:4px; }
-    .dashboard-intro p { color:var(--gray-500); }
-    .rooms-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:20px; }
-    .room-card { display:flex; flex-direction:column; min-height:220px; }
-    .room-card-body { flex:1; }
-    .room-card h3 { margin-bottom:6px; color:var(--gray-900); }
-    .room-description { color:var(--gray-500); min-height:48px; }
-    .room-meta { display:flex; gap:16px; color:var(--gray-500); font-size:13px; margin:18px 0; }
-    .room-actions { display:flex; gap:8px; flex-wrap:wrap; }
-    .empty-state { text-align:center; padding:52px 20px; color:var(--gray-500); }
-    .empty-state i { font-size:42px; margin-bottom:12px; color:var(--gray-300); }
-    .empty-state .btn { margin-top:16px; }
-    .profile-pill { display:flex; align-items:center; gap:8px; color:var(--gray-700); font-size:14px; }
-    .avatar { flex:none; }
-    .modal-content { max-width:720px; }
-    /* Rodapé da criação de sala: área de toque isolada no mobile. */
-    #createRoomModal .modal-footer {
-      position: relative !important;
-      z-index: 50 !important;
-      pointer-events: auto !important;
-      isolation: isolate;
-    }
-    #createRoomModal #createRoomSubmit {
-      position: relative;
-      z-index: 51;
-      pointer-events: auto !important;
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-    }
-    @media (max-width:640px) {
-      .dashboard-content { padding:20px 14px; }
-      .dashboard-intro { align-items:flex-start; flex-direction:column; }
-      .header { padding:14px 16px; }
-      .header-left h1 { font-size:18px; }
-      .header-right .profile-pill { display:none; }
-      .room-actions .btn { flex:1 1 100%; justify-content:center; }
-      .modal { padding:10px; align-items:flex-end; }
-      .modal-content { width:100%; max-width:100%; max-height:92vh; overflow:hidden; border-radius:18px 18px 0 0; }
-      .modal-body { max-height:calc(92vh - 70px); overflow-y:auto; padding:0 16px 18px; }
-      .file-row { align-items:flex-start; min-width:0; }
-      .file-row-name { white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
-      .file-row .btn { flex:0 0 auto; }
-      #roomModal #roomFiles .file-row { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; width:100%; }
-      #roomModal #roomFiles .file-main { min-width:0; width:100%; }
-      #roomModal #roomFiles .file-btns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; width:100%; }
-      #roomModal #roomFiles .file-btns .btn { min-width:0; width:100%; min-height:42px; justify-content:center; white-space:normal; }
-      .form-row { display:grid; grid-template-columns:1fr auto; gap:8px; }
-      .form-row input { min-width:0; width:100%; }
-      .form-row .btn { width:auto; }
-    }
-      #roomModal .section-title { flex-wrap: wrap; row-gap: 8px; }
-      #roomModal .section-title::after { display: none; }
-      #roomModal .section-action { margin-left: auto; min-height: 34px; }
-      @media (max-width: 640px) {
-        #roomModal .section-action { width: 100%; margin-left: 0; min-height: 42px; justify-content: center; }
-      }
-  </style>
   <link rel="stylesheet" href="/css/mobile.css?v=20261112a">
   <script src="/js/mobile.js?v=20261014o" defer></script>
   <link rel="stylesheet" href="/css/fx.css?v=20261112c">
@@ -92,6 +32,70 @@
   <script src="/js/gfx.js?v=20261112b"></script><script src="/js/fx.js?v=20261112b" defer></script>
   <link rel="stylesheet" href="/css/preview.css?v=20261014o">
   <link rel="stylesheet" href="/css/dashboard-redesign.css?v=20261014o">
+  <style>
+    .dashboard-content { width: 100%; max-width: 1180px; margin: 0 auto; padding: clamp(16px, 4vw, 32px); box-sizing: border-box; }
+    .dashboard-intro { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:24px; flex-wrap:wrap; }
+    .dashboard-intro > div { min-width:0; flex:1 1 220px; }
+    .dashboard-intro h2 { color:var(--gray-900); margin-bottom:4px; overflow-wrap:anywhere; }
+    .dashboard-intro p { color:var(--gray-500); overflow-wrap:anywhere; }
+    .intro-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .rooms-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%, 260px),1fr)); gap:20px; width:100%; min-width:0; }
+    .room-card { display:flex; flex-direction:column; min-height:220px; min-width:0; max-width:100%; box-sizing:border-box; }
+    .room-card-body { flex:1; min-width:0; }
+    .room-card h3 { margin-bottom:6px; color:var(--gray-900); overflow-wrap:anywhere; }
+    .room-description { color:var(--gray-500); min-height:48px; overflow-wrap:anywhere; }
+    .room-meta { display:flex; gap:16px; color:var(--gray-500); font-size:13px; margin:18px 0; flex-wrap:wrap; }
+    .room-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .room-actions .btn, .room-actions a.btn { min-height:44px; }
+    .empty-state { text-align:center; padding:52px 20px; color:var(--gray-500); }
+    .empty-state i { font-size:42px; margin-bottom:12px; color:var(--gray-300); }
+    .empty-state .btn { margin-top:16px; }
+    .profile-pill { display:flex; align-items:center; gap:8px; color:var(--gray-700); font-size:14px; min-width:0; }
+    .avatar { flex:none; }
+    .modal:not(#roomModal):not(.image-text-modal):not(.lib-editor-modal) .modal-content { max-width:min(720px, calc(100vw - 24px)); }
+    #createRoomModal .modal-footer { position:relative !important; z-index:50 !important; pointer-events:auto !important; isolation:isolate; }
+    #createRoomModal #createRoomSubmit { position:relative; z-index:51; pointer-events:auto !important; touch-action:manipulation; -webkit-tap-highlight-color:transparent; min-height:44px; }
+    #roomModal .section-title { flex-wrap:wrap; row-gap:8px; }
+    #roomModal .section-title::after { display:none; }
+    #roomModal .section-action { margin-left:auto; min-height:34px; }
+    @media (max-width:640px) {
+      .dashboard-content { padding:16px 12px calc(20px + env(safe-area-inset-bottom, 0px)); }
+      .dashboard-intro { align-items:stretch; flex-direction:column; gap:14px; }
+      .intro-actions { width:100%; display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr)); gap:8px; }
+      .intro-actions .btn { width:100%; min-height:44px; justify-content:center; white-space:normal; }
+      .header { padding:10px max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px)); gap:8px; align-items:center; flex-wrap:wrap; }
+      .header-left { min-width:0; flex:1 1 160px; gap:8px; flex-wrap:wrap; }
+      .header-left h1 { font-size:clamp(15px, 4.2vw, 18px); min-width:0; overflow-wrap:anywhere; }
+      .header-left .badge { font-size:11px; padding:3px 8px; }
+      .header-right { width:100%; flex:1 1 100%; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+      .header-right .profile-pill { display:none; }
+      .header-right .btn { min-height:40px; }
+      .room-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+      .room-actions .btn, .room-actions a.btn { width:100%; flex:none; justify-content:center; white-space:normal; font-size:13px; padding:10px 8px; }
+      .room-actions .btn:first-child, .room-actions a.btn-share { grid-column:1 / -1; }
+      .modal { padding:0; align-items:flex-end; }
+      .modal:not(#roomModal) .modal-content { display:flex; flex-direction:column; width:100%; max-width:100%; max-height:min(92dvh, calc(100dvh - env(safe-area-inset-top, 0px))); overflow:hidden; border-radius:18px 18px 0 0; margin:0; }
+      .modal:not(#roomModal) .modal-header { flex:0 0 auto; padding:16px 16px 12px; gap:10px; }
+      .modal:not(#roomModal) .modal-body { flex:1 1 auto; min-height:0; max-height:none; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:0 16px 16px; }
+      .modal:not(#roomModal) .modal-footer { flex:0 0 auto; flex-wrap:wrap; gap:8px; padding:12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
+      .modal:not(#roomModal) .modal-footer .btn { flex:1 1 140px; min-height:44px; justify-content:center; }
+      .form-row { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
+      .form-row input, .form-row .btn { width:100%; min-width:0; }
+      #roomModal .chat-msg { max-width:94%; }
+      #roomModal .chat-list { max-height:none; height:auto; flex:1 1 auto; min-height:150px; }
+      #roomModal .modal-content { overflow:hidden; max-height:92dvh; display:flex; flex-direction:column; padding-bottom:max(8px, env(safe-area-inset-bottom, 0px)); }
+      #roomModal .modal-body { flex:1 1 auto; overflow-y:auto; min-height:0; display:flex; flex-direction:column; }
+      #roomModal #roomFiles { overflow-x:hidden; overflow-y:auto; max-height:26dvh; flex:0 0 auto; }
+      #roomModal .chat-box { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+      #roomModal #messageForm.chat-compose { margin-top:auto; flex-shrink:0; padding-bottom:env(safe-area-inset-bottom, 0px); grid-template-columns:minmax(0,1fr) 44px 44px 44px !important; gap:6px; align-items:center; }
+      #roomModal #attachFileBtn,#roomModal #ocrButton,#roomModal #chatSendBtn { width:44px; min-width:44px; max-width:44px; height:44px; min-height:44px; }
+      #roomModal #roomFiles .file-row { display:grid; grid-template-columns:1fr; align-items:flex-start; gap:8px; }
+      #roomModal #roomFiles .file-main { min-width:0; width:100%; }
+      #roomModal #roomFiles .file-btns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; width:100%; }
+      #roomModal #roomFiles .file-btns .btn { min-width:0; width:100%; min-height:42px; justify-content:center; white-space:normal; }
+      #roomModal .section-action { width:100%; margin-left:0; min-height:42px; justify-content:center; }
+    }
+  </style>
 <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261027a">
 <link rel="stylesheet" href="/css/hacker-ui.css?v=20261112b">
   <link rel="stylesheet" href="/css/theme-v2.css?v=20261112b">

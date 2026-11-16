@@ -34,6 +34,7 @@
 
     root.style.setProperty('--vw', w + 'px');
     root.style.setProperty('--vh', h + 'px');
+    root.style.setProperty('--app-height', h + 'px');
     root.style.setProperty('--vmin', Math.min(w, h) + 'px');
     root.style.setProperty('--vmax', Math.max(w, h) + 'px');
     root.style.setProperty('--dpr', String(dpr));
@@ -120,6 +121,12 @@
       }
     } catch (e) {}
   }
+  function scheduleOverflowFix() {
+    ensureNoHOverflow();
+    setTimeout(ensureNoHOverflow, 350);
+  }
+  window.addEventListener('resize', scheduleOverflowFix);
+  window.addEventListener('orientationchange', scheduleOverflowFix);
   window.addEventListener('load', ensureNoHOverflow);
   setTimeout(ensureNoHOverflow, 1200);
 

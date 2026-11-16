@@ -118,7 +118,6 @@ input, select, textarea { min-width: 0; }
 }
 
 
-/* Correção mobile definitiva da lista de arquivos do painel administrativo.
 /* Sistema adaptativo (adaptive.js): estado por dispositivo */
 html[data-viewport="xs"] body { font-size: 15px; }
 html[data-viewport="sm"] body { font-size: 15px; }
@@ -126,6 +125,15 @@ html[data-viewport="md"] body { font-size: 16px; }
 html[data-viewport="lg"] body { font-size: 16px; }
 html[data-viewport="xl"] body { font-size: 16px; }
 html[data-viewport="xxl"] body { font-size: 16px; }
+
+/* Usa --vh/--vw do adaptive.js para altura real em mobile (barras do navegador) */
+html, body { min-height: 100dvh; }
+body.app-page { min-height: 100dvh; }
+@supports (height: 100svh) {
+  body.app-page { min-height: 100svh; }
+}
+html[data-input="touch"] .btn, html[data-input="touch"] button, html[data-input="touch"] [role="button"] { touch-action: manipulation; }
+html[data-pointer="coarse"] .btn, html[data-pointer="coarse"] .dashboard-tab, html[data-pointer="coarse"] .nav-item { min-height: 44px; }
 
 html[data-orientation="landscape"] .adaptive-stack { flex-direction: row; }
 html[data-orientation="portrait"] .adaptive-stack { flex-direction: column; }
