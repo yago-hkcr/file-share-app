@@ -2990,7 +2990,7 @@ app.post('/api/login', wrap(async (req, res) => {
   } catch (e) { console.error('issue token:', e && e.message); }
   // Alerta de novo dispositivo somente a partir do segundo aparelho do usuário.
   if (loginDevice.isNew && loginDevice.previousCount > 0) {
-    sendLoginAlert(user, req, loginDevice).catch(e => console.error('login alert:', e && e.message));
+    await sendLoginAlert(user, req, loginDevice).catch(e => console.error('login alert:', e && e.message));
   }
   res.json({ success: true, role: user.role, status: user.status, password_change_required: passwordChangeRequired });
 }));
@@ -4314,7 +4314,7 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
     await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
       [id, room.id, req.user.id, name, storedName, file.size, file.mimetype || 'application/octet-stream', ts(), chatOnly]);
     inserted.push({ id, original_name: name, size: file.size, mime_type: file.mimetype });
-    announceRoomFile(room.id, req.user.id, name).catch(() => {});
+    await announceRoomFile(room.id, req.user.id, name).catch(() => {});
   }
   res.json(inserted);
 }));
@@ -4594,7 +4594,7 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
   const chatOnly = (req.body && req.body.chat_only) ? 1 : 0;
   await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
     [m[2], room.id, req.user.id, name, pathname, size, mime, ts(), chatOnly]);
-  announceRoomFile(room.id, req.user.id, name).catch(() => {});
+  await announceRoomFile(room.id, req.user.id, name).catch(() => {});
   res.json({ id: m[2], original_name: name, size, chat_only: chatOnly });
 }));
 
@@ -4620,7 +4620,7 @@ app.post('/api/rooms/:id/drive-files/register', asMember, wrap(async (req, res) 
   await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING',
     [upload.upload_id, room.id, req.user.id, upload.original_name, storedName, num(upload.size), upload.mime_type, ts(), chatOnly]);
   await q("UPDATE google_drive_uploads SET status = 'registered', updated_at = $1 WHERE upload_id = $2 AND user_id = $3", [ts(), upload.upload_id, req.user.id]);
-  announceRoomFile(room.id, req.user.id, upload.original_name).catch(() => {});
+  await announceRoomFile(room.id, req.user.id, upload.original_name).catch(() => {});
   res.json({ id: upload.upload_id, original_name: upload.original_name, size: num(upload.size), mime_type: upload.mime_type, chat_only: chatOnly });
 }));
 
@@ -5745,7 +5745,7 @@ app.post('/api/rooms/:id/messages', asMember, wrap(async (req, res) => {
   const id = uuidv4();
   await q('INSERT INTO messages (id, room_id, user_id, content, reply_to_id, created_at, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
     [id, req.params.id, req.user.id, content, replyTo, ts(), expiresAt]);
-  announceRoomMessage(req.params.id, req.user.id, content).catch(() => {});
+  await announceRoomMessage(req.params.id, req.user.id, content).catch(() => {});
   res.json(await one(`SELECT m.*, u.username, u.avatar_color, u.role, parent.content AS reply_content, parent_user.username AS reply_username
     FROM messages m JOIN users u ON m.user_id = u.id LEFT JOIN messages parent
       ON parent.id = m.reply_to_id AND (parent.expires_at IS NULL OR parent.expires_at > $2)
