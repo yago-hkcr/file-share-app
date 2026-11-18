@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v37-hardening';
+const CACHE_NAME = 'fileshare-v39-shares-push';
 const ASSETS = [
   '/css/social.css?v=20261112b',
   '/css/upload-queue.css?v=20261112b',
@@ -22,6 +22,7 @@ const ASSETS = [
   '/css/preview.css?v=20261014o',
   '/css/hacker-ui.css?v=20261112b',
   '/css/theme-v2.css?v=20261112b',
+  '/css/shares.css?v=20261119b',
   '/js/common.js?v=20261112k',
   '/js/logo-3d-anim.js?v=20261112f',
   '/js/adaptive.js?v=20261118a',
@@ -32,13 +33,16 @@ const ASSETS = [
   '/js/upload.js?v=20261112c',
   '/js/google-drive-upload.mjs?v=20261112b',
   '/js/social.js?v=20261112a',
-  '/js/personal.js?v=20261112c',
+  '/js/personal.js?v=20261119a',
+  '/js/security-devices.js?v=20261119b',
+  '/js/file-shares.js?v=20261119a',
+  '/js/file-share-page.js?v=20261119a',
   '/js/message-export.js?v=20261112a',
   '/js/cursor.js?v=20261014o',
   '/js/preview.js?v=20261111a',
   '/js/collections.js?v=20261111a',
   '/js/collection-upload.js?v=20261111a',
-  '/js/library.js?v=20261112b',
+  '/js/library.js?v=20261119a',
   '/js/dashboard-shell.js?v=20261014o',
   '/js/announce.js?v=20261107d',
   '/js/cyber.js?v=20261112f',
@@ -381,31 +385,48 @@ self.addEventListener('message', event => {
 });
 
 // ---------------------------------------------------------------------------
-// Push: esqueleto (ativa com VAPID no servidor futuramente)
+// Push: notificações com VAPID (mensagens, arquivos, coletas e segurança)
 // ---------------------------------------------------------------------------
 self.addEventListener('push', event => {
-  const data = event.data ? event.data.json() : {};
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (error) { data = { body: event.data ? event.data.text() : '' }; }
   const title = data.title || 'Arquive Online';
+  const url = data.url || '/dashboard';
   const options = {
     body: data.body || 'Você tem uma nova notificação.',
-    icon: '/favicon-48.png',
-    badge: '/favicon-48.png',
+    icon: data.icon || '/favicon-192.png',
+    badge: data.badge || '/favicon-48.png',
     dir: 'auto',
     lang: 'pt-BR',
-    data: data.url || '/'
+    tag: data.tag || 'arquive',
+    renotify: data.renotify !== false,
+    timestamp: Date.now(),
+    data: { url },
+    actions: [{ action: 'open', title: 'Abrir' }]
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const url = event.notification.data || '/';
+  const payload = event.notification.data || {};
+  const target = typeof payload === 'string' ? payload : (payload.url || '/dashboard');
+  const targetUrl = new URL(target, self.location.origin);
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-      for (const c of clients) {
-        if (c.url === self.location.origin + url) { return c.focus(); }
+      for (const client of clients) {
+        try {
+          const clientUrl = new URL(client.url);
+          if (clientUrl.origin === targetUrl.origin && clientUrl.pathname === targetUrl.pathname) {
+            return client.focus().then(() => {
+              if (event.action === 'open' && client.navigate) return client.navigate(targetUrl.href).catch(() => client.focus());
+              return client.focus();
+            });
+          }
+        } catch (error) {}
       }
-      if (self.clients.openWindow) return self.clients.openWindow(url);
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl.href);
+      return undefined;
     })
   );
 });

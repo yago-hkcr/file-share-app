@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-br" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Arquivo compartilhado — Arquive Online</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@600;800&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css?v=20261014a">
+  <link rel="stylesheet" href="/css/style.css?v=20261112b">
+  <link rel="stylesheet" href="/css/auth-flow.css?v=20261112i">
+  <link rel="stylesheet" href="/css/hacker-ui.css?v=20261112b">
+  <link rel="stylesheet" href="/css/theme-v2.css?v=20261112b">
+  <link rel="stylesheet" href="/css/adaptive.css?v=20261118a">
+  <style>
+    body.share-page { align-items: center; justify-content: center; padding: clamp(18px, 4vh, 46px) clamp(14px, 4vw, 32px); }
+    body.share-page .share-container { display: block; width: min(100%, 620px); }
+    body.share-page .share-card {
+      width: 100%;
+      max-width: 620px;
+      min-height: 0;
+      margin: 0 auto;
+      padding: clamp(26px, 4vw, 42px);
+      border: 1px solid var(--auth-line);
+      border-radius: 24px;
+      background: var(--auth-panel);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, .35), inset 0 1px rgba(255, 255, 255, .05);
+      text-align: center;
+      transform: none;
+    }
+    body.share-page .share-card::before,
+    body.share-page .share-card::after { display: none; }
+    body.share-page .share-brand { display: flex; align-items: center; justify-content: center; gap: 11px; margin-bottom: clamp(24px, 4vw, 34px); text-decoration: none; }
+    body.share-page .share-brand-mark { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid rgba(var(--cy-rgb), .55); border-radius: 12px; color: var(--cy); background: rgba(var(--cy-rgb), .08); font-size: 17px; }
+    body.share-page .share-brand-copy { text-align: left; }
+    body.share-page .share-brand-copy b { display: block; color: var(--auth-ink); font: 800 13px/1 Orbitron, Inter, sans-serif; letter-spacing: .15em; }
+    body.share-page .share-brand-copy small { display: block; margin-top: 5px; color: var(--auth-muted); font: 600 8.5px/1 Rajdhani, Inter, sans-serif; letter-spacing: .18em; text-transform: uppercase; }
+    body.share-page .share-state { display: grid; gap: 14px; justify-items: center; }
+    body.share-page .share-icon {
+      display: grid;
+      width: 74px;
+      height: 74px;
+      place-items: center;
+      margin-bottom: 2px;
+      border: 1px solid rgba(var(--cy-rgb), .4);
+      border-radius: 22px;
+      background: radial-gradient(circle at 30% 20%, rgba(var(--cy-rgb), .2), rgba(var(--cy-rgb), .05));
+      color: var(--cy);
+      font-size: 27px;
+      box-shadow: 0 0 42px rgba(var(--cy-rgb), .12);
+    }
+    body.share-page .share-icon.is-error { border-color: rgba(239, 68, 68, .4); background: rgba(239, 68, 68, .08); color: #fca5a5; box-shadow: none; }
+    body.share-page .share-eyebrow { color: var(--cy); font: 700 10.5px/1.4 'Share Tech Mono', monospace; letter-spacing: .15em; text-transform: uppercase; }
+    body.share-page h1 { margin: 0; color: var(--auth-ink); font: 800 clamp(23px, 4vw, 32px)/1.18 Orbitron, Inter, sans-serif; letter-spacing: -.035em; overflow-wrap: anywhere; }
+    body.share-page .share-copy { max-width: 420px; margin: 0; color: var(--auth-muted); font-size: 13.5px; line-height: 1.65; }
+    body.share-page .share-meta { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; }
+    body.share-page .share-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--auth-line); border-radius: 999px; background: rgba(var(--cy-rgb), .06); color: var(--auth-muted); font-size: 10.5px; font-weight: 600; }
+    body.share-page .share-chip i { color: var(--cy); font-size: 9.5px; }
+    body.share-page .share-chip.is-warn { border-color: rgba(245, 158, 11, .35); color: #fcd34d; background: rgba(245, 158, 11, .08); }
+    body.share-page .share-chip.is-warn i { color: #fcd34d; }
+    body.share-page .share-form { display: grid; gap: 11px; width: 100%; margin-top: 4px; text-align: left; }
+    body.share-page .share-form label { color: var(--auth-muted); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+    body.share-page .share-form input { width: 100%; height: 50px; text-align: center; font-size: 18px; letter-spacing: .25em; border: 1px solid var(--auth-line); border-radius: 12px; outline: none; background: var(--auth-input); color: var(--auth-ink); }
+    body.share-page .share-form input::placeholder { color: var(--auth-muted); opacity: .65; letter-spacing: .2em; }
+    body.share-page .share-form input:focus { border-color: var(--cy); background: var(--auth-panel); box-shadow: 0 0 0 4px rgba(var(--cy-rgb), .14); }
+    body.share-page .share-form button { min-height: 50px; }
+    body.share-page .share-error { margin: 0; padding: 10px 12px; border: 1px solid rgba(239, 68, 68, .35); border-radius: 10px; background: rgba(239, 68, 68, .08); color: #fca5a5; font-size: 12.5px; line-height: 1.45; text-align: left; }
+    body.share-page .share-actions { display: grid; gap: 9px; width: 100%; margin-top: 5px; }
+    body.share-page .share-actions .btn { min-height: 50px; font-size: 14px; }
+    body.share-page .share-actions .btn-outline { border-color: var(--auth-line); color: var(--auth-ink); background: rgba(var(--cy-rgb), .06); }
+    body.share-page .share-actions .btn-outline:hover { border-color: var(--cy); background: rgba(var(--cy-rgb), .12); }
+    body.share-page .share-note { margin: 2px 0 0; color: var(--auth-muted); font-size: 11px; line-height: 1.55; }
+    body.share-page .share-note i { margin-right: 4px; color: var(--cy); }
+    body.share-page .share-footer { margin-top: clamp(22px, 4vw, 30px); padding-top: 18px; border-top: 1px solid var(--auth-line); color: var(--auth-muted); font-size: 11px; line-height: 1.6; }
+    body.share-page .share-footer a { color: var(--cy); font-weight: 700; text-decoration: none; }
+    body.share-page .share-footer a:hover { text-decoration: underline; }
+    body.share-page .share-loading { display: grid; gap: 12px; justify-items: center; padding: 10px 0; }
+    body.share-page .share-loading i { color: var(--cy); font-size: 26px; }
+    body.share-page .share-loading p { margin: 0; color: var(--auth-muted); font-size: 13px; }
+    body.share-page [hidden] { display: none !important; }
+    body.share-page .share-preview {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(12px, 3vw, 34px);
+      background: rgba(0, 0, 0, .86);
+      backdrop-filter: blur(8px);
+    }
+    body.share-page .share-preview-box { position: relative; width: min(100%, 1100px); max-height: 92dvh; display: flex; flex-direction: column; gap: 10px; }
+    body.share-page .share-preview-stage { display: grid; place-items: center; min-height: 200px; max-height: 82dvh; overflow: auto; border: 1px solid var(--auth-line); border-radius: 16px; background: rgba(0, 0, 0, .6); }
+    body.share-page .share-preview-stage img,
+    body.share-page .share-preview-stage video { display: block; max-width: 100%; max-height: 82dvh; border-radius: 12px; }
+    body.share-page .share-preview-stage iframe { width: 100%; height: min(82dvh, 780px); border: 0; border-radius: 12px; background: #fff; }
+    body.share-page .share-preview-stage audio { width: min(100%, 520px); margin: 30px; }
+    body.share-page .share-preview-close { position: absolute; top: -12px; right: -6px; display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid var(--auth-line); border-radius: 50%; background: #000; color: #fff; font-size: 21px; cursor: pointer; }
+    body.share-page .share-preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px; }
+    body.share-page .share-preview-bar b { overflow: hidden; color: var(--auth-ink); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    body.share-page .share-preview-bar a { flex: 0 0 auto; color: var(--cy); font-size: 12px; font-weight: 700; }
+    body.share-page .share-preview-fallback { padding: 30px 20px; color: var(--auth-muted); font-size: 13px; text-align: center; }
+    @media (max-width: 520px) {
+      body.share-page .share-card { padding: 24px 20px; border-radius: 20px; }
+      body.share-page .share-icon { width: 64px; height: 64px; font-size: 23px; border-radius: 18px; }
+      body.share-page .share-chip { font-size: 10px; }
+    }
+  </style>
+</head>
+<body class="auth-page share-page">
+  <canvas id="cyberRain" aria-hidden="true"></canvas>
+  <div class="cy-grid" aria-hidden="true"></div>
+  <div class="cy-scan" aria-hidden="true"></div>
+
+  <main class="auth-container share-container">
+    <section class="auth-card share-card" id="shareCard" aria-live="polite">
+      <a class="share-brand" href="/" aria-label="Arquive Online">
+        <span class="share-brand-mark"><i class="fas fa-share-nodes" aria-hidden="true"></i></span>
+        <span class="share-brand-copy"><b>ARQUIVE ONLINE</b><small>arquivo compartilhado</small></span>
+      </a>
+
+      <div id="shareLoading" class="share-loading">
+        <i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>
+        <p>Verificando o link...</p>
+      </div>
+
+      <div id="shareError" class="share-state" hidden>
+        <span class="share-icon is-error"><i class="fas fa-link-slash" aria-hidden="true"></i></span>
+        <span class="share-eyebrow">Link indisponível</span>
+        <h1>Não foi possível abrir</h1>
+        <p class="share-copy" id="shareErrorText">Este link não existe, expirou ou foi revogado.</p>
+        <a class="btn btn-outline" href="/"><i class="fas fa-arrow-left" aria-hidden="true"></i> Ir para o Arquive Online</a>
+      </div>
+
+      <div id="shareLocked" class="share-state" hidden>
+        <span class="share-icon"><i class="fas fa-lock" aria-hidden="true"></i></span>
+        <span class="share-eyebrow">Conteúdo protegido</span>
+        <h1>Este link tem senha</h1>
+        <p class="share-copy">Digite a senha combinada com quem compartilhou para liberar o arquivo.</p>
+        <form id="unlockForm" class="share-form" novalidate>
+          <label for="sharePassword">Senha do link</label>
+          <input id="sharePassword" type="password" autocomplete="current-password" maxlength="1024" required placeholder="••••">
+          <p id="unlockError" class="share-error" role="alert" hidden></p>
+          <button class="btn btn-primary btn-full" type="submit" id="unlockBtn"><i class="fas fa-unlock" aria-hidden="true"></i> Desbloquear arquivo</button>
+        </form>
+      </div>
+
+      <div id="shareReady" class="share-state" hidden>
+        <span class="share-icon"><i id="shareFileIcon" class="fas fa-file" aria-hidden="true"></i></span>
+        <span class="share-eyebrow">Arquivo compartilhado</span>
+        <h1 id="shareName">arquivo</h1>
+        <p class="share-copy" id="shareDescription">Um arquivo foi compartilhado com você pelo Arquive Online.</p>
+        <div class="share-meta" id="shareBadges"></div>
+        <div class="share-actions">
+          <a class="btn btn-primary btn-full" id="shareDownload" href="#"><i class="fas fa-download" aria-hidden="true"></i> Baixar arquivo</a>
+          <button class="btn btn-outline btn-full" id="sharePreviewBtn" type="button" hidden><i class="fas fa-eye" aria-hidden="true"></i> Visualizar antes de baixar</button>
+        </div>
+        <p class="share-note"><i class="fas fa-shield-halved" aria-hidden="true"></i> Link privado e protegido. Não repasse para pessoas que não deveriam ter acesso.</p>
+      </div>
+
+      <footer class="share-footer">
+        Enviado com segurança por <a href="/">Arquive Online</a>.<br>
+        <span id="shareFooterMeta">Links podem expirar ou ser revogados a qualquer momento.</span>
+      </footer>
+    </section>
+  </main>
+
+  <div id="sharePreview" class="share-preview" hidden role="dialog" aria-modal="true" aria-label="Visualização do arquivo">
+    <div class="share-preview-box">
+      <button class="share-preview-close" id="sharePreviewClose" type="button" aria-label="Fechar visualização">&times;</button>
+      <div class="share-preview-stage" id="sharePreviewStage"></div>
+      <div class="share-preview-bar"><b id="sharePreviewName"></b><a id="sharePreviewDownload" href="#"><i class="fas fa-download" aria-hidden="true"></i> Baixar</a></div>
+    </div>
+  </div>
+
+  <script src="/js/cyber.js?v=20261112f" defer></script>
+  <script src="/js/file-share-page.js?v=20261119a" defer></script>
+</body>
+</html>

@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="/css/upload-queue.css?v=20261112b">
   <link rel="stylesheet" href="/css/collections.css?v=20261112b">
   <link rel="stylesheet" href="/css/library.css?v=20261112b">
+  <link rel="stylesheet" href="/css/shares.css?v=20261119b">
   <script src="/js/common.js?v=20261112k"></script><script src="/js/message-export.js?v=20261112a"></script><script src="/js/adaptive.js?v=20261118a"></script><script src="/js/onboarding.js?v=20261014o" defer></script>
   <link rel="stylesheet" href="/css/mobile.css?v=20261112a">
   <script src="/js/mobile.js?v=20261014o" defer></script>
@@ -509,7 +510,7 @@
       if (destination && playRoomMorph(startRect, destination, token, true, finish)) roomClosePending = true; else finish();
     }
     function roomFileMarkup(file, insideCollection = false) {
-      return `<div class="file-row"><div class="file-main">${insideCollection ? '' : uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button><button class="btn btn-sm ${Number(file.in_library) ? 'btn-primary' : 'btn-outline'}" title="${Number(file.in_library) ? 'Editar no Minha Biblioteca' : 'Guardar no Minha Biblioteca'}" aria-label="${Number(file.in_library) ? 'Editar no Minha Biblioteca' : 'Guardar no Minha Biblioteca'}" onclick="saveRoomFileToLibrary(this.dataset.id)" data-id="${esc(file.id)}" data-name="${esc(file.original_name)}" data-saved="${Number(file.in_library) ? 1 : 0}"><i class="fas ${Number(file.in_library) ? 'fa-bookmark' : 'fa-bookmark'}"></i></button>${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green btn-download" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`;
+      return `<div class="file-row"><div class="file-main">${insideCollection ? '' : uploaderTag(file.uploader, file.uploader_role)}<span class="file-row-name"><i class="fas fa-file"></i> ${esc(file.original_name)}</span><span class="file-meta-line">${kindBadge(file.original_name, file.mime_type)}<span class="text-muted">${formatSize(file.size)}</span>${timeAgo(file.uploaded_at)}</span></div><div class="file-btns"><button class="btn btn-sm btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${esc(file.original_name)}" data-mime="${esc(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button><button class="btn btn-sm ${Number(file.in_library) ? 'btn-primary' : 'btn-outline'}" title="${Number(file.in_library) ? 'Editar no Minha Biblioteca' : 'Guardar no Minha Biblioteca'}" aria-label="${Number(file.in_library) ? 'Editar no Minha Biblioteca' : 'Guardar no Minha Biblioteca'}" onclick="saveRoomFileToLibrary(this.dataset.id)" data-id="${esc(file.id)}" data-name="${esc(file.original_name)}" data-saved="${Number(file.in_library) ? 1 : 0}"><i class="fas ${Number(file.in_library) ? 'fa-bookmark' : 'fa-bookmark'}"></i></button>${file.can_share ? `<button class="btn btn-sm btn-outline" title="Compartilhar link" onclick="openFileShareDialog({ kind: 'file', id: '${file.id}', name: this.dataset.name })" data-name="${esc(file.original_name)}"><i class="fas fa-link"></i></button>` : ''}${file.can_edit ? `<button class="btn btn-sm btn-outline" title="Renomear" onclick="renameFile('${file.id}', this.dataset.name, () => { lastFilesSig = ''; lastRoomsSig = ''; loadFiles(); loadRooms(); })" data-name="${esc(file.original_name)}"><i class="fas fa-pen"></i></button>` : ''}${file.can_delete ? `<button class="btn btn-sm btn-outline btn-danger" title="Excluir" onclick="deleteFile('${file.id}')"><i class="fas fa-trash"></i></button>` : ''}<a class="btn btn-sm btn-green btn-download" title="Baixar" href="/download/${file.id}"><i class="fas fa-download"></i> Baixar</a></div></div>`;
     }
     window.toggleChatExpand = function () {
       const modal = document.getElementById('roomModal');
@@ -895,17 +896,19 @@
     });
   </script>
   <script src="/js/social.js?v=20261112a"></script>
-  <script src="/js/personal.js?v=20261112c"></script>
+  <script src="/js/security-devices.js?v=20261119b"></script>
+  <script src="/js/file-shares.js?v=20261119a"></script>
+  <script src="/js/personal.js?v=20261119a"></script>
   <script src="/js/cursor.js?v=20261014o"></script>
   <script src="/js/preview.js?v=20261111a"></script>
   <script src="/js/collections.js?v=20261111a"></script>
-  <script src="/js/library.js?v=20261112b"></script>
+  <script src="/js/library.js?v=20261119a"></script>
   <script src="/js/dashboard-shell.js?v=20261014o"></script>
   <script src="/js/announce.js?v=20261107d"></script>
 <script src="/js/cyber.js?v=20261112f"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js?v=20261111a').then(reg => {
+    navigator.serviceWorker.register('/sw.js?v=20261119a').then(reg => {
       console.log('[SW] Registrado:', reg.scope);
     }).catch(err => console.warn('[SW] Falha ao registrar:', err));
   }

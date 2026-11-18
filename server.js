@@ -65,6 +65,13 @@ const LOCAL_LAN_PORT = Number(process.env.FILESHARE_LAN_PORT || Number(process.e
 let localLanServer = null;
 let localLanStartPromise = null;
 const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (LOCAL_MODE ? crypto.randomBytes(24).toString('base64url') : '');
+// Compartilhamento público de arquivo, notificações push e dispositivos.
+const DEVICE_COOKIE = IS_VERCEL ? '__Host-fs_device' : 'fs_device';
+const FILE_SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+const SHARE_ACCESS_TTL_MS = 60 * 60 * 1000;
+const VAPID_PUBLIC_KEY = String(process.env.VAPID_PUBLIC_KEY || '').trim();
+const VAPID_PRIVATE_KEY = String(process.env.VAPID_PRIVATE_KEY || '').trim();
+const VAPID_SUBJECT = String(process.env.VAPID_SUBJECT || 'mailto:yagoassis@gmail.com').trim();
 function sessionSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
   if (!LOCAL_MODE) throw new Error('Defina SESSION_SECRET antes de iniciar o FileShare fora do modo local.');
@@ -1540,6 +1547,68 @@ async function createTables() {
     used_at TEXT
   )`);
   await q('CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens (user_id)');
+
+  // Compartilhamento de arquivo por link público (token opaco, senha opcional, prazo e limite).
+  await q(`CREATE TABLE IF NOT EXISTS file_shares (
+    id TEXT PRIMARY KEY,
+    file_id TEXT,
+    library_item_id TEXT,
+    created_by TEXT NOT NULL,
+    token_hash TEXT UNIQUE NOT NULL,
+    expires_at TEXT,
+    max_downloads INTEGER DEFAULT 0,
+    download_count INTEGER DEFAULT 0,
+    password_hash TEXT,
+    allow_preview INTEGER DEFAULT 1,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL,
+    last_access_at TEXT
+  )`);
+  await q('ALTER TABLE file_shares ADD COLUMN IF NOT EXISTS library_item_id TEXT');
+  await q('ALTER TABLE file_shares ADD COLUMN IF NOT EXISTS token_enc TEXT');
+  await q('ALTER TABLE file_shares ALTER COLUMN file_id DROP NOT NULL');
+  await q('CREATE INDEX IF NOT EXISTS idx_file_shares_file ON file_shares (file_id)');
+  await q('CREATE INDEX IF NOT EXISTS idx_file_shares_library ON file_shares (library_item_id)');
+
+  // Notificações push (PWA) por usuário/dispositivo.
+  await q(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    endpoint TEXT UNIQUE NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    user_agent TEXT,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    failure_count INTEGER DEFAULT 0
+  )`);
+  await q('CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions (user_id)');
+
+  // Dispositivos/sessões: permite listar, identificar o atual e revogar por dispositivo.
+  await q(`CREATE TABLE IF NOT EXISTS user_devices (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    user_agent TEXT,
+    last_ip TEXT,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    revoked_at TEXT,
+    UNIQUE(user_id, device_id)
+  )`);
+  await q('CREATE INDEX IF NOT EXISTS idx_user_devices_user ON user_devices (user_id)');
+
+  await q('ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS id TEXT');
+  await q('ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS device_id TEXT');
+  await q('ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS last_ip TEXT');
+  await q('UPDATE auth_tokens SET id = token_hash WHERE id IS NULL');
+  await q('CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_tokens_id ON auth_tokens (id)');
+  await q('CREATE INDEX IF NOT EXISTS idx_auth_tokens_device ON auth_tokens (user_id, device_id)');
+
+  await q('ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS push_messages INTEGER DEFAULT 1');
+  await q('ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS push_files INTEGER DEFAULT 1');
+  await q('ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS push_collections INTEGER DEFAULT 1');
+  await q('ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS push_security INTEGER DEFAULT 1');
 }
 
 async function initDatabase() {
@@ -1590,7 +1659,7 @@ const CONTENT_SECURITY_POLICY = [
   "worker-src 'self' blob: https://cdn.jsdelivr.net"
 ].join('; ') + (IS_VERCEL ? '; upgrade-insecure-requests' : '');
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/') || ['/admin', '/dashboard', '/change-password'].includes(req.path) || req.path.startsWith('/sala/') || req.path.startsWith('/enviar/')) {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/f/') || ['/admin', '/dashboard', '/change-password'].includes(req.path) || req.path.startsWith('/sala/') || req.path.startsWith('/enviar/')) {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -1605,7 +1674,7 @@ app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   res.setHeader('X-DNS-Prefetch-Control', 'off');
   if (req.path === '/admin' || req.path === '/dashboard' || req.path === '/change-password' ||
-      req.path.startsWith('/api/') || req.path.startsWith('/sala/') || req.path.startsWith('/enviar/') ||
+      req.path.startsWith('/api/') || req.path.startsWith('/sala/') || req.path.startsWith('/enviar/') || req.path.startsWith('/f/') ||
       req.path.startsWith('/preview/') || req.path.startsWith('/download/')) {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
   }
@@ -1662,6 +1731,7 @@ app.get('/robots.txt', (req, res) => {
     'Disallow: /change-password',
     'Disallow: /sala/',
     'Disallow: /enviar/',
+    'Disallow: /f/',
     'Disallow: /preview/',
     'Disallow: /download/',
     ''
@@ -1718,11 +1788,40 @@ function clearRememberCookie(res) {
   // pode ignorar o clear e manter o login persistente após o logout.
   res.clearCookie(REMEMBER_COOKIE, { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/' });
 }
-async function issueRememberToken(req, res, userId) {
+function deviceCookieOpts(maxAgeMs) {
+  return { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
+}
+function clearDeviceCookie(res) {
+  res.clearCookie(DEVICE_COOKIE, { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/' });
+}
+// Registra/atualiza o dispositivo do login e informa se ele é novo para o usuário.
+// O cookie fs_device é opaco (não contém dados pessoais) e permite revogar a sessão
+// daquele aparelho mesmo que o cookie de sessão ainda esteja válido.
+async function registerLoginDevice(req, res, userId) {
+  let deviceId = readCookie(req, DEVICE_COOKIE);
+  if (!/^[a-f0-9-]{36}$/i.test(deviceId)) {
+    deviceId = uuidv4();
+    res.cookie(DEVICE_COOKIE, deviceId, deviceCookieOpts(2 * 365 * 86400000));
+  }
+  const previous = await one('SELECT COUNT(*) AS c FROM user_devices WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+  const existing = await one('SELECT id FROM user_devices WHERE user_id = $1 AND device_id = $2', [userId, deviceId]);
+  const userAgent = String(req.headers['user-agent'] || '').slice(0, 200);
+  const ip = clientIp(req);
+  await q(`INSERT INTO user_devices (id, user_id, device_id, user_agent, last_ip, created_at, last_seen_at, revoked_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$6,NULL)
+    ON CONFLICT (user_id, device_id) DO UPDATE SET user_agent = EXCLUDED.user_agent, last_ip = EXCLUDED.last_ip,
+      last_seen_at = EXCLUDED.last_seen_at, revoked_at = NULL`,
+    [uuidv4(), userId, deviceId, userAgent, ip, ts()]);
+  return { deviceId, isNew: !existing, previousCount: num(previous && previous.c), userAgent, ip };
+}
+async function issueRememberToken(req, res, userId, deviceId) {
   const token = crypto.randomBytes(32).toString('hex');
   const exp = new Date(Date.now() + REMEMBER_DAYS * 86400000).toISOString().slice(0, 19).replace('T', ' ');
-  await q('INSERT INTO auth_tokens (token_hash, user_id, created_at, expires_at, user_agent) VALUES ($1,$2,$3,$4,$5)', [hashToken(token), userId, ts(), exp, String(req.headers['user-agent'] || '').slice(0, 200)]);
+  const id = uuidv4();
+  await q('INSERT INTO auth_tokens (id, token_hash, user_id, created_at, expires_at, user_agent, device_id, last_ip) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+    [id, hashToken(token), userId, ts(), exp, String(req.headers['user-agent'] || '').slice(0, 200), deviceId || null, clientIp(req)]);
   res.cookie(REMEMBER_COOKIE, token, remCookieOpts(REMEMBER_DAYS * 86400000));
+  return { id, token };
 }
 app.use(wrap(async (req, res, next) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/sala/')) {
@@ -1734,12 +1833,20 @@ app.use(wrap(async (req, res, next) => {
   const token = readCookie(req, REMEMBER_COOKIE);
   if (token && /^[a-f0-9]{64}$/.test(token)) {
     try {
-      const row = await one('SELECT a.user_id, a.created_at, a.expires_at, u.username, u.role, u.status FROM auth_tokens a JOIN users u ON u.id = a.user_id WHERE a.token_hash = $1', [hashToken(token)]);
+      const row = await one('SELECT a.id, a.device_id, a.user_id, a.created_at, a.expires_at, u.username, u.role, u.status FROM auth_tokens a JOIN users u ON u.id = a.user_id WHERE a.token_hash = $1', [hashToken(token)]);
       const issuedAt = row && Date.parse(String(row.created_at || '').replace(' ', 'T') + 'Z');
       const rememberIsFresh = Number.isFinite(issuedAt) && Date.now() - issuedAt < REMEMBER_DAYS * 86400000;
-      if (row && row.expires_at > ts() && rememberIsFresh && row.status !== 'rejected' && row.status !== 'banned') {
+      let deviceRevoked = false;
+      if (row && row.device_id) {
+        const device = await one('SELECT revoked_at FROM user_devices WHERE user_id = $1 AND device_id = $2', [row.user_id, row.device_id]);
+        deviceRevoked = !!(device && device.revoked_at);
+        if (!deviceRevoked) await q('UPDATE user_devices SET last_seen_at = $1, last_ip = $2 WHERE user_id = $3 AND device_id = $4', [ts(), clientIp(req), row.user_id, row.device_id]).catch(() => {});
+      }
+      if (row && row.expires_at > ts() && rememberIsFresh && !deviceRevoked && row.status !== 'rejected' && row.status !== 'banned') {
         req.session.at = Date.now();
         req.session.userId = row.user_id; req.session.username = row.username; req.session.role = row.role; req.session.status = row.status;
+        req.session.deviceId = row.device_id || null;
+        req.session.tokenId = row.id || null;
       } else {
         if (row) await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]);
         clearRememberCookie(res);
@@ -1798,8 +1905,15 @@ const libraryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSi
 // ---------------------------------------------------------------------------
 const requireAuth = wrap(async (req, res, next) => {
   if (!req.session || !req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
-  const user = await one('SELECT id, username, role, status, last_seen, force_logout_at, password_change_required FROM users WHERE id = $1', [req.session.userId]);
+  const user = await one(`SELECT u.id, u.username, u.role, u.status, u.last_seen, u.force_logout_at, u.password_change_required,
+      d.revoked_at AS device_revoked_at
+    FROM users u LEFT JOIN user_devices d ON d.user_id = u.id AND d.device_id = $2
+    WHERE u.id = $1`, [req.session.userId, req.session.deviceId || '']);
   if (!user) { req.session = null; return res.status(401).json({ error: 'Não autorizado' }); }
+  if (user.device_revoked_at) {
+    req.session = null; clearRememberCookie(res); clearDeviceCookie(res);
+    return res.status(401).json({ error: 'Sessão encerrada neste dispositivo' });
+  }
   if (user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
     req.session = null; clearRememberCookie(res);
     return res.status(401).json({ error: user.status === 'banned' ? 'Conta suspensa' : user.status === 'rejected' ? 'Conta sem acesso' : 'Sessão encerrada pelo administrador' });
@@ -2305,6 +2419,84 @@ function notify(userId, title, message, type) {
     [uuidv4(), userId, title, message, type, ts()]);
 }
 
+// =================== NOTIFICAÇÕES PUSH (PWA) ===================
+const PUSH_CATEGORY_COLUMNS = { messages: 'push_messages', files: 'push_files', collections: 'push_collections', security: 'push_security' };
+let webPushClient;
+function pushConfigured() { return Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY); }
+function webPushSdk() {
+  if (webPushClient !== undefined) return webPushClient;
+  if (!pushConfigured()) { webPushClient = null; return null; }
+  try {
+    const wp = require('web-push');
+    wp.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    webPushClient = wp;
+  } catch (e) { console.error('push sdk:', e && e.message); webPushClient = null; }
+  return webPushClient;
+}
+async function sendPushToUser(userId, payload, category = 'general') {
+  const wp = webPushSdk();
+  if (!wp || !userId) return 0;
+  const column = PUSH_CATEGORY_COLUMNS[category];
+  if (column) {
+    const prefs = await one(`SELECT ${column} AS enabled FROM user_preferences WHERE user_id = $1`, [userId]);
+    if (prefs && num(prefs.enabled) === 0) return 0;
+  }
+  const subscriptions = await q('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1', [userId]);
+  if (!subscriptions.length) return 0;
+  const body = JSON.stringify({
+    title: payload.title || 'Arquive Online',
+    body: payload.body || '',
+    url: payload.url || '/dashboard',
+    tag: payload.tag || 'arquive',
+    icon: '/favicon-192.png',
+    badge: '/favicon-48.png',
+    renotify: true
+  });
+  let sent = 0;
+  await Promise.allSettled(subscriptions.map(async subscription => {
+    try {
+      await wp.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, body, { TTL: 3600, urgency: payload.urgency || 'normal' });
+      sent++;
+      await q('UPDATE push_subscriptions SET last_seen_at = $1, failure_count = 0 WHERE id = $2', [ts(), subscription.id]).catch(() => {});
+    } catch (error) {
+      const status = error && error.statusCode;
+      if (status === 404 || status === 410) await q('DELETE FROM push_subscriptions WHERE id = $1', [subscription.id]).catch(() => {});
+      else await q('UPDATE push_subscriptions SET failure_count = failure_count + 1 WHERE id = $1', [subscription.id]).catch(() => {});
+    }
+  }));
+  return sent;
+}
+async function notifyAndPush(userId, title, message, type, category, url) {
+  await notify(userId, title, message, type).catch(() => {});
+  await sendPushToUser(userId, { title, body: message, url: url || '/dashboard', tag: category + '-' + userId }, category).catch(() => {});
+}
+async function announceRoomMessage(roomId, senderId, content) {
+  try {
+    const room = await one('SELECT id, name, slug FROM rooms WHERE id = $1', [roomId]);
+    if (!room) return;
+    const members = await q('SELECT user_id FROM room_members WHERE room_id = $1 AND user_id <> $2', [roomId, senderId]);
+    await Promise.allSettled(members.map(member => sendPushToUser(member.user_id, {
+      title: 'Nova mensagem em ' + room.name,
+      body: String(content || '').slice(0, 140),
+      url: '/sala/' + room.slug,
+      tag: 'room-' + room.id
+    }, 'messages')));
+  } catch (e) { console.error('push room message:', e && e.message); }
+}
+async function announceRoomFile(roomId, uploaderId, fileName) {
+  try {
+    const room = await one('SELECT id, name, slug FROM rooms WHERE id = $1', [roomId]);
+    if (!room) return;
+    const members = await q('SELECT user_id FROM room_members WHERE room_id = $1 AND user_id <> $2', [roomId, uploaderId]);
+    await Promise.allSettled(members.map(member => sendPushToUser(member.user_id, {
+      title: 'Novo arquivo em ' + room.name,
+      body: String(fileName || 'arquivo'),
+      url: '/sala/' + room.slug,
+      tag: 'room-file-' + room.id
+    }, 'files')));
+  } catch (e) { console.error('push room file:', e && e.message); }
+}
+
 
 // =================== ADMIN+: log de atividade, configurações, segurança ===================
 const agoTs = ms => new Date(Date.now() - ms).toISOString().slice(0, 19).replace('T', ' ');
@@ -2445,6 +2637,281 @@ app.get('/enviar/:token', (req, res) => {
   res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' });
   res.sendFile(page('coleta.html'));
 });
+
+// =================== COMPARTILHAMENTO DE ARQUIVO (link público) ===================
+const SHARE_EXPIRY_OPTIONS = new Set([0, 3600, 86400, 604800, 2592000]);
+const SHARE_MAX_DOWNLOADS = 100000;
+const shareAccessCookieName = shareId => 'fs_share_' + shareId;
+const shareAccessValue = share => crypto.createHmac('sha256', sessionSecret()).update('file-share:' + share.id + ':' + share.token_hash).digest('hex');
+function setShareAccessCookie(req, res, share) {
+  res.cookie(shareAccessCookieName(share.id), shareAccessValue(share), {
+    httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/f/' + req.params.token, maxAge: SHARE_ACCESS_TTL_MS
+  });
+}
+function hasShareAccess(req, share) {
+  const cookie = readCookie(req, shareAccessCookieName(share.id));
+  const expected = shareAccessValue(share);
+  if (!cookie || cookie.length !== expected.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(cookie), Buffer.from(expected)); } catch (e) { return false; }
+}
+async function getFileShareByToken(token) {
+  const value = String(token || '');
+  if (!FILE_SHARE_TOKEN_RE.test(value)) return null;
+  const share = await one('SELECT * FROM file_shares WHERE token_hash = $1', [hashToken(value)]);
+  if (!share) return null;
+  if (share.library_item_id) {
+    const item = await one(`SELECT li.id AS source_id, li.user_id AS source_owner, li.file_id, li.original_name, li.mime_type, li.size,
+        li.stored_name, li.room_name AS source_room_name
+      FROM personal_library_items li WHERE li.id = $1 AND li.user_id = $2`, [share.library_item_id, share.created_by]);
+    if (!item) return null;
+    return { ...share, ...item, source_type: 'library', room_slug: null, room_name: item.source_room_name || null };
+  }
+  if (!share.file_id) return null;
+  const file = await one(`SELECT f.id AS source_id, f.room_id, f.uploaded_by, f.original_name, f.mime_type, f.size, f.stored_name,
+      f.chat_only, r.slug AS room_slug, r.name AS room_name
+    FROM files f LEFT JOIN rooms r ON r.id = f.room_id WHERE f.id = $1`, [share.file_id]);
+  if (!file) return null;
+  return { ...share, ...file, source_type: 'file' };
+}
+function fileShareState(share) {
+  if (!share || share.revoked_at) return 'revoked';
+  if (share.expires_at && share.expires_at <= ts()) return 'expired';
+  if (num(share.max_downloads) > 0 && num(share.download_count) >= num(share.max_downloads)) return 'exhausted';
+  return 'ok';
+}
+function fileShareMessage(state) {
+  return state === 'expired' ? 'Este link expirou. Peça um novo link a quem compartilhou.'
+    : state === 'exhausted' ? 'O limite de downloads deste link foi atingido.'
+    : state === 'revoked' ? 'Este link foi revogado por quem compartilhou.'
+    : 'Este link não está disponível.';
+}
+function fileSharePublicPayload(share, unlocked) {
+  const needsPassword = Boolean(share.password_hash) && !unlocked;
+  const maxDownloads = num(share.max_downloads);
+  const downloadCount = num(share.download_count);
+  return {
+    state: fileShareState(share),
+    needs_password: needsPassword,
+    allow_preview: !needsPassword && num(share.allow_preview) === 1,
+    name: needsPassword ? null : share.original_name,
+    size: needsPassword ? null : num(share.size),
+    mime: needsPassword ? null : share.mime_type,
+    expires_at: share.expires_at || null,
+    max_downloads: maxDownloads,
+    download_count: downloadCount,
+    remaining_downloads: maxDownloads > 0 ? Math.max(0, maxDownloads - downloadCount) : null,
+    has_password: Boolean(share.password_hash),
+    created_at: share.created_at
+  };
+}
+async function qrDataUrl(text) {
+  try {
+    const QRCode = require('qrcode');
+    return await QRCode.toDataURL(text, { width: 480, margin: 1, errorCorrectionLevel: 'M' });
+  } catch (e) { console.error('QR code:', e && e.message); return null; }
+}
+async function deliverFileShare(req, res, share, asDownload) {
+  const name = String(share.original_name || 'arquivo');
+  const declaredMime = String(share.mime_type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+  const isPdf = declaredMime === 'application/pdf' || /\.pdf$/i.test(name);
+  const safeMedia = isPdf || /^(image\/(png|jpeg|gif|webp|avif|bmp)|video\/(mp4|webm|ogg|quicktime)|audio\/(mpeg|mp4|ogg|wav|webm|aac))$/.test(declaredMime);
+  const textMime = declaredMime.startsWith('text/') || ['application/json', 'application/xml', 'application/yaml', 'application/x-yaml'].includes(declaredMime);
+  const inline = !asDownload && (safeMedia || textMime);
+  const mime = asDownload ? (declaredMime || 'application/octet-stream') : (isPdf ? 'application/pdf' : safeMedia ? declaredMime : textMime ? 'text/plain; charset=utf-8' : 'application/octet-stream');
+  const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  res.set('Cache-Control', 'private, no-store');
+  res.set('Content-Disposition', (inline ? 'inline' : 'attachment') + `; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+  res.type(mime);
+  if (isDriveFileRef(share.stored_name)) {
+    if (!asDownload) res.set('Accept-Ranges', 'bytes');
+    const ok = await pipeDriveFileToResponse(res, share.stored_name, num(share.size), req.get('Range'));
+    if (!ok) return res.status(404).send('Arquivo não encontrado.');
+    return;
+  }
+  if (isBlobPath(share.stored_name)) {
+    if (asDownload) {
+      try { return res.redirect(302, await presignBlobDownloadUrl(share.stored_name, true)); }
+      catch (e) { return res.status(502).send('Não foi possível preparar o download.'); }
+    }
+    if (num(share.size) > BLOB_REDIRECT_MIN_BYTES) {
+      try { return res.redirect(302, await presignBlobDownloadUrl(share.stored_name)); }
+      catch (e) { return res.status(502).send('Não foi possível preparar a visualização.'); }
+    }
+    const ok = await pipeBlobToResponse(res, share.stored_name, share.size);
+    if (!ok) return res.status(404).send('Arquivo não encontrado.');
+    return;
+  }
+  const blob = share.library_item_id
+    ? await one(`SELECT encode(data, 'base64') AS data FROM personal_library_blobs WHERE item_id = $1`, [share.library_item_id])
+    : await one(`SELECT encode(data, 'base64') AS data FROM file_blobs WHERE file_id = $1`, [share.file_id]);
+  if (!blob) return res.status(404).send('Arquivo não encontrado.');
+  res.send(Buffer.from(blob.data, 'base64'));
+}
+async function canShareFile(user, fileId) {
+  const file = await one(`SELECT f.id, f.room_id, f.uploaded_by, f.original_name, f.size, f.mime_type, f.stored_name, f.chat_only,
+      r.created_by AS room_owner
+    FROM files f LEFT JOIN rooms r ON r.id = f.room_id WHERE f.id = $1`, [fileId]);
+  if (!file) return null;
+  if (isAdmin(user) || file.uploaded_by === user.id || file.room_owner === user.id) return file;
+  return false;
+}
+
+// Página pública do link (sem autenticação).
+app.get('/f/:token', (req, res) => {
+  if (!FILE_SHARE_TOKEN_RE.test(String(req.params.token || ''))) return res.status(404).send('Link inválido');
+  res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' });
+  res.sendFile(page('file-share.html'));
+});
+
+app.get('/api/file-shares/public/:token', wrap(async (req, res) => {
+  const share = await getFileShareByToken(req.params.token);
+  if (!share) return res.status(404).json({ error: 'Este link não existe ou foi removido.' });
+  const state = fileShareState(share);
+  if (state !== 'ok') return res.status(410).json({ error: fileShareMessage(state), state });
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, ...fileSharePublicPayload(share, hasShareAccess(req, share)) });
+}));
+
+app.post('/api/file-shares/public/:token/unlock', wrap(async (req, res) => {
+  const share = await getFileShareByToken(req.params.token);
+  if (!share) return res.status(404).json({ error: 'Este link não existe ou foi removido.' });
+  const state = fileShareState(share);
+  if (state !== 'ok') return res.status(410).json({ error: fileShareMessage(state), state });
+  if (!share.password_hash) return res.json({ success: true, ...fileSharePublicPayload(share, true) });
+  if (await consumeRateLimit('share-unlock:' + hashToken(req.params.token) + ':' + clientIp(req), 10, 15 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' });
+  }
+  const password = String((req.body && req.body.password) || '');
+  if (!password) return res.status(400).json({ error: 'Digite a senha do link.' });
+  const check = await verifyPassword(password, share.password_hash);
+  if (!check.matches) return res.status(401).json({ error: 'Senha incorreta.' });
+  setShareAccessCookie(req, res, share);
+  res.json({ success: true, ...fileSharePublicPayload(share, true) });
+}));
+
+app.get('/f/:token/download', wrap(async (req, res) => {
+  const share = await getFileShareByToken(req.params.token);
+  if (!share) return res.status(404).send('Este link não existe ou foi removido.');
+  const state = fileShareState(share);
+  if (state !== 'ok') return res.status(410).send(fileShareMessage(state));
+  if (share.password_hash && !hasShareAccess(req, share)) return res.redirect(302, '/f/' + encodeURIComponent(req.params.token));
+  const updated = await q(`UPDATE file_shares SET download_count = download_count + 1, last_access_at = $1
+    WHERE id = $2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $1)
+      AND (max_downloads = 0 OR download_count < max_downloads) RETURNING download_count`, [ts(), share.id]);
+  if (!updated.length) return res.status(410).send(fileShareMessage('exhausted'));
+  share.download_count = num(updated[0].download_count);
+  await deliverFileShare(req, res, share, true);
+}));
+
+app.get('/f/:token/preview', wrap(async (req, res) => {
+  const share = await getFileShareByToken(req.params.token);
+  if (!share) return res.status(404).send('Este link não existe ou foi removido.');
+  const state = fileShareState(share);
+  if (state !== 'ok') return res.status(410).send(fileShareMessage(state));
+  if (share.password_hash && !hasShareAccess(req, share)) return res.redirect(302, '/f/' + encodeURIComponent(req.params.token));
+  if (num(share.allow_preview) !== 1) return res.status(403).send('A visualização não está habilitada para este link.');
+  await q('UPDATE file_shares SET last_access_at = $1 WHERE id = $2', [ts(), share.id]);
+  await deliverFileShare(req, res, share, false);
+}));
+
+// Criação/listagem/revogação (arquivo de sala ou item do Acervo).
+async function canShareLibraryItem(user, itemId) {
+  const item = await one('SELECT id, user_id, file_id, original_name, size, mime_type, stored_name FROM personal_library_items WHERE id = $1', [itemId]);
+  if (!item) return null;
+  if (item.user_id === user.id || isAdmin(user)) return item;
+  return false;
+}
+async function createFileShareRecord(req, res, { fileId = null, libraryItemId = null, displayName = '' }) {
+  if (await consumeRateLimit('share-create:' + req.user.id, 40, 60 * 60 * 1000)) return res.status(429).json({ error: 'Muitos links criados. Aguarde um pouco.' });
+  const body = req.body || {};
+  const expiresIn = Number(body.expires_in);
+  const expiry = SHARE_EXPIRY_OPTIONS.has(expiresIn) ? expiresIn : 604800;
+  const expiresAt = expiry > 0 ? new Date(Date.now() + expiry * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
+  const maxDownloads = Math.max(0, Math.min(SHARE_MAX_DOWNLOADS, Math.floor(Number(body.max_downloads) || 0)));
+  const allowPreview = body.allow_preview === false ? 0 : 1;
+  const password = String(body.password || '');
+  let passwordHash = null;
+  if (password) {
+    if (!passwordMeetsPolicy(password)) return res.status(400).json({ error: `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres (até ${MAX_PASSWORD_LENGTH}).` });
+    passwordHash = await hashPassword(password);
+  }
+  const token = crypto.randomBytes(32).toString('base64url');
+  const id = uuidv4();
+  const createdAt = ts();
+  await q(`INSERT INTO file_shares (id, file_id, library_item_id, created_by, token_hash, token_enc, expires_at, max_downloads, download_count, password_hash, allow_preview, revoked_at, created_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,NULL,$11)`,
+    [id, fileId, libraryItemId, req.user.id, hashToken(token), encryptSecret(token, sessionSecret()), expiresAt, maxDownloads, passwordHash, allowPreview, createdAt]);
+  const url = baseUrlFor(req) + '/f/' + token;
+  const qr = await qrDataUrl(url);
+  await logAct(req, 'arquivo_compartilhado', String(displayName || '').slice(0, 120));
+  return res.json({
+    success: true,
+    url,
+    qr,
+    share: { id, expires_at: expiresAt, max_downloads: maxDownloads, download_count: 0, allow_preview: allowPreview === 1, has_password: Boolean(passwordHash), created_at: createdAt }
+  });
+}
+function mapShareRows(rows, req) {
+  return rows.map(row => {
+    let url = null;
+    try { if (row.token_enc) url = baseUrlFor(req) + '/f/' + decryptSecret(row.token_enc, sessionSecret()); } catch (error) { url = null; }
+    const { token_enc, ...safe } = row;
+    return {
+      ...safe,
+      url,
+      max_downloads: num(row.max_downloads),
+      download_count: num(row.download_count),
+      allow_preview: num(row.allow_preview) === 1,
+      has_password: row.has_password === true || row.has_password === 't' || num(row.has_password) === 1
+    };
+  });
+}
+
+app.post('/api/files/:id/shares', requireAuth, wrap(async (req, res) => {
+  const file = await canShareFile(req.user, req.params.id);
+  if (file === null) return res.status(404).json({ error: 'Arquivo não encontrado' });
+  if (!file) return res.status(403).json({ error: 'Você não pode compartilhar este arquivo.' });
+  return createFileShareRecord(req, res, { fileId: file.id, displayName: file.original_name });
+}));
+
+app.post('/api/library/:id/shares', requireAuth, wrap(async (req, res) => {
+  const item = await canShareLibraryItem(req.user, req.params.id);
+  if (item === null) return res.status(404).json({ error: 'Item do Acervo não encontrado' });
+  if (!item) return res.status(403).json({ error: 'Você não pode compartilhar este item.' });
+  return createFileShareRecord(req, res, { fileId: item.file_id || null, libraryItemId: item.id, displayName: item.original_name });
+}));
+
+app.get('/api/files/:id/shares', requireAuth, wrap(async (req, res) => {
+  const file = await canShareFile(req.user, req.params.id);
+  if (file === null) return res.status(404).json({ error: 'Arquivo não encontrado' });
+  if (!file) return res.status(403).json({ error: 'Você não pode gerenciar os links deste arquivo.' });
+  const rows = await q(`SELECT id, token_enc, expires_at, max_downloads, download_count, allow_preview,
+      (password_hash IS NOT NULL) AS has_password, created_at, last_access_at
+    FROM file_shares WHERE file_id = $1 AND library_item_id IS NULL AND created_by = $2 AND revoked_at IS NULL
+    ORDER BY created_at DESC`, [file.id, req.user.id]);
+  res.json({ shares: mapShareRows(rows, req) });
+}));
+
+app.get('/api/library/:id/shares', requireAuth, wrap(async (req, res) => {
+  const item = await canShareLibraryItem(req.user, req.params.id);
+  if (item === null) return res.status(404).json({ error: 'Item do Acervo não encontrado' });
+  if (!item) return res.status(403).json({ error: 'Você não pode gerenciar os links deste item.' });
+  const rows = await q(`SELECT id, token_enc, expires_at, max_downloads, download_count, allow_preview,
+      (password_hash IS NOT NULL) AS has_password, created_at, last_access_at
+    FROM file_shares WHERE library_item_id = $1 AND created_by = $2 AND revoked_at IS NULL
+    ORDER BY created_at DESC`, [item.id, req.user.id]);
+  res.json({ shares: mapShareRows(rows, req) });
+}));
+
+app.delete('/api/file-shares/:id', requireAuth, wrap(async (req, res) => {
+  const share = await one('SELECT id, created_by FROM file_shares WHERE id = $1', [req.params.id]);
+  if (!share) return res.status(404).json({ error: 'Link não encontrado' });
+  if (share.created_by !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: 'Sem permissão para revogar este link' });
+  await q('UPDATE file_shares SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL', [ts(), share.id]);
+  await logAct(req, 'link_arquivo_revogado', '');
+  res.json({ success: true });
+}));
+
 app.get('/sala/:slug', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
   const user = await one('SELECT id, role, status, password_change_required FROM users WHERE id = $1', [req.session.userId]);
@@ -2507,6 +2974,7 @@ app.post('/api/login', wrap(async (req, res) => {
   }
   const passwordChangeRequired = Number(user.password_change_required) === 1;
   await clearLoginRateLimits(ipKey, accountKey);
+  const loginDevice = await registerLoginDevice(req, res, user.id);
   await q('UPDATE users SET last_login = $1, last_seen = $1, last_ip = $2 WHERE id = $3', [ts(), clientIp(req), user.id]);
   await logAct(req, 'login', '', user);
   req.session.at = Date.now();
@@ -2515,15 +2983,35 @@ app.post('/api/login', wrap(async (req, res) => {
   req.session.role = user.role;
   req.session.status = user.status;
   req.session.passwordChangeRequired = passwordChangeRequired;
-  try { await issueRememberToken(req, res, user.id); } catch (e) { console.error('issue token:', e && e.message); }
+  req.session.deviceId = loginDevice.deviceId;
+  try {
+    const remember = await issueRememberToken(req, res, user.id, loginDevice.deviceId);
+    req.session.tokenId = remember.id;
+  } catch (e) { console.error('issue token:', e && e.message); }
+  // Alerta de novo dispositivo somente a partir do segundo aparelho do usuário.
+  if (loginDevice.isNew && loginDevice.previousCount > 0) {
+    sendLoginAlert(user, req, loginDevice).catch(e => console.error('login alert:', e && e.message));
+  }
   res.json({ success: true, role: user.role, status: user.status, password_change_required: passwordChangeRequired });
 }));
 
 app.post('/api/logout', wrap(async (req, res) => {
-  if (req.session && req.session.userId) { const lu = await one('SELECT id, username, role FROM users WHERE id = $1', [req.session.userId]); if (lu) await logAct(req, 'logout', '', lu); }
+  const userId = req.session && req.session.userId;
+  const deviceId = req.session && req.session.deviceId;
+  const tokenId = req.session && req.session.tokenId;
+  if (userId) { const lu = await one('SELECT id, username, role FROM users WHERE id = $1', [userId]); if (lu) await logAct(req, 'logout', '', lu); }
   const token = readCookie(req, REMEMBER_COOKIE);
-  if (token) { try { await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]); } catch (e) {} }
+  try {
+    if (tokenId) await q('DELETE FROM auth_tokens WHERE id = $1 AND user_id = $2', [tokenId, userId]);
+    else if (token) await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]);
+  } catch (e) {}
+  // Marca o dispositivo como revogado; um novo login no mesmo navegador reativa a linha.
+  if (userId && deviceId) {
+    try { await q('UPDATE user_devices SET revoked_at = $1 WHERE user_id = $2 AND device_id = $3', [ts(), userId, deviceId]); } catch (e) {}
+  }
   clearRememberCookie(res);
+  // Mantém o cookie opaco do dispositivo para que um novo login no mesmo
+  // navegador reative a linha existente em vez de criar um "dispositivo novo".
   req.session = null;
   res.json({ success: true });
 }));
@@ -2609,6 +3097,55 @@ function passwordResetEmail(link, ttlMinutes) {
     '</table></td></tr></table></body></html>';
   return { subject: '⚡ FileShare — redefina sua senha', html, text };
 }
+function loginAlertEmail({ username, ip, userAgent, when, link }) {
+  const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const text = 'Arquive Online — novo acesso à sua conta\n\n' +
+    'Olá, ' + username + '.\n\nDetectamos um acesso à sua conta a partir de um dispositivo novo:\n\n' +
+    'Quando: ' + when + '\nIP: ' + (ip || 'desconhecido') + '\nDispositivo: ' + (userAgent || 'desconhecido') + '\n\n' +
+    'Se foi você, pode ignorar este aviso. Se não foi, entre na sua conta e encerre as sessões em ' + link + '.\n';
+  const html = '<!DOCTYPE html><html lang="pt-br"><body style="margin:0;padding:0;background-color:#05070d;">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#05070d;padding:28px 12px;"><tr><td align="center">' +
+    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#0b1020;border:1px solid #1c2537;border-radius:16px;overflow:hidden;">' +
+    '<tr><td height="3" style="height:3px;line-height:3px;font-size:0;background-color:#00d9ff;background-image:linear-gradient(90deg,#00d9ff,#4f7cff);">&nbsp;</td></tr>' +
+    '<tr><td style="padding:30px 40px 8px 40px;font-family:\'Segoe UI\',Arial,Helvetica,sans-serif;">' +
+    '<span style="font-size:20px;font-weight:800;letter-spacing:5px;color:#e8f1ff;">FILESHARE</span><br>' +
+    '<span style="font-family:Consolas,\'Courier New\',monospace;font-size:11px;letter-spacing:1px;color:#5c6b8a;">segurança da conta</span>' +
+    '</td></tr>' +
+    '<tr><td style="padding:24px 40px 8px 40px;font-family:\'Segoe UI\',Arial,Helvetica,sans-serif;">' +
+    '<h1 style="margin:0 0 10px;font-size:25px;line-height:31px;color:#f2f6ff;">Novo acesso à sua conta</h1>' +
+    '<p style="margin:0 0 20px;font-size:15px;line-height:24px;color:#b9c4da;">Olá, <b style="color:#e8f1ff;">' + esc(username) + '</b>. Detectamos um login em um dispositivo novo.</p>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#101728;border:1px solid #1c2537;border-radius:12px;margin:0 0 22px;"><tr><td style="padding:16px 18px;font-family:\'Segoe UI\',Arial,sans-serif;font-size:13px;line-height:22px;color:#a9b7d4;">' +
+    '<b style="color:#e8f1ff;">Quando:</b> ' + esc(when) + '<br>' +
+    '<b style="color:#e8f1ff;">IP:</b> ' + esc(ip || 'desconhecido') + '<br>' +
+    '<b style="color:#e8f1ff;">Dispositivo:</b> ' + esc(userAgent || 'desconhecido') +
+    '</td></tr></table>' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;"><tr><td bgcolor="#00d9ff" style="background-color:#00d9ff;border-radius:10px;">' +
+    '<a href="' + esc(link) + '" style="display:inline-block;padding:14px 30px;font-family:\'Segoe UI\',Arial,sans-serif;font-size:14px;font-weight:800;color:#04121a;text-decoration:none;border-radius:10px;">VER DISPOSITIVOS E SESSÕES</a>' +
+    '</td></tr></table>' +
+    '<p style="margin:0 0 22px;font-size:13px;line-height:21px;color:#8b98b4;">Se foi você, ignore este aviso. Se não reconhece este acesso, entre na conta e encerre todas as sessões imediatamente.</p>' +
+    '</td></tr>' +
+    '<tr><td style="padding:18px 40px 26px 40px;font-family:\'Segoe UI\',Arial,sans-serif;font-size:11px;line-height:18px;color:#4b5875;">Mensagem automática de segurança — não responda.</td></tr>' +
+    '</table></td></tr></table></body></html>';
+  return { subject: 'Novo acesso à sua conta — Arquive Online', text, html };
+}
+async function sendLoginAlert(user, req, device) {
+  const when = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const link = baseUrlFor(req) + '/dashboard?security=1';
+  try {
+    if (mailConfigured() && user.email) {
+      const mail = loginAlertEmail({ username: user.username, ip: device.ip, userAgent: device.userAgent, when, link });
+      await sendMail({ to: user.email, subject: mail.subject, html: mail.html, text: mail.text });
+    }
+  } catch (e) { console.error('login alert mail:', e && e.message); }
+  await sendPushToUser(user.id, {
+    title: 'Novo acesso à sua conta',
+    body: (device.ip || 'IP desconhecido') + ' · ' + (device.userAgent || 'dispositivo novo').slice(0, 90),
+    url: '/dashboard?security=1',
+    tag: 'security-login'
+  }, 'security').catch(() => {});
+  await logAct(req, 'login_novo_dispositivo', String(device.userAgent || '').slice(0, 120), { id: user.id, username: user.username, role: user.role });
+}
+
 app.post('/api/forgot-password', wrap(async (req, res) => {
   const email = String((req.body || {}).email || '').trim().toLowerCase().slice(0, 254);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Informe um e-mail válido.' });
@@ -3098,21 +3635,124 @@ app.post('/api/onboarding/complete', requireAuth, wrap(async (req, res) => {
 }));
 
 app.get('/api/preferences', requireAuth, wrap(async (req, res) => {
-  const row = await one('SELECT theme, compact_mode, reduced_motion, refresh_seconds, browser_notifications FROM user_preferences WHERE user_id = $1', [req.user.id]);
-  res.json({ has_preferences: !!row, theme: row && row.theme === 'dark' ? 'dark' : 'light', compact_mode: num(row && row.compact_mode) === 1, reduced_motion: num(row && row.reduced_motion) === 1, refresh_seconds: [2, 5, 10].includes(num(row && row.refresh_seconds)) ? num(row && row.refresh_seconds) : 2, browser_notifications: num(row && row.browser_notifications) === 1 });
+  const row = await one('SELECT theme, compact_mode, reduced_motion, refresh_seconds, browser_notifications, push_messages, push_files, push_collections, push_security FROM user_preferences WHERE user_id = $1', [req.user.id]);
+  res.json({
+    has_preferences: !!row,
+    theme: row && row.theme === 'dark' ? 'dark' : 'light',
+    compact_mode: num(row && row.compact_mode) === 1,
+    reduced_motion: num(row && row.reduced_motion) === 1,
+    refresh_seconds: [2, 5, 10].includes(num(row && row.refresh_seconds)) ? num(row && row.refresh_seconds) : 2,
+    browser_notifications: num(row && row.browser_notifications) === 1,
+    push_messages: !row || num(row.push_messages) !== 0,
+    push_files: !row || num(row.push_files) !== 0,
+    push_collections: !row || num(row.push_collections) !== 0,
+    push_security: !row || num(row.push_security) !== 0
+  });
 }));
 
 app.put('/api/preferences', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
+  const has = key => Object.prototype.hasOwnProperty.call(b, key);
   const theme = b.theme === 'dark' ? 'dark' : 'light';
   const compact = b.compact_mode ? 1 : 0, reduced = b.reduced_motion ? 1 : 0;
   const refresh = [2, 5, 10].includes(Number(b.refresh_seconds)) ? Number(b.refresh_seconds) : 2;
   const notifications = b.browser_notifications ? 1 : 0;
-  await q(`INSERT INTO user_preferences (user_id, theme, compact_mode, reduced_motion, refresh_seconds, browser_notifications)
-    VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (user_id) DO UPDATE SET theme = EXCLUDED.theme, compact_mode = EXCLUDED.compact_mode,
-    reduced_motion = EXCLUDED.reduced_motion, refresh_seconds = EXCLUDED.refresh_seconds, browser_notifications = EXCLUDED.browser_notifications`,
-    [req.user.id, theme, compact, reduced, refresh, notifications]);
-  res.json({ success: true, theme, compact_mode: !!compact, reduced_motion: !!reduced, refresh_seconds: refresh, browser_notifications: !!notifications });
+  const current = await one('SELECT push_messages, push_files, push_collections, push_security FROM user_preferences WHERE user_id = $1', [req.user.id]);
+  const pushValue = (key, column) => has(key) ? (b[key] ? 1 : 0) : (current && num(current[column]) === 0 ? 0 : 1);
+  const pushMessages = pushValue('push_messages', 'push_messages');
+  const pushFiles = pushValue('push_files', 'push_files');
+  const pushCollections = pushValue('push_collections', 'push_collections');
+  const pushSecurity = pushValue('push_security', 'push_security');
+  await q(`INSERT INTO user_preferences (user_id, theme, compact_mode, reduced_motion, refresh_seconds, browser_notifications, push_messages, push_files, push_collections, push_security)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (user_id) DO UPDATE SET theme = EXCLUDED.theme, compact_mode = EXCLUDED.compact_mode,
+    reduced_motion = EXCLUDED.reduced_motion, refresh_seconds = EXCLUDED.refresh_seconds, browser_notifications = EXCLUDED.browser_notifications,
+    push_messages = EXCLUDED.push_messages, push_files = EXCLUDED.push_files, push_collections = EXCLUDED.push_collections, push_security = EXCLUDED.push_security`,
+    [req.user.id, theme, compact, reduced, refresh, notifications, pushMessages, pushFiles, pushCollections, pushSecurity]);
+  res.json({ success: true, theme, compact_mode: !!compact, reduced_motion: !!reduced, refresh_seconds: refresh, browser_notifications: !!notifications, push_messages: !!pushMessages, push_files: !!pushFiles, push_collections: !!pushCollections, push_security: !!pushSecurity });
+}));
+
+// =================== PUSH (PWA) ===================
+app.get('/api/push/config', requireAuth, wrap(async (req, res) => {
+  const count = await one('SELECT COUNT(*) AS c FROM push_subscriptions WHERE user_id = $1', [req.user.id]);
+  res.set('Cache-Control', 'no-store');
+  res.json({ configured: pushConfigured(), public_key: VAPID_PUBLIC_KEY || null, subscriptions: num(count && count.c) });
+}));
+
+app.post('/api/push/subscribe', requireAuth, wrap(async (req, res) => {
+  const body = req.body || {};
+  const endpoint = String(body.endpoint || '').trim();
+  const p256dh = String(body.keys && body.keys.p256dh || '').trim();
+  const auth = String(body.keys && body.keys.auth || '').trim();
+  if (!/^https:\/\/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]{20,800}$/.test(endpoint)) return res.status(400).json({ error: 'Inscrição de push inválida.' });
+  if (!/^[A-Za-z0-9_-]{20,200}$/.test(p256dh) || !/^[A-Za-z0-9_-]{8,100}$/.test(auth)) return res.status(400).json({ error: 'Chaves de push inválidas.' });
+  if (!pushConfigured()) return res.status(503).json({ error: 'As notificações push não estão configuradas no servidor.' });
+  await q(`INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_seen_at, failure_count)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$7,0)
+    ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth,
+      user_agent = EXCLUDED.user_agent, last_seen_at = EXCLUDED.last_seen_at, failure_count = 0`,
+    [uuidv4(), req.user.id, endpoint, p256dh, auth, String(req.headers['user-agent'] || '').slice(0, 200), ts()]);
+  res.json({ success: true });
+}));
+
+app.post('/api/push/unsubscribe', requireAuth, wrap(async (req, res) => {
+  const endpoint = String((req.body && req.body.endpoint) || '').trim();
+  if (!endpoint) return res.status(400).json({ error: 'Inscrição não informada.' });
+  await q('DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2', [endpoint, req.user.id]);
+  res.json({ success: true });
+}));
+
+app.post('/api/push/test', requireAuth, wrap(async (req, res) => {
+  if (!pushConfigured()) return res.status(503).json({ error: 'As notificações push não estão configuradas no servidor.' });
+  if (await consumeRateLimit('push-test:' + req.user.id, 3, 10 * 60 * 1000)) return res.status(429).json({ error: 'Aguarde alguns minutos para testar novamente.' });
+  const sent = await sendPushToUser(req.user.id, {
+    title: 'Notificações ativadas',
+    body: 'Você receberá avisos de mensagens, arquivos e segurança neste dispositivo.',
+    url: '/dashboard',
+    tag: 'push-test'
+  }, 'general');
+  if (!sent) return res.status(404).json({ error: 'Nenhum dispositivo inscrito. Ative as notificações primeiro.' });
+  res.json({ success: true, sent });
+}));
+
+// =================== DISPOSITIVOS E SESSÕES ===================
+app.get('/api/devices', requireAuth, wrap(async (req, res) => {
+  if (!req.session.deviceId) {
+    const device = await registerLoginDevice(req, res, req.user.id);
+    req.session.deviceId = device.deviceId;
+  }
+  const devices = await q(`SELECT id, device_id, user_agent, last_ip, created_at, last_seen_at
+    FROM user_devices WHERE user_id = $1 AND revoked_at IS NULL ORDER BY last_seen_at DESC`, [req.user.id]);
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    devices: devices.map(device => ({ ...device, is_current: device.device_id === req.session.deviceId })),
+    current_device_id: req.session.deviceId,
+    max_devices: 50
+  });
+}));
+
+app.delete('/api/devices/:id', requireAuth, wrap(async (req, res) => {
+  const device = await one('SELECT id, device_id FROM user_devices WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!device) return res.status(404).json({ error: 'Dispositivo não encontrado.' });
+  await q('UPDATE user_devices SET revoked_at = $1 WHERE id = $2', [ts(), device.id]);
+  await q('DELETE FROM auth_tokens WHERE user_id = $1 AND device_id = $2', [req.user.id, device.device_id]);
+  if (device.device_id === req.session.deviceId) {
+    req.session = null;
+    clearRememberCookie(res);
+    clearDeviceCookie(res);
+    return res.json({ success: true, signed_out: true });
+  }
+  await logAct(req, 'dispositivo_revogado', String(device.device_id).slice(0, 36));
+  res.json({ success: true });
+}));
+
+app.post('/api/devices/revoke-others', requireAuth, wrap(async (req, res) => {
+  const current = req.session.deviceId;
+  const rows = await q('SELECT id, device_id FROM user_devices WHERE user_id = $1 AND revoked_at IS NULL AND device_id <> $2', [req.user.id, current || '']);
+  if (!rows.length) return res.json({ success: true, revoked: 0 });
+  await q('UPDATE user_devices SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL AND device_id <> $3', [ts(), req.user.id, current || '']);
+  await q(`DELETE FROM auth_tokens WHERE user_id = $1 AND (device_id IS NULL OR device_id <> $2)`, [req.user.id, current || '']);
+  await logAct(req, 'dispositivos_revogados', String(rows.length));
+  res.json({ success: true, revoked: rows.length });
 }));
 
 app.put('/api/profile/avatar', requireAuth, wrap(async (req, res) => {
@@ -3232,7 +3872,7 @@ async function loadRooms(user) {
   const ownerIds = [...new Set(rooms.map(r => r.created_by).filter(Boolean))];
   const owners = ownerIds.length ? await q(`SELECT id, username FROM users WHERE id IN (${ownerIds.map((_, i) => '$' + (i + 1)).join(',')})`, ownerIds) : [];
   return rooms.map(room => {
-    const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(user) || f.uploaded_by === user.id, can_delete: isAdmin(user) || f.uploaded_by === user.id || room.created_by === user.id }));
+    const roomFiles = files.filter(f => f.room_id === room.id).map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(user) || f.uploaded_by === user.id, can_share: isAdmin(user) || f.uploaded_by === user.id || room.created_by === user.id, can_delete: isAdmin(user) || f.uploaded_by === user.id || room.created_by === user.id }));
     const roomMembers = members.filter(m => m.room_id === room.id).map(({ room_id, ...m }) => m);
     return {
       ...room,
@@ -3672,6 +4312,7 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
     await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
       [id, room.id, req.user.id, name, storedName, file.size, file.mimetype || 'application/octet-stream', ts(), chatOnly]);
     inserted.push({ id, original_name: name, size: file.size, mime_type: file.mimetype });
+    announceRoomFile(room.id, req.user.id, name).catch(() => {});
   }
   res.json(inserted);
 }));
@@ -3951,6 +4592,7 @@ app.post('/api/rooms/:id/files/register', asMember, wrap(async (req, res) => {
   const chatOnly = (req.body && req.body.chat_only) ? 1 : 0;
   await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
     [m[2], room.id, req.user.id, name, pathname, size, mime, ts(), chatOnly]);
+  announceRoomFile(room.id, req.user.id, name).catch(() => {});
   res.json({ id: m[2], original_name: name, size, chat_only: chatOnly });
 }));
 
@@ -3976,6 +4618,7 @@ app.post('/api/rooms/:id/drive-files/register', asMember, wrap(async (req, res) 
   await q('INSERT INTO files (id, room_id, uploaded_by, original_name, stored_name, size, mime_type, uploaded_at, chat_only) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING',
     [upload.upload_id, room.id, req.user.id, upload.original_name, storedName, num(upload.size), upload.mime_type, ts(), chatOnly]);
   await q("UPDATE google_drive_uploads SET status = 'registered', updated_at = $1 WHERE upload_id = $2 AND user_id = $3", [ts(), upload.upload_id, req.user.id]);
+  announceRoomFile(room.id, req.user.id, upload.original_name).catch(() => {});
   res.json({ id: upload.upload_id, original_name: upload.original_name, size: num(upload.size), mime_type: upload.mime_type, chat_only: chatOnly });
 }));
 
@@ -4803,7 +5446,7 @@ app.post('/api/coletas/enviar/:token/finalizar', publicCollectionAccess, wrap(as
     await materializeCollectionLibraryUploads(collection, submissionId, senderName);
   }
   await q('DELETE FROM file_collection_upload_blobs WHERE upload_id IN (SELECT id FROM file_collection_uploads WHERE submission_id = $1)', [submissionId]).catch(error => console.error('Limpeza dos arquivos da coleta:', error && error.message));
-  await notify(recipient.owner_id, 'Coleta concluída', `${senderName} enviou os arquivos de “${recipient.title}”.`, 'success').catch(() => {});
+  await notifyAndPush(recipient.owner_id, 'Coleta concluída', `${senderName} enviou os arquivos de “${recipient.title}”.`, 'success', 'collections', '/dashboard');
   clearCollectionAccessCookie(res, req.params.token);
   res.json({ success: true, state: recipient.multi_use_link ? 'multi_use_submitted' : 'submitted', multi_use_link: !!Number(recipient.multi_use_link) });
 }));
@@ -5100,6 +5743,7 @@ app.post('/api/rooms/:id/messages', asMember, wrap(async (req, res) => {
   const id = uuidv4();
   await q('INSERT INTO messages (id, room_id, user_id, content, reply_to_id, created_at, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
     [id, req.params.id, req.user.id, content, replyTo, ts(), expiresAt]);
+  announceRoomMessage(req.params.id, req.user.id, content).catch(() => {});
   res.json(await one(`SELECT m.*, u.username, u.avatar_color, u.role, parent.content AS reply_content, parent_user.username AS reply_username
     FROM messages m JOIN users u ON m.user_id = u.id LEFT JOIN messages parent
       ON parent.id = m.reply_to_id AND (parent.expires_at IS NULL OR parent.expires_at > $2)
@@ -5153,7 +5797,7 @@ app.get('/api/sala/:slug', asMember, wrap(async (req, res) => {
   const files = await q(`SELECT f.id, f.original_name, f.size, f.mime_type, f.uploaded_at, f.uploaded_by, u.username AS uploader, u.role AS uploader_role
     FROM files f LEFT JOIN users u ON f.uploaded_by = u.id WHERE f.room_id = $1 ORDER BY f.uploaded_at DESC`, [room.id]);
   const count = await one('SELECT COUNT(*) AS c FROM room_members WHERE room_id = $1', [room.id]);
-  res.json({ ...room, files: files.map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(req.user) || f.uploaded_by === req.user.id, can_delete: isAdmin(req.user) || f.uploaded_by === req.user.id || room.created_by === req.user.id })), memberCount: num(count.c) });
+  res.json({ ...room, files: files.map(f => ({ ...f, size: num(f.size), can_edit: isAdmin(req.user) || f.uploaded_by === req.user.id, can_share: isAdmin(req.user) || f.uploaded_by === req.user.id || room.created_by === req.user.id, can_delete: isAdmin(req.user) || f.uploaded_by === req.user.id || room.created_by === req.user.id })), memberCount: num(count.c) });
 }));
 
 // =================== ESTATÍSTICAS / SENHA ===================
@@ -5398,7 +6042,7 @@ app.post('/api/dm/:id/messages', asMember, wrap(async (req, res) => {
     [id, me, friend.id, content, replyTo, createdAt, expiresAt]);
   // Não cria notificação quando o usuário envia mensagem para si mesmo ("eu mesmo").
   if (friend.id !== me) {
-    await notify(friend.id, 'Nova mensagem de ' + req.user.username, content.slice(0, 140), 'info');
+    await notifyAndPush(friend.id, 'Nova mensagem de ' + req.user.username, content.slice(0, 140), 'info', 'messages', '/dashboard');
   }
   res.json({ success: true, id, created_at: createdAt });
 }));
@@ -5854,7 +6498,16 @@ app.post('/api/change-password', requireAuth, wrap(async (req, res) => {
   await q('UPDATE users SET force_logout_at = $1 WHERE id = $2', [String(loggedOutAt), user.id]);
   await q('DELETE FROM auth_tokens WHERE user_id = $1', [user.id]);
   req.session.at = loggedOutAt + 1;
-  try { await issueRememberToken(req, res, user.id); } catch (e) { console.error('revoke tokens:', e && e.message); }
+  let deviceId = req.session.deviceId;
+  if (!deviceId) {
+    const device = await registerLoginDevice(req, res, user.id);
+    deviceId = device.deviceId;
+    req.session.deviceId = deviceId;
+  }
+  try {
+    const remember = await issueRememberToken(req, res, user.id, deviceId);
+    req.session.tokenId = remember.id;
+  } catch (e) { console.error('revoke tokens:', e && e.message); }
   res.json({ success: true, role: req.user.role });
 }));
 

@@ -20,7 +20,9 @@
     "express": "^4.21.1",
     "multer": "^2.4.0",
     "pg": "^8.23.1",
-    "uuid": "^11.0.2"
+    "qrcode": "^1.5.4",
+    "uuid": "^11.0.2",
+    "web-push": "^3.6.7"
   },
   "overrides": {
     "@vercel/cli-config": "^0.3.8",

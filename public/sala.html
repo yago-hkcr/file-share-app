@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="/css/adaptive.css?v=20261118a">
   <script src="/js/gfx.js?v=20261112b"></script><script src="/js/fx.js?v=20261112b" defer></script>
   <link rel="stylesheet" href="/css/preview.css?v=20261014o">
+  <link rel="stylesheet" href="/css/shares.css?v=20261119b">
 <link rel="stylesheet" href="/css/mobile-scroll-fix.css?v=20261014o">
 <link rel="stylesheet" href="/css/hacker-ui.css?v=20261112b">
   <link rel="stylesheet" href="/css/theme-v2.css?v=20261112b">
@@ -143,6 +144,7 @@
                   </div>
                   <div class="sala-file-actions">
                     <button class="btn btn-outline fp-trigger" title="Visualizar" onclick="previewFile(this.dataset.id,this.dataset.name,this.dataset.mime,this.dataset.size)" data-id="${file.id}" data-name="${escapeHtml(file.original_name)}" data-mime="${escapeHtml(file.mime_type || '')}" data-size="${file.size}"><i class="fas fa-eye"></i> Visualizar</button>
+                    ${file.can_share ? `<button class="btn btn-outline" title="Compartilhar link" data-name="${escapeHtml(file.original_name)}" onclick="openFileShareDialog({ kind: 'file', id: '${file.id}', name: this.dataset.name })"><i class="fas fa-link"></i></button>` : ''}
                     ${file.can_edit ? `<button class="btn btn-outline" title="Renomear" data-name="${escapeHtml(file.original_name)}" onclick="renameFile('${file.id}', this.dataset.name, () => { lastSig=''; loadRoom(); })"><i class="fas fa-pen"></i></button>` : ''}
                     <a href="/download/${file.id}" class="btn btn-green btn-download">
                       <i class="fas fa-download"></i> Baixar
@@ -187,11 +189,12 @@
   </script>
   <script src="/js/cursor.js?v=20261014o"></script>
   <script src="/js/preview.js?v=20261111a"></script>
+  <script src="/js/file-shares.js?v=20261119a"></script>
 <script src="/js/announce.js?v=20261107d"></script>
 <script src="/js/cyber.js?v=20261112f"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js?v=20261111a').then(reg => {
+    navigator.serviceWorker.register('/sw.js?v=20261119a').then(reg => {
       console.log('[SW] Registrado:', reg.scope);
     }).catch(err => console.warn('[SW] Falha ao registrar:', err));
   }
