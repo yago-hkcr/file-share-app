@@ -78,6 +78,7 @@ function sessionSecret() {
 
 const PASSWORD_HASH_PREFIX = 'bcrypt-sha256$';
 const PASSWORD_HASH_COST = 12;
+// Aceita também PIN de 4 dígitos (ex.: 1234), conforme solicitado.
 const MIN_PASSWORD_LENGTH = 4;
 const MAX_PASSWORD_LENGTH = 1024;
 const MAX_PASSWORD_BYTES = 4096;
@@ -1601,6 +1602,13 @@ app.use((req, res, next) => {
   const cameraPolicy = req.path === '/dashboard' ? '(self)' : '()';
   res.setHeader('Permissions-Policy', `camera=${cameraPolicy}, microphone=(), geolocation=(), payment=(), usb=()`);
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  if (req.path === '/admin' || req.path === '/dashboard' || req.path === '/change-password' ||
+      req.path.startsWith('/api/') || req.path.startsWith('/sala/') || req.path.startsWith('/enviar/') ||
+      req.path.startsWith('/preview/') || req.path.startsWith('/download/')) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  }
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   if (IS_VERCEL && req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
@@ -1641,6 +1649,43 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'public', 'favicon-48.png')));
+// robots.txt e sitemap.xml: evitam indexação de áreas autenticadas e dão
+// um caminho explícito para o canal de reporte de segurança (security.txt).
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').send([
+    'User-agent: *',
+    'Allow: /$',
+    'Allow: /privacidade',
+    'Disallow: /api/',
+    'Disallow: /admin',
+    'Disallow: /dashboard',
+    'Disallow: /change-password',
+    'Disallow: /sala/',
+    'Disallow: /enviar/',
+    'Disallow: /preview/',
+    'Disallow: /download/',
+    ''
+  ].join('\n'));
+});
+app.get('/sitemap.xml', (req, res) => {
+  const base = 'https://www.arquive.online';
+  res.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+    '  <url><loc>' + base + '/</loc></url>\n' +
+    '  <url><loc>' + base + '/privacidade</loc></url>\n' +
+    '</urlset>\n');
+});
+app.get('/security.txt', (req, res) => res.redirect(301, '/.well-known/security.txt'));
+app.get('/.well-known/security.txt', (req, res) => {
+  res.type('text/plain').send([
+    'Contact: mailto:yagoassis@gmail.com',
+    'Expires: 2027-12-31T23:59:59.000Z',
+    'Preferred-Languages: pt-BR, en',
+    'Canonical: https://www.arquive.online/.well-known/security.txt',
+    'Policy: https://www.arquive.online/privacidade',
+    ''
+  ].join('\n'));
+});
 app.use(cookieSession({
   name: SESSION_COOKIE,
   keys: [sessionSecret()],
@@ -1668,6 +1713,11 @@ function readCookie(req, name) {
 function remCookieOpts(maxAgeMs) {
   return { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
 }
+function clearRememberCookie(res) {
+  // O prefixo __Host- exige Secure também na remoção; sem isso o navegador
+  // pode ignorar o clear e manter o login persistente após o logout.
+  res.clearCookie(REMEMBER_COOKIE, { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/' });
+}
 async function issueRememberToken(req, res, userId) {
   const token = crypto.randomBytes(32).toString('hex');
   const exp = new Date(Date.now() + REMEMBER_DAYS * 86400000).toISOString().slice(0, 19).replace('T', ' ');
@@ -1692,7 +1742,7 @@ app.use(wrap(async (req, res, next) => {
         req.session.userId = row.user_id; req.session.username = row.username; req.session.role = row.role; req.session.status = row.status;
       } else {
         if (row) await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]);
-        res.clearCookie(REMEMBER_COOKIE, { path: '/' });
+        clearRememberCookie(res);
       }
     } catch (e) { console.error('remember:', e && e.message); }
   }
@@ -1751,7 +1801,7 @@ const requireAuth = wrap(async (req, res, next) => {
   const user = await one('SELECT id, username, role, status, last_seen, force_logout_at, password_change_required FROM users WHERE id = $1', [req.session.userId]);
   if (!user) { req.session = null; return res.status(401).json({ error: 'Não autorizado' }); }
   if (user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) {
-    req.session = null; res.clearCookie(REMEMBER_COOKIE, { path: '/' });
+    req.session = null; clearRememberCookie(res);
     return res.status(401).json({ error: user.status === 'banned' ? 'Conta suspensa' : user.status === 'rejected' ? 'Conta sem acesso' : 'Sessão encerrada pelo administrador' });
   }
   if (Number(user.password_change_required) && !['/api/change-password', '/api/logout'].includes(req.path)) {
@@ -2385,7 +2435,7 @@ app.get('/dashboard', wrap(async (req, res) => {
 app.get('/change-password', wrap(async (req, res) => {
   if (!req.session || !req.session.userId) return res.redirect('/');
   const user = await one('SELECT role, status, password_change_required, force_logout_at FROM users WHERE id = $1', [req.session.userId]);
-  if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) { req.session = null; res.clearCookie(REMEMBER_COOKIE, { path: '/' }); return res.redirect('/'); }
+  if (!user || user.status === 'banned' || user.status === 'rejected' || (user.force_logout_at && Number(req.session.at || 0) <= Number(user.force_logout_at))) { req.session = null; clearRememberCookie(res); return res.redirect('/'); }
   if (!Number(user.password_change_required)) return res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
   res.set('Cache-Control', 'no-store');
   res.sendFile(page('change-password.html'));
@@ -2473,7 +2523,7 @@ app.post('/api/logout', wrap(async (req, res) => {
   if (req.session && req.session.userId) { const lu = await one('SELECT id, username, role FROM users WHERE id = $1', [req.session.userId]); if (lu) await logAct(req, 'logout', '', lu); }
   const token = readCookie(req, REMEMBER_COOKIE);
   if (token) { try { await q('DELETE FROM auth_tokens WHERE token_hash = $1', [hashToken(token)]); } catch (e) {} }
-  res.clearCookie(REMEMBER_COOKIE, { path: '/' });
+  clearRememberCookie(res);
   req.session = null;
   res.json({ success: true });
 }));
@@ -2514,6 +2564,9 @@ async function sendMail({ to, subject, html, text }) {
 function baseUrlFor(req) {
   const configured = String(process.env.APP_BASE_URL || '').trim().replace(/\/+$/, '');
   if (configured) return configured;
+  // Em produção o domínio é fixo: evita que um cabeçalho Host/X-Forwarded-Host
+  // forjado faça o link de redefinição apontar para um domínio controlado pelo atacante.
+  if (IS_VERCEL) return 'https://www.arquive.online';
   const proto = String(req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
   const host = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
   return proto + '://' + host;
@@ -2572,11 +2625,16 @@ app.post('/api/forgot-password', wrap(async (req, res) => {
     const mail = passwordResetEmail(link, Math.round(RESET_TOKEN_TTL_MS / 60000));
     const sent = await sendMail({ to: user.email, subject: mail.subject, html: mail.html, text: mail.text });
     if (!sent.ok) {
-      console.log('[reset] link de redefinição (envio falhou) para ' + user.email + ': ' + link);
       await logAct(req, 'senha_reset_solicitada', user.username, { id: user.id, username: user.username, role: user.role });
-      // E-mail não pôde ser enviado: devolve o link para exibição local no navegador.
-      // Mensagem intencionalmente igual à de e-mail inexistente (anti-enumeracao).
-      return res.json({ success: true, recoveryLink: link, message: 'Se este e-mail estiver cadastrado, você receberá em instantes um link para redefinir a senha. Verifique também a caixa de spam.' });
+      // Falha no canal de entrega: NUNCA devolver o link em produção (isso permitiria
+      // sequestro de conta por qualquer pessoa que soubesse o e-mail). Apenas em modo
+      // local o link é exibido no navegador para facilitar o desenvolvimento.
+      if (LOCAL_MODE) {
+        console.log('[reset] link local de redefinição para ' + user.email + ': ' + link);
+        return res.json({ success: true, recoveryLink: link, message: 'Se este e-mail estiver cadastrado, você receberá em instantes um link para redefinir a senha. Verifique também a caixa de spam.' });
+      }
+      console.error('[reset] falha ao entregar o e-mail de redefinição; link não exposto na resposta.');
+      return res.json({ success: true, message: 'Se este e-mail estiver cadastrado, você receberá em instantes um link para redefinir a senha. Verifique também a caixa de spam.' });
     }
     await logAct(req, 'senha_reset_solicitada', user.username, { id: user.id, username: user.username, role: user.role });
   }
@@ -3625,6 +3683,9 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
 // 3) /files/register: o servidor confere o envio e grava o arquivo no banco
 // ---------------------------------------------------------------------------
 const MAX_DIRECT_BYTES = 100 * 1024 * 1024;
+// URL de upload assinada: janela curta para reduzir o risco de um link vazado
+// continuar gravável. A fila de upload solicita uma nova URL ao tentar de novo.
+const PRESIGN_UPLOAD_TTL_MS = 6 * 60 * 60 * 1000;
 // Limite de produto: 10 GiB por arquivo. Arquivos grandes usam multipart direto
 // no Blob; nunca passam pelo corpo/armazenamento em memória da Vercel Function.
 const MAX_BLOB_UPLOAD_BYTES = 10 * 1024 ** 3;
@@ -3651,8 +3712,9 @@ app.post('/api/rooms/:id/upload-url', asMember, wrap(async (req, res) => {
   // URL pre-assinada (mesmo fluxo estavel das Coletas): o servidor emite um link PUT de curta
   // duracao e o navegador envia o arquivo direto ao Blob, sem o callback de token do SDK `upload()`.
   const { issueSignedToken, presignUrl } = await blobSdk();
-  // Uploads em segundo plano podem aguardar vários dias até o aparelho voltar a ficar online.
-  const validUntil = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  // A fila de upload pede uma nova URL assinada ao tentar novamente, então a
+  // validade curta não impede envios que ficaram aguardando conexão.
+  const validUntil = Date.now() + PRESIGN_UPLOAD_TTL_MS;
   const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_DIRECT_BYTES, validUntil });
   const signed = await presignUrl(token, { operation: 'put', pathname, access: 'private', maximumSizeInBytes: MAX_DIRECT_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil });
   res.json({ pathname, presignedUrl: signed.presignedUrl, validUntil, maxBytes: MAX_DIRECT_BYTES });
@@ -3830,7 +3892,7 @@ app.post('/api/rooms/:id/upload-token', wrap(async (req, res) => {
       getSignedToken: async pathname => {
         const m = BLOB_PATH_RE.exec(pathname);
         if (!m || m[1] !== req.params.id) throw new Error('Caminho de arquivo inválido');
-        const validUntil = Date.now() + 24 * 60 * 60 * 1000;
+        const validUntil = Date.now() + PRESIGN_UPLOAD_TTL_MS;
         const token = await issueSignedToken({
           pathname,
           operations: ['put'],
@@ -3979,7 +4041,7 @@ app.post('/api/library/upload-token', wrap(async (req, res) => {
       body: req.body,
       getSignedToken: async pathname => {
         if (!LIBRARY_BLOB_PATH_RE.test(pathname)) throw new Error('Caminho de arquivo inválido');
-        const validUntil = Date.now() + 24 * 60 * 60 * 1000;
+        const validUntil = Date.now() + PRESIGN_UPLOAD_TTL_MS;
         const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, validUntil });
         return { token, urlOptions: { maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil } };
       }
@@ -4448,7 +4510,7 @@ app.post('/api/coletas/enviar/:token/upload-token', publicCollectionAccess, wrap
       body: req.body,
       getSignedToken: async requestedPath => {
         if (requestedPath !== pathname) throw new Error('Caminho de upload inválido');
-        const validUntil = Date.now() + 24 * 60 * 60 * 1000;
+        const validUntil = Date.now() + PRESIGN_UPLOAD_TTL_MS;
         const maximumSizeInBytes = num(staged.size);
         const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes, validUntil });
         return { token, urlOptions: { maximumSizeInBytes, addRandomSuffix: false, allowOverwrite: false, validUntil } };
@@ -5188,8 +5250,8 @@ app.post('/api/admin/users/:id/logout', asAdmin, adminTarget, wrap(async (req, r
   res.json({ success: true });
 }));
 app.post('/api/admin/users/:id/reset-password', asAdmin, adminTarget, wrap(async (req, res) => {
-  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  const temp = Array.from(crypto.randomBytes(24), b => chars[b % chars.length]).join('');
+  // Senha temporária de 4 dígitos, conforme solicitado (o usuário deve trocá-la no primeiro acesso).
+  const temp = String(crypto.randomInt(1000, 10000));
   await q('UPDATE users SET password_hash = $1, password_change_required = 1 WHERE id = $2', [await hashPassword(temp), req.target.id]);
   await forceLogout(req.target.id);
   await logAct(req, 'senha_redefinida', req.target.username);
@@ -5383,8 +5445,8 @@ app.post('/api/dm/:id/upload-url', asMember, wrap(async (req, res) => {
   const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
   const pathname = `dm/${req.user.id}/${fileId}-${safe}`;
   const { issueSignedToken, presignUrl } = await blobSdk();
-  // Uploads em segundo plano podem aguardar o aparelho voltar a ficar online.
-  const validUntil = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  // A fila de upload pede uma nova URL assinada ao tentar novamente.
+  const validUntil = Date.now() + PRESIGN_UPLOAD_TTL_MS;
   const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_DIRECT_BYTES, validUntil });
   const signed = await presignUrl(token, { operation: 'put', pathname, access: 'private', maximumSizeInBytes: MAX_DIRECT_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil });
   res.json({ pathname, presignedUrl: signed.presignedUrl, validUntil, maxBytes: MAX_DIRECT_BYTES });
@@ -5414,7 +5476,7 @@ app.post('/api/dm/:id/upload-token', asMember, wrap(async (req, res) => {
       getSignedToken: async pathname => {
         const match = DM_BLOB_PATH_RE.exec(pathname);
         if (!match || match[1] !== req.user.id) throw new Error('Caminho de arquivo inválido');
-        const validUntil = Date.now() + 24 * 60 * 60 * 1000;
+        const validUntil = Date.now() + PRESIGN_UPLOAD_TTL_MS;
         const token = await issueSignedToken({ pathname, operations: ['put'], maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, validUntil });
         return { token, urlOptions: { maximumSizeInBytes: MAX_BLOB_UPLOAD_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil } };
       }

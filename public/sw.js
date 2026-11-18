@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v36-cyber-bg';
+const CACHE_NAME = 'fileshare-v37-hardening';
 const ASSETS = [
   '/css/social.css?v=20261112b',
   '/css/upload-queue.css?v=20261112b',
@@ -16,7 +16,7 @@ const ASSETS = [
   '/css/auth-flow.css?v=20261112i',
   '/css/login-intro.css?v=20261112f',
   '/css/mobile.css?v=20261112a',
-  '/css/adaptive.css?v=20261112a',
+  '/css/adaptive.css?v=20261118a',
   '/css/mobile-scroll-fix.css?v=20261027a',
   '/css/fx.css?v=20261112c',
   '/css/preview.css?v=20261014o',
@@ -24,7 +24,7 @@ const ASSETS = [
   '/css/theme-v2.css?v=20261112b',
   '/js/common.js?v=20261112k',
   '/js/logo-3d-anim.js?v=20261112f',
-  '/js/adaptive.js?v=20261014a',
+  '/js/adaptive.js?v=20261118a',
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261112b',
   '/js/fx.js?v=20261112b',
