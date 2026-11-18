@@ -3704,13 +3704,15 @@ app.post('/api/push/unsubscribe', requireAuth, wrap(async (req, res) => {
 app.post('/api/push/test', requireAuth, wrap(async (req, res) => {
   if (!pushConfigured()) return res.status(503).json({ error: 'As notificações push não estão configuradas no servidor.' });
   if (await consumeRateLimit('push-test:' + req.user.id, 3, 10 * 60 * 1000)) return res.status(429).json({ error: 'Aguarde alguns minutos para testar novamente.' });
+  const existing = await one('SELECT COUNT(*) AS c FROM push_subscriptions WHERE user_id = $1', [req.user.id]);
+  if (!num(existing && existing.c)) return res.status(404).json({ error: 'Nenhum dispositivo inscrito. Ative as notificações primeiro.' });
   const sent = await sendPushToUser(req.user.id, {
     title: 'Notificações ativadas',
     body: 'Você receberá avisos de mensagens, arquivos e segurança neste dispositivo.',
     url: '/dashboard',
     tag: 'push-test'
   }, 'general');
-  if (!sent) return res.status(404).json({ error: 'Nenhum dispositivo inscrito. Ative as notificações primeiro.' });
+  if (!sent) return res.status(502).json({ error: 'Não foi possível entregar a notificação. Reative as notificações push neste dispositivo.' });
   res.json({ success: true, sent });
 }));
 
