@@ -329,6 +329,37 @@ async function auditPage(browser, states, route, viewport) {
         }
       }
 
+      // Texto comprimido não gera overflow: a caixa encolhe e as letras caem
+      // uma por linha. Detecta inclusive elementos com largura zero.
+      const narrowText = [];
+      for (const element of document.querySelectorAll('body *')) {
+        if (element.closest('svg,script,style,noscript,canvas,select,option,textarea,input')) continue;
+        const style = getComputedStyle(element);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
+        if (style.writingMode && style.writingMode !== 'horizontal-tb') continue;
+        const className = (element.className && element.className.baseVal !== undefined
+          ? element.className.baseVal
+          : element.className || '').toString();
+        if (ignored.test(className) || ignored.test(element.id)) continue;
+        const text = Array.from(element.childNodes)
+          .filter(node => node.nodeType === 3)
+          .map(node => node.textContent)
+          .join(' ').replace(/\s+/g, ' ').trim();
+        if (text.length < 4) continue;
+        const rect = element.getBoundingClientRect();
+        if (rect.height < 1 || rect.top > vh * 3 || rect.bottom < -vh * 2) continue;
+        if (rect.width < 105 && rect.height > Math.max(64, rect.width * 2.2)) {
+          narrowText.push({
+            tag: element.tagName,
+            cls: className.slice(0, 60),
+            id: element.id,
+            text: text.slice(0, 70),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+          });
+        }
+      }
+
       const escapedContainers = [];
       const containerSelectors = [
         '.header', '.wrap', '.dashboard-content', '.main-content', '.sala-container',
@@ -410,6 +441,7 @@ async function auditPage(browser, states, route, viewport) {
         escapedContainers,
         escapedCards: escapedCards.slice(0, 8),
         compressedText: compressedText.slice(0, 8),
+        narrowText: narrowText.slice(0, 8),
         smallTargets: smallTargets.slice(0, 8)
       };
     }, { ignoreSource: IGNORE_SOURCE, checkTaps: viewport.width <= 640 || viewport.height <= 430 });
@@ -427,7 +459,7 @@ async function auditPage(browser, states, route, viewport) {
     };
     const bad = details.status >= 400 || details.scrollWidth > viewport.width + 1 ||
       details.outside.length || details.escapedContainers.length || details.escapedCards.length ||
-      details.compressedText.length || details.smallTargets.length || pageErrors.length || assetErrors.length || redirected;
+      details.compressedText.length || details.narrowText.length || details.smallTargets.length || pageErrors.length || assetErrors.length || redirected;
 
     if (bad) {
       await page.screenshot({
@@ -706,6 +738,7 @@ async function main() {
             containers: result.details.escapedContainers,
             cards: result.details.escapedCards,
             compressed: result.details.compressedText,
+            narrow: result.details.narrowText,
             taps: result.details.smallTargets,
             js: result.details.pageErrors,
             assets: result.details.assetErrors

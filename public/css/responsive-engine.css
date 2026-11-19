@@ -38,7 +38,7 @@
   --content-max-reading: 1080px;
   --content-max-share: 1120px;
   --sidebar-width: clamp(218px, 16vw, 260px);
-  --dashboard-rail: clamp(220px, 16.5vw, 260px);
+  --dashboard-rail: clamp(240px, 16.5vw, 260px);
 
   /* Espaçamento (escala única e fluida) */
   --space-2xs: clamp(4px, .35vw, 6px);
@@ -949,7 +949,7 @@ video { max-width: 100%; }
 
 /* Tablet paisagem / notebook pequeno: rail mais estreito, tipografia menor. */
 @media (max-width: 1100px) {
-  :root { --dashboard-rail: clamp(208px, 20vw, 230px); }
+  :root { --dashboard-rail: 230px; }
 
   .dashboard-panels { padding: clamp(13px, 1.8vw, 20px); }
 }
@@ -1232,6 +1232,25 @@ video { max-width: 100%; }
   .dashboard-workspace-bar h2 { max-width: 24ch; }
   .dashboard-panels { padding: 30px; }
   .sala-container { padding-block: 36px 52px; }
+}
+
+/* Modal de sala: a faixa de ações fica abaixo do arquivo em qualquer tela.
+   São até sete controles; mantê-los ao lado espremia nome e metadados. */
+@media (min-width: 641px) {
+  #roomModal #roomFiles .file-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  #roomModal #roomFiles .file-main { width: 100%; }
+
+  #roomModal #roomFiles .file-btns {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
 }
 
 /* Ultrawide / alta densidade: conteúdo centrado, cards maiores. */

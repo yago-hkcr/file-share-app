@@ -47,8 +47,8 @@ npm run test:visual -- --landscape
 ```
 
 O teste cria uma sala, uma coleta, um link de arquivo e um usuario de auditoria local, percorre as paginas publicas e autenticadas,
-verifica overflow horizontal, conteudo escapando de cards, alvos de toque, erros de JavaScript e comparacao
-pixel a pixel das telas estaveis. O relatorio fica em `test-results/visual/report.json` e as referencias em
+verifica overflow horizontal, conteudo escapando de cards, texto comprimido (inclusive colunas com largura zero),
+alvos de toque, erros de JavaScript e comparacao pixel a pixel das telas estaveis. O relatorio fica em `test-results/visual/report.json` e as referencias em
 `test/visual/__screenshots__/baseline`. Use `--public` para auditar somente paginas publicas em outro ambiente.
 
 Configure `ADMIN_PASSWORD` e `SESSION_SECRET` no ambiente antes da inicialização. `ADMIN_PASSWORD` cria a conta administrativa `admin` apenas se ainda não houver uma conta; instalações existentes mantêm a senha cadastrada. `SESSION_SECRET` protege os cookies de sessão e deve permanecer estável entre reinicializações.
