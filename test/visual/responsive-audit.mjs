@@ -344,6 +344,7 @@ async function auditPage(browser, states, route, viewport) {
       }
 
       const escapedCards = [];
+      const compressedText = [];
       for (const selector of ['.room-card', '.sala-file-card', '.stat-card', '.collection-public-card', '.share-card']) {
         for (const card of document.querySelectorAll(selector)) {
           if (!visible(card)) continue;
@@ -359,6 +360,25 @@ async function auditPage(browser, states, route, viewport) {
                 right: Math.round(childRect.right),
                 cardRight: Math.round(cardRect.right)
               });
+            }
+          }
+
+          // Uma coluna de texto esmagada transforma nomes em letras verticais.
+          // Isso não gera overflow, então precisa de uma checagem própria.
+          if (selector === '.sala-file-card' && cardRect.width >= 380) {
+            const info = card.querySelector('.sala-file-info');
+            if (info && visible(info)) {
+              const infoRect = info.getBoundingClientRect();
+              const name = info.querySelector('h4');
+              const nameRect = name && visible(name) ? name.getBoundingClientRect() : null;
+              if (infoRect.width < 140 || (nameRect && nameRect.width < 90 && nameRect.height > 40)) {
+                compressedText.push({
+                  cardWidth: Math.round(cardRect.width),
+                  infoWidth: Math.round(infoRect.width),
+                  nameWidth: nameRect ? Math.round(nameRect.width) : null,
+                  nameHeight: nameRect ? Math.round(nameRect.height) : null
+                });
+              }
             }
           }
         }
@@ -389,6 +409,7 @@ async function auditPage(browser, states, route, viewport) {
         outside: outside.slice(0, 8),
         escapedContainers,
         escapedCards: escapedCards.slice(0, 8),
+        compressedText: compressedText.slice(0, 8),
         smallTargets: smallTargets.slice(0, 8)
       };
     }, { ignoreSource: IGNORE_SOURCE, checkTaps: viewport.width <= 640 || viewport.height <= 430 });
@@ -406,7 +427,7 @@ async function auditPage(browser, states, route, viewport) {
     };
     const bad = details.status >= 400 || details.scrollWidth > viewport.width + 1 ||
       details.outside.length || details.escapedContainers.length || details.escapedCards.length ||
-      details.smallTargets.length || pageErrors.length || assetErrors.length || redirected;
+      details.compressedText.length || details.smallTargets.length || pageErrors.length || assetErrors.length || redirected;
 
     if (bad) {
       await page.screenshot({
@@ -684,6 +705,7 @@ async function main() {
             outside: result.details.outside,
             containers: result.details.escapedContainers,
             cards: result.details.escapedCards,
+            compressed: result.details.compressedText,
             taps: result.details.smallTargets,
             js: result.details.pageErrors,
             assets: result.details.assetErrors

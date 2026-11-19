@@ -482,7 +482,38 @@ img { height: auto; }
   .sala-container { container-type: inline-size; }
 
   @container (min-width: 900px) {
-    .sala-files-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sala-files-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+
+    /* Em duas colunas o card fica estreito: ícone + nome na primeira linha e
+       ações em uma faixa própria. Sem isso, quatro botões esmagam o nome. */
+    .sala-file-card {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      text-align: left;
+    }
+
+    .sala-file-actions {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+
+    .sala-file-actions > * {
+      width: 100%;
+      min-width: 0;
+      padding-inline: 8px;
+      justify-content: center;
+      white-space: normal;
+    }
+  }
+
+  /* Na transição para duas colunas os cards são mais estreitos: duas ações
+     por linha evitam rótulos apertados sem esconder nenhum controle. */
+  @container (min-width: 900px) and (max-width: 979px) {
+    .sala-file-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 }
 
