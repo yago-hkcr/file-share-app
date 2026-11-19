@@ -6,13 +6,18 @@
   // marcados com [data-fit] para que nunca ultrapassem o contêiner.
   var root = document.documentElement;
 
+  // Faixas alinhadas ao responsive-engine.css. O estado é informativo; o
+  // layout em si é decidido por media/container queries, não por JS.
   function sizeClass(w) {
+    if (w < 360) return 'xxs';
     if (w < 480) return 'xs';
-    if (w < 768) return 'sm';
-    if (w < 1024) return 'md';
-    if (w < 1280) return 'lg';
-    if (w < 1536) return 'xl';
-    return 'xxl';
+    if (w < 640) return 'sm';
+    if (w < 768) return 'md';
+    if (w < 1024) return 'lg';
+    if (w < 1280) return 'xl';
+    if (w < 1600) return 'xxl';
+    if (w < 2160) return '2xl';
+    return '3xl';
   }
 
   var rafId = 0;
@@ -38,6 +43,13 @@
     root.style.setProperty('--vmin', Math.min(w, h) + 'px');
     root.style.setProperty('--vmax', Math.max(w, h) + 'px');
     root.style.setProperty('--dpr', String(dpr));
+
+    // Teclado virtual: expõe a área coberta sem redimensionar nem fixar
+    // alturas. Componentes que precisam se proteger usam --keyboard-inset.
+    var keyboard = Math.max(0, Math.round(window.innerHeight - h - (vv ? vv.offsetTop : 0)));
+    root.style.setProperty('--keyboard-inset', keyboard > 80 ? keyboard + 'px' : '0px');
+    if (keyboard > 80) root.setAttribute('data-keyboard', 'open');
+    else root.removeAttribute('data-keyboard');
 
     try {
       window.dispatchEvent(new CustomEvent('fileshare:adaptive', {
@@ -112,23 +124,45 @@
     }
   }
 
-  // Garantia final: evita overflow horizontal residual no documento.
-  function ensureNoHOverflow() {
-    try {
-      if (document.documentElement.scrollWidth > window.innerWidth + 2) {
-        document.documentElement.style.overflowX = 'hidden';
-        document.body.style.overflowX = 'hidden';
-      }
-    } catch (e) {}
+  // Altura real do header para posicionar rails sticky e âncoras. Usa apenas
+  // getBoundingClientRect dentro de rAF (sem escrever no DOM a cada scroll).
+  function measureHeader() {
+    var header = document.querySelector('.header');
+    if (!header) return;
+    var rect = header.getBoundingClientRect();
+    var height = Math.round(rect.height);
+    if (!height) return;
+    if (root.style.getPropertyValue('--header-h') !== height + 'px') {
+      root.style.setProperty('--header-h', height + 'px');
+    }
   }
-  function scheduleOverflowFix() {
-    ensureNoHOverflow();
-    setTimeout(ensureNoHOverflow, 350);
+
+  function scheduleHeader() {
+    requestAnimationFrame(measureHeader);
   }
-  window.addEventListener('resize', scheduleOverflowFix);
-  window.addEventListener('orientationchange', scheduleOverflowFix);
-  window.addEventListener('load', ensureNoHOverflow);
-  setTimeout(ensureNoHOverflow, 1200);
+
+  window.addEventListener('load', scheduleHeader);
+  document.addEventListener('DOMContentLoaded', scheduleHeader);
+  scheduleHeader();
+
+  if ('ResizeObserver' in window) {
+    var headerTarget = document.querySelector('.header');
+    if (headerTarget) new ResizeObserver(scheduleHeader).observe(headerTarget);
+  }
+
+  // Diagnóstico leve para testes automatizados; não altera estilos.
+  window.fileShareLayoutMetrics = function () {
+    var se = document.scrollingElement || document.documentElement;
+    return {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      scrollWidth: se.scrollWidth,
+      scrollHeight: se.scrollHeight,
+      headerHeight: parseInt(root.style.getPropertyValue('--header-h'), 10) || 0,
+      viewport: root.getAttribute('data-viewport'),
+      orientation: root.getAttribute('data-orientation')
+    };
+  };
 
   window.fileShareAdaptive = { apply: apply, sizeClass: sizeClass };
 })();

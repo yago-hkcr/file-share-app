@@ -20,6 +20,37 @@ Abra `http://localhost:3000`.
 Alternativa com banco PostgreSQL (por exemplo, Supabase): crie um `.env.local` com `DATABASE_URL` e execute
 `npm install` uma vez e depois `node server.js` (le `DATABASE_URL` do `.env.local`).
 
+## Layout adaptativo e testes visuais
+
+O layout usa um unico motor central (`public/css/responsive-engine.css`), carregado por ultimo em todas as paginas.
+Ele concentra tokens fluidos, breakpoints, containers, formularios, modais, tabelas e areas seguras; o
+`public/js/adaptive.js` apenas informa o ambiente (viewport, orientacao, teclado virtual) e nao decide o layout.
+
+Para rodar a auditoria automatizada, inicie uma instancia local em um terminal:
+
+```powershell
+$env:FILESHARE_LOCAL="1"
+$env:FILESHARE_DATA_DIR="$env:TEMP/fs-visual"
+$env:PORT="3100"
+$env:ADMIN_PASSWORD="1234"
+$env:SESSION_SECRET="testsecrettestsecrettestsecrettest12"
+node server.js
+```
+
+Em outro terminal, com o Google Chrome instalado:
+
+```powershell
+npm run test:visual          # 22 larguras, incluindo 320, 768, 1440, 2560 e 3440
+npm run test:visual:quick    # amostra rapida para desenvolvimento
+npm run test:visual:update   # atualiza as capturas de referencia
+npm run test:visual -- --landscape
+```
+
+O teste cria uma sala, uma coleta, um link de arquivo e um usuario de auditoria local, percorre as paginas publicas e autenticadas,
+verifica overflow horizontal, conteudo escapando de cards, alvos de toque, erros de JavaScript e comparacao
+pixel a pixel das telas estaveis. O relatorio fica em `test-results/visual/report.json` e as referencias em
+`test/visual/__screenshots__/baseline`. Use `--public` para auditar somente paginas publicas em outro ambiente.
+
 Configure `ADMIN_PASSWORD` e `SESSION_SECRET` no ambiente antes da inicialização. `ADMIN_PASSWORD` cria a conta administrativa `admin` apenas se ainda não houver uma conta; instalações existentes mantêm a senha cadastrada. `SESSION_SECRET` protege os cookies de sessão e deve permanecer estável entre reinicializações.
 
 ## Deploy (Vercel + Supabase)

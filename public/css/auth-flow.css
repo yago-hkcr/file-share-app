@@ -485,9 +485,22 @@ body.auth-page .auth-card .btn-success:active {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Sem movimento: remove também a inclinação/perspectiva estática para
+     evitar rasterização instável de texto em telas e testes visuais. */
   body.auth-page .auth-card,
   body.auth-page .auth-showcase {
     transition: none !important;
+    animation: none !important;
+    transform: none !important;
+  }
+  body.auth-page .auth-card .auth-icon,
+  body.auth-page .auth-card .auth-header,
+  body.auth-page .auth-card .auth-header h1,
+  body.auth-page .auth-card .cy-lead,
+  body.auth-page .auth-card .cy-status,
+  body.auth-page .auth-card .auth-footer,
+  body.auth-page .auth-showcase .auth-showcase-copy {
+    transform: none !important;
   }
 }
 @media (max-width: 900px) {

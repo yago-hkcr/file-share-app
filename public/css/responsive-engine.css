@@ -1,0 +1,1258 @@
+/* ==========================================================================
+   ARQUIVE ONLINE — RESPONSIVE LAYOUT ENGINE
+   --------------------------------------------------------------------------
+   Camada única de layout. É carregada por último em todas as páginas para
+   normalizar containers, fluxo, tipografia fluida e adaptação de componentes
+   sem alterar a identidade visual (cores, fontes e efeitos continuam nas
+   folhas originais).
+
+   Princípios:
+   - nenhuma largura fixa de referência: containers usam min()/clamp();
+   - grids usam auto-fit/minmax() e se reorganizam antes de encolher;
+   - breakpoints derivam do comportamento real dos componentes;
+   - alturas de viewport usam dvh/svh (barras móveis e teclado);
+   - nada de overflow-x:hidden no <html> (quebra o scroll no Chrome — ver
+     mobile-scroll-fix.css). O clip horizontal continua apenas no <body>.
+   ========================================================================== */
+
+:root {
+  /* Breakpoints de referência (documentação viva; usados nos @media abaixo):
+     xxs  < 360px   | telefone compacto
+     xs   360–479   | telefone
+     sm   480–639   | telefone grande
+     md   640–767   | phablet retrato
+     lg   768–899   | tablet retrato
+     xl   900–1099  | tablet paisagem / notebook pequeno
+     2xl  1100–1359 | notebook
+     3xl  1360–1679 | desktop
+     4xl  1680–2159 | desktop largo
+     5xl  2160+     | ultrawide / alta densidade
+  */
+
+  /* Fluxo e containers */
+  --gutter: clamp(12px, 2.2vw, 34px);
+  --gutter-tight: clamp(12px, 1.6vw, 24px);
+  --gutter-page: clamp(12px, 3vw, 42px);
+  --content-max: 1680px;
+  --content-max-admin: 2020px;
+  --content-max-reading: 1080px;
+  --content-max-share: 1120px;
+  --sidebar-width: clamp(218px, 16vw, 260px);
+  --dashboard-rail: clamp(220px, 16.5vw, 260px);
+
+  /* Espaçamento (escala única e fluida) */
+  --space-2xs: clamp(4px, .35vw, 6px);
+  --space-xs: clamp(6px, .55vw, 10px);
+  --space-sm: clamp(10px, .9vw, 14px);
+  --space-md: clamp(14px, 1.2vw, 20px);
+  --space-lg: clamp(18px, 1.7vw, 28px);
+  --space-xl: clamp(24px, 2.4vw, 40px);
+  --gap-grid: clamp(12px, 1.4vw, 24px);
+  --card-pad: clamp(14px, 1.3vw, 24px);
+
+  /* Tipografia fluida (sem saltos entre breakpoints) */
+  --fs-body: clamp(15px, .12vw + 14.55px, 16.5px);
+  --fs-small: clamp(12px, .08vw + 11.7px, 13.5px);
+  --fs-label: clamp(11px, .08vw + 10.7px, 12.5px);
+  --fs-h1: clamp(22px, 1.5vw + 17px, 36px);
+  --fs-h2: clamp(19px, 1vw + 15.5px, 28px);
+  --fs-h3: clamp(16px, .45vw + 14.5px, 20px);
+  --fs-stat: clamp(22px, 1.1vw + 18px, 30px);
+
+  /* Controles e alvos de toque */
+  --tap-target: 44px;
+  --control-height: clamp(42px, 3.1vw, 48px);
+
+  /* Viewport dinâmico e áreas seguras */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --header-h: 76px;
+  --keyboard-inset: 0px;
+}
+
+/* --------------------------------------------------------------------------
+   BASE / FLUXO
+   -------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+body.app-page,
+body.auth-page,
+body.sala-page,
+body.collection-page {
+  font-size: var(--fs-body);
+  max-width: 100%;
+}
+
+body.app-page,
+body.sala-page,
+body.collection-page { min-height: 100dvh; }
+
+@supports (height: 100svh) {
+  body.auth-page { min-height: 100svh; }
+}
+
+/* O documento nunca deve criar rolagem horizontal. O clip fica no body,
+   nunca no html (ver comentário no topo). */
+body { overflow-x: clip; }
+
+img,
+video,
+iframe { max-width: 100%; }
+
+img { height: auto; }
+
+/* Conteúdo longo quebra por palavra; palavras gigantes (URLs/hashes) podem
+   quebrar em qualquer ponto, mas apenas em elementos de texto. */
+:where(p, li, dd, dt, figcaption, blockquote,
+  .room-description, .sala-desc, .share-copy, .collection-public-intro,
+  .file-name, .file-row-name, .sala-file-info h4, .text-muted) {
+  overflow-wrap: anywhere;
+}
+
+:where(h1, h2, h3, h4, h5, h6, label, .badge, .btn, .nav-item) {
+  overflow-wrap: break-word;
+}
+
+/* Foco sempre visível e consistente, sem remover o outline nativo. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--cy, var(--primary));
+  outline-offset: 2px;
+}
+
+/* Âncoras não ficam escondidas atrás do header fixo. */
+:where([id]) { scroll-margin-top: calc(var(--header-h) + 14px); }
+
+/* --------------------------------------------------------------------------
+   HEADER / NAVEGAÇÃO GLOBAL
+   -------------------------------------------------------------------------- */
+
+.header {
+  width: 100%;
+  min-height: var(--tap-target);
+  padding: clamp(10px, 1.1vw, 18px) max(var(--gutter-tight), var(--safe-right))
+           clamp(10px, 1.1vw, 18px) max(var(--gutter-tight), var(--safe-left));
+  gap: var(--space-xs) var(--space-sm);
+}
+
+.header-left,
+.header-right { min-width: 0; }
+
+.header-left { flex: 1 1 auto; }
+
+.header-left h1 {
+  font-size: clamp(15px, .55vw + 13px, 20px);
+  min-width: 0;
+}
+
+.header-right {
+  flex: 0 1 auto;
+  margin-left: auto;
+  gap: var(--space-xs);
+}
+
+.header-logo { flex: 0 0 auto; }
+
+/* --------------------------------------------------------------------------
+   APP (ADMIN / ALTERAR SENHA) — sidebar + conteúdo
+   -------------------------------------------------------------------------- */
+
+.app-layout {
+  width: 100%;
+  max-width: var(--content-max-admin);
+  margin-inline: auto;
+}
+
+.sidebar {
+  flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
+  max-width: var(--sidebar-width);
+  min-width: 0;
+}
+
+.main-content {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: var(--content-max);
+  min-width: 0;
+  margin-inline: auto;
+  padding: clamp(18px, 2vw, 36px) max(var(--gutter-tight), var(--safe-right))
+           clamp(24px, 2.4vw, 48px) max(var(--gutter-tight), var(--safe-left));
+}
+
+/* Cards administrativos: nunca criam largura mínima. */
+.main-content :where(.card, .tab-content, .settings-card, .ap-card, .stat-card) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 152px), 1fr));
+  gap: var(--gap-grid);
+}
+
+.stat-card {
+  min-width: 0;
+  padding: var(--card-pad);
+  gap: var(--space-sm);
+}
+
+.stat-card > div:last-child { min-width: 0; }
+
+.stat-value { font-size: var(--fs-stat); }
+.stat-label { font-size: var(--fs-small); }
+
+/* --------------------------------------------------------------------------
+   DASHBOARD — shell, rail lateral, painéis e cards de sala
+   -------------------------------------------------------------------------- */
+
+.dashboard-content {
+  width: min(100%, var(--content-max));
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: clamp(14px, 1.8vw, 30px) max(var(--gutter-tight), var(--safe-right))
+           clamp(22px, 2.4vw, 46px) max(var(--gutter-tight), var(--safe-left));
+}
+
+.dashboard-shell {
+  display: grid;
+  grid-template-columns: var(--dashboard-rail) minmax(0, 1fr);
+  gap: clamp(14px, 1.6vw, 24px);
+  min-height: 0;
+  align-items: start;
+}
+
+.dashboard-sidebar {
+  top: calc(var(--header-h) + 14px);
+  min-height: 0;
+  max-height: calc(100dvh - var(--header-h) - 28px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.dashboard-workspace,
+.dashboard-panels,
+.dashboard-workspace-bar { min-width: 0; }
+
+/* A navegação da rail é sempre uma lista vertical. Entre 761px e 820px a
+   folha mobile antiga aplicava 3 colunas e quebrava o texto letra por letra. */
+.dashboard-sidebar .dashboard-tabs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xs);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-sidebar .dashboard-tab {
+  width: 100%;
+  min-width: 0;
+}
+
+.dashboard-sidebar .dashboard-tab .dashboard-tab-copy {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dashboard-sidebar .dashboard-tab-copy strong,
+.dashboard-sidebar .dashboard-tab-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.dashboard-workspace-bar {
+  min-height: clamp(52px, 5vw, 72px);
+  margin-bottom: clamp(12px, 1.4vw, 18px);
+  gap: var(--space-sm);
+}
+
+.dashboard-workspace-bar > div { min-width: 0; }
+
+.dashboard-workspace-bar h2 {
+  font-size: var(--fs-h2);
+  overflow-wrap: anywhere;
+}
+
+.dashboard-panels {
+  padding: clamp(14px, 1.7vw, 28px);
+  border-radius: clamp(16px, 1.5vw, 22px);
+}
+
+.dashboard-panels .dashboard-intro {
+  gap: var(--space-md);
+  margin-bottom: clamp(16px, 1.8vw, 24px);
+  padding-bottom: clamp(12px, 1.3vw, 18px);
+}
+
+.dashboard-panels .dashboard-intro h2 { font-size: var(--fs-h3); }
+
+.dashboard-intro > .intro-actions { flex: 0 1 auto; align-self: flex-end; }
+
+.intro-actions .btn,
+.intro-actions a.btn { flex: 0 1 auto; }
+
+.rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: var(--gap-grid);
+  width: 100%;
+  min-width: 0;
+}
+
+/* Cabeçalho do card: selos não quebram palavras nem são esmagados. */
+.room-card-header {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.room-card-header > .badge {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.room-card {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 0;
+}
+
+.room-card-body { min-width: 0; }
+
+.room-card h3 {
+  font-size: var(--fs-h3);
+  overflow-wrap: anywhere;
+}
+
+.room-description {
+  min-height: 0;
+  margin-bottom: clamp(12px, 1.2vw, 18px);
+}
+
+.room-meta {
+  gap: var(--space-sm) var(--space-md);
+  margin: clamp(12px, 1.2vw, 18px) 0;
+  font-size: var(--fs-small);
+}
+
+.room-actions {
+  gap: var(--space-xs);
+  align-items: stretch;
+}
+
+.room-actions > .btn,
+.room-actions > a.btn {
+  min-width: 0;
+  min-height: var(--tap-target);
+  padding-inline: clamp(10px, 1vw, 16px);
+  font-size: var(--fs-small);
+  white-space: normal;
+  text-align: center;
+}
+
+/* Quando as ações quebram em duas linhas, o link público ocupa a linha toda. */
+.room-actions a.btn-share { flex: 1 1 100%; }
+
+/* Em cards largos, as três ações dividem a linha; em cards estreitos elas
+   quebram em duas colunas sem sumir nem cortar rótulos. */
+@supports (container-type: inline-size) {
+  .room-card { container-type: inline-size; }
+
+  /* Em cards estreitos, o rótulo "expira em" some e fica só o tempo,
+     com o ícone de ampulheta e aria-label completo. */
+  @container (max-width: 379px) {
+    .room-exp .exp-label { display: none; }
+  }
+
+  @container (min-width: 370px) {
+    .room-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .room-actions > .btn,
+    .room-actions > a.btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
+   SALA PÚBLICA
+   -------------------------------------------------------------------------- */
+
+.sala-container {
+  width: min(100%, var(--content-max-share));
+  max-width: var(--content-max-share);
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding: clamp(16px, 2.2vw, 32px) max(var(--gutter), var(--safe-right))
+           clamp(22px, 2.4vw, 40px) max(var(--gutter), var(--safe-left));
+}
+
+.sala-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs) var(--space-sm);
+  margin-bottom: clamp(16px, 2vw, 26px);
+}
+
+.sala-logo {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.sala-back {
+  flex: 0 0 auto;
+  min-height: var(--tap-target);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.sala-content { min-width: 0; width: 100%; }
+
+.sala-info {
+  padding: clamp(20px, 2.7vw, 34px);
+  margin-bottom: clamp(14px, 1.8vw, 24px);
+}
+
+.sala-info h1 {
+  font-size: clamp(20px, 1.4vw + 15px, 30px);
+  overflow-wrap: anywhere;
+}
+
+.sala-desc { font-size: clamp(13.5px, .5vw + 12.5px, 16px); }
+
+.sala-stats {
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-lg);
+  font-size: var(--fs-small);
+}
+
+.sala-files-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(10px, 1.2vw, 16px);
+}
+
+.sala-file-card {
+  min-width: 0;
+  padding: clamp(14px, 1.7vw, 22px) clamp(14px, 1.9vw, 26px);
+  gap: clamp(12px, 1.5vw, 18px);
+}
+
+.sala-file-icon {
+  width: clamp(40px, 4vw, 56px);
+  font-size: clamp(26px, 2.6vw, 34px);
+}
+
+.sala-file-info { min-width: 0; }
+
+.sala-file-meta {
+  flex-wrap: wrap;
+  gap: var(--space-2xs) var(--space-md);
+  font-size: var(--fs-small);
+}
+
+.sala-file-card .btn-download {
+  min-height: var(--tap-target);
+  white-space: normal;
+}
+
+.sala-footer {
+  padding: clamp(16px, 2vw, 24px) 0 0;
+  font-size: var(--fs-small);
+}
+
+@supports (container-type: inline-size) {
+  .sala-container { container-type: inline-size; }
+
+  @container (min-width: 900px) {
+    .sala-files-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+}
+
+/* --------------------------------------------------------------------------
+   COLETAS — página pública
+   -------------------------------------------------------------------------- */
+
+.collection-page {
+  min-height: 100dvh;
+  padding: clamp(16px, 2.8vw, 36px) max(var(--gutter), var(--safe-right))
+           clamp(24px, 3vw, 48px) max(var(--gutter), var(--safe-left));
+}
+
+.collection-shell {
+  width: min(100%, 960px);
+  margin-inline: auto;
+}
+
+.collection-brand {
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+  font-size: var(--fs-small);
+}
+
+.collection-public-card {
+  padding: clamp(18px, 4vw, 34px);
+  border-radius: clamp(14px, 1.6vw, 18px);
+}
+
+.collection-public-card h1 {
+  font-size: clamp(22px, 1.4vw + 17px, 32px);
+}
+
+.collection-public-meta,
+.collection-public-intro { font-size: var(--fs-small); }
+
+.collection-exclusive-notice { font-size: var(--fs-small); }
+
+/* --------------------------------------------------------------------------
+   AUTENTICAÇÃO — container, showcase e card
+   -------------------------------------------------------------------------- */
+
+body.auth-page {
+  padding: clamp(56px, 7vh, 74px) max(var(--gutter), var(--safe-right))
+           clamp(20px, 4vh, 40px) max(var(--gutter), var(--safe-left));
+}
+
+body.auth-page .auth-container {
+  width: min(100%, var(--content-max-reading));
+  gap: clamp(18px, 3vw, 48px);
+}
+
+body.auth-page .auth-card {
+  min-width: 0;
+  padding: clamp(26px, 3.6vw, 48px) clamp(20px, 3.6vw, 44px) clamp(22px, 2.6vw, 34px);
+}
+
+body.auth-page .auth-showcase { min-width: 0; }
+
+body.auth-page .auth-header h1 { font-size: clamp(22px, 2.4vw, 29px); }
+
+body.auth-page .auth-header p { font-size: var(--fs-small); }
+
+@media (max-width: 760px) {
+  body.auth-page .auth-container {
+    width: min(100%, 540px);
+    gap: var(--space-md);
+  }
+
+  .auth-showcase { min-height: 0; }
+
+  .auth-showcase h2 {
+    margin: 8px 0 7px;
+    font-size: clamp(22px, 6.2vw, 31px);
+  }
+
+  .auth-showcase-copy { padding: 16px 0 2px; }
+
+  .auth-showcase-copy > p { font-size: var(--fs-small); }
+}
+
+@media (max-width: 600px) {
+  body.auth-page {
+    padding-top: clamp(58px, 9vh, 68px);
+    padding-bottom: calc(20px + var(--safe-bottom));
+    align-items: flex-start;
+  }
+
+  body.auth-page .auth-showcase {
+    padding: 13px 15px;
+    border-radius: 16px;
+  }
+
+  body.auth-page .auth-brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+
+  body.auth-page .auth-brand-name { font-size: 11.5px; }
+
+  body.auth-page .auth-showcase-copy { padding: 12px 0 0; }
+
+  body.auth-page .auth-showcase h2 {
+    margin: 7px 0 6px;
+    font-size: clamp(21px, 6.4vw, 28px);
+  }
+
+  body.auth-page .auth-card {
+    padding: 24px clamp(17px, 5.4vw, 26px) 20px;
+    border-radius: 18px;
+  }
+
+  body.auth-page .auth-header { margin-bottom: 16px; }
+
+  body.auth-page .auth-icon {
+    width: 46px;
+    height: 46px;
+    margin-bottom: 10px;
+    border-radius: 14px;
+    font-size: 18px;
+  }
+
+  body.auth-page .auth-header h1 { font-size: clamp(20px, 6vw, 25px); }
+
+  body.auth-page .auth-header p { line-height: 1.5; }
+
+  body.auth-page .auth-card .form-group { margin-bottom: 12px; }
+
+  body.auth-page .auth-card .form-group input { height: 46px; }
+
+  body.auth-page .auth-card .btn-primary,
+  body.auth-page .auth-card .btn-success { min-height: 46px; }
+
+  body.auth-page .auth-footer {
+    margin-top: 14px;
+    padding-top: 12px;
+    line-height: 1.5;
+  }
+}
+
+/* Telas baixas (celular deitado / notebook compacto) */
+@media (max-height: 640px) and (min-width: 761px) {
+  body.auth-page { align-items: flex-start; padding-block: 30px; }
+
+  .auth-showcase { min-height: 0; padding-block: 26px; }
+
+  .auth-showcase-copy { padding: 24px 0 10px; }
+
+  .auth-terminal { display: none; }
+
+  body.auth-page .auth-card { padding-block: 26px; }
+}
+
+/* Celular deitado: mantém as duas colunas (em vez de empilhar showcase +
+   card) e compacta o cabeçalho. Assim o formulário fica alcançável sem
+   transformar o login em três telas de rolagem. */
+@media (orientation: landscape) and (max-height: 500px) and (min-width: 560px) {
+  body.auth-page {
+    align-items: flex-start;
+    padding: 62px max(var(--gutter), var(--safe-right)) 18px max(var(--gutter), var(--safe-left));
+  }
+
+  body.auth-page .auth-container {
+    grid-template-columns: minmax(200px, .8fr) minmax(300px, 1.2fr);
+    align-items: start;
+    gap: 18px;
+    width: min(100%, 980px);
+  }
+
+  .auth-showcase {
+    min-height: 0;
+    padding: 18px 20px;
+  }
+
+  .auth-showcase-copy { padding: 12px 0 4px; }
+
+  .auth-showcase h2 {
+    margin: 8px 0 6px;
+    font-size: clamp(22px, 3vw, 32px);
+    line-height: 1.08;
+  }
+
+  .auth-showcase-copy > p { font-size: 12px; line-height: 1.45; }
+
+  .auth-terminal { display: none; }
+
+  body.auth-page .auth-card {
+    align-self: start;
+    padding: 18px 22px;
+  }
+
+  body.auth-page .auth-header { margin-bottom: 12px; }
+
+  body.auth-page .auth-icon {
+    width: 42px;
+    height: 42px;
+    margin-bottom: 8px;
+    border-radius: 13px;
+    font-size: 17px;
+  }
+
+  body.auth-page .auth-header h1 { font-size: 22px; }
+
+  body.auth-page .auth-header p { font-size: 12px; line-height: 1.4; }
+
+  body.auth-page .auth-card .form-group { margin-bottom: 9px; }
+
+  body.auth-page .auth-card .form-group label { font-size: 12px; }
+
+  body.auth-page .auth-card .form-group input { height: 44px; }
+
+  body.auth-page .auth-card .btn-primary,
+  body.auth-page .auth-card .btn-success { min-height: 44px; }
+
+  body.auth-page .auth-footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 14px;
+    margin-top: 10px;
+    padding-top: 8px;
+    font-size: 12px;
+  }
+
+  body.auth-page .auth-footer p { margin: 0; }
+}
+
+/* Celular deitado muito estreito: uma coluna, mas com o showcase em faixa. */
+@media (orientation: landscape) and (max-height: 430px) and (max-width: 559px) {
+  body.auth-page { padding: 50px 12px 14px; }
+
+  body.auth-page .auth-showcase { padding: 9px 13px; }
+
+  body.auth-page .auth-showcase-copy { padding: 3px 0 0; }
+
+  body.auth-page .auth-showcase h2 {
+    margin: 3px 0;
+    font-size: 20px;
+  }
+
+  body.auth-page .auth-showcase-copy > p { font-size: 11.5px; line-height: 1.35; }
+
+  body.auth-page .auth-card { padding: 16px 18px; }
+
+  body.auth-page .auth-header { margin-bottom: 10px; }
+
+  body.auth-page .auth-footer { margin-top: 8px; padding-top: 8px; }
+}
+
+/* --------------------------------------------------------------------------
+   MODAIS, SHEETS E PAINÉIS
+   -------------------------------------------------------------------------- */
+
+.modal-content,
+.rename-box,
+.slide-panel-content {
+  width: min(100%, 720px);
+  max-width: min(100%, 720px);
+  max-height: calc(100dvh - 24px - var(--safe-top) - var(--safe-bottom));
+}
+
+.modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+
+.modal-footer { flex-wrap: wrap; gap: var(--space-xs); }
+
+/* A dica do dropzone era uma sequência de nós de texto dentro de um flex:
+   em telas estreitas cada pedaço virava uma coluna. Agrupar em spans permite
+   quebrar só entre as frases. */
+.dz-limit {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.dz-limit-copy,
+.dz-paste {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.modal-close {
+  flex: 0 0 auto;
+  width: var(--tap-target);
+  height: var(--tap-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Barra de ação de formulários: campos fluidos, botão sem esmagar. */
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: flex-end;
+}
+
+.form-row > * { min-width: 0; }
+
+.form-row > .form-group,
+.form-row > input,
+.form-row > select,
+.form-row > textarea { flex: 1 1 190px; }
+
+.form-row > .btn { flex: 0 1 auto; }
+
+.form-group { min-width: 0; }
+
+.form-group input:not([type="checkbox"]):not([type="radio"]),
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  max-width: 100%;
+  min-height: var(--control-height);
+}
+
+.form-group textarea { min-height: 96px; resize: vertical; }
+
+/* Contraste dos botões de função no tema claro: a camada de tema pinta o
+   fundo de preto, mas a camada hacker mantinha o texto na cor da função
+   (preto sobre preto). Mantemos o branco para leitura e para WCAG AA. */
+html[data-theme="light"] .btn.btn-share,
+html[data-theme="light"] .btn.btn-download,
+html[data-theme="light"] .btn.btn-upload,
+html[data-theme="light"] .btn.btn-green,
+html[data-theme="light"] .btn.btn-new,
+html[data-theme="light"] .btn.btn-auth,
+html[data-theme="light"] .btn.btn-danger:not(.btn-outline) {
+  color: #fff !important;
+}
+
+/* Cabeçalho da sala: título em linha própria e ações em uma faixa abaixo.
+   Antes, seis botões espremiam o título em três linhas no desktop e o X
+   caía solto no mobile. */
+#roomModal .modal-body { overflow-anchor: none; }
+
+#roomModal .modal-header {
+  display: block;
+  position: relative;
+  padding-right: calc(var(--tap-target) + 22px);
+}
+
+#roomModal .modal-header h3 {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap-target);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+#roomModal .room-head-btns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+#roomModal .room-head-btns .modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* --------------------------------------------------------------------------
+   TABELAS E LISTAS LONGAS
+   -------------------------------------------------------------------------- */
+
+.table-wrap,
+.table-container {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+table { max-width: 100%; }
+
+@media (max-width: 900px) {
+  .tab-content table,
+  .table-wrap table,
+  .table-container table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   MÍDIA
+   -------------------------------------------------------------------------- */
+
+.avatar img,
+.room-file-thumb img,
+.file-thumb img,
+.library-cover img,
+.collection-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.preview-media img,
+.preview-media video,
+.image-preview img,
+.image-text-preview img {
+  max-width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
+  object-position: center;
+}
+
+video { max-width: 100%; }
+
+/* --------------------------------------------------------------------------
+   BREAKPOINTS ESTRUTURAIS
+   -------------------------------------------------------------------------- */
+
+/* Tablet paisagem / notebook pequeno: rail mais estreito, tipografia menor. */
+@media (max-width: 1100px) {
+  :root { --dashboard-rail: clamp(208px, 20vw, 230px); }
+
+  .dashboard-panels { padding: clamp(13px, 1.8vw, 20px); }
+}
+
+/* Tablet retrato: navegação administrativa horizontal rolável. */
+@media (max-width: 800px) {
+  .app-layout,
+  .layout,
+  body > .app-layout {
+    display: flex;
+    flex-direction: column;
+    max-width: none;
+  }
+
+  .sidebar {
+    position: static;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    padding: var(--space-xs);
+    gap: var(--space-2xs);
+  }
+
+  .sidebar .nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    max-width: none;
+    white-space: nowrap;
+    scroll-snap-align: start;
+  }
+
+  .main-content {
+    width: 100%;
+    max-width: 100%;
+    margin-inline: 0;
+    padding-inline: max(var(--gutter-tight), var(--safe-right));
+  }
+
+  /* Em coluna, flex-basis de 220px vira altura e abria um vão enorme. */
+  .dashboard-intro > div,
+  .dashboard-intro > .intro-actions {
+    flex: 0 1 auto;
+    min-height: 0;
+  }
+
+  .dashboard-content { padding-inline: max(10px, var(--gutter-tight)); }
+
+  .dashboard-workspace-bar {
+    min-height: 52px;
+    margin-bottom: 10px;
+  }
+}
+
+/* Tablet (600–800): abas administrativas em linhas completas, sem corte. */
+@media (min-width: 600px) and (max-width: 800px) {
+  .sidebar {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    overflow-y: visible;
+    scroll-snap-type: none;
+  }
+
+  .sidebar .nav-item {
+    flex: 1 1 150px;
+    justify-content: center;
+    white-space: normal;
+  }
+}
+
+/* Tablet retrato (761–800): o intro cabe em uma linha; não empilha à toa. */
+@media (min-width: 761px) and (max-width: 800px) {
+  .dashboard-intro {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .dashboard-intro > div:not(.intro-actions) { flex: 1 1 260px; }
+
+  .intro-actions {
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  .intro-actions .btn { flex: 0 1 auto; }
+}
+
+/* Phablet / telefone grande: o dashboard usa a gaveta lateral existente.
+   Reafirmamos aqui porque esta camada é carregada depois de dashboard-redesign. */
+@media (max-width: 760px) {
+  .dashboard-shell,
+  .dashboard-shell.is-compact {
+    display: block;
+    min-height: 0;
+  }
+
+  .dashboard-intro > div,
+  .dashboard-intro > .intro-actions {
+    flex: 0 1 auto;
+    min-height: 0;
+    align-self: stretch;
+  }
+
+  .intro-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+    width: 100%;
+    gap: var(--space-xs);
+  }
+
+  .intro-actions .btn,
+  .intro-actions a.btn {
+    flex: 1 1 auto;
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
+  }
+
+  .dashboard-sidebar,
+  .dashboard-shell.is-compact .dashboard-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: 0;
+    width: min(300px, calc(100vw - 46px));
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    transform: translateX(-105%);
+  }
+
+  .dashboard-shell.menu-open .dashboard-sidebar { transform: translateX(0); }
+
+  .dashboard-panels { border-radius: 16px; }
+
+  .dashboard-intro { align-items: stretch; }
+}
+
+/* Telefone: alvos de toque, rodapés de modal e tipografia compacta. */
+@media (max-width: 640px) {
+  body.app-page,
+  body.sala-page { font-size: 15px; }
+
+  .header { gap: 6px; }
+
+  .header-right .btn {
+    min-height: var(--tap-target);
+    min-width: var(--tap-target);
+    padding-inline: 10px;
+  }
+
+  .main-content,
+  .dashboard-content { padding-bottom: calc(20px + var(--safe-bottom)); }
+
+  .stats-grid { gap: 10px; }
+
+  .stat-card { padding: 13px; }
+
+  .dashboard-workspace-bar h2 { font-size: 20px; }
+
+  .modal-footer .btn { flex: 1 1 140px; justify-content: center; }
+
+  .form-row > .form-group,
+  .form-row > input,
+  .form-row > select,
+  .form-row > textarea { flex-basis: 100%; }
+
+  .form-row > .btn { flex: 1 1 140px; }
+
+  .sala-container {
+    padding-top: 16px;
+    padding-inline: max(12px, var(--safe-right));
+  }
+
+  .sala-logo {
+    font-size: 15px;
+    letter-spacing: .08em;
+  }
+
+  .sala-back {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .sala-info { padding: 20px 16px; }
+
+  .room-card-header { justify-content: flex-start; }
+
+  /* Visualizar ocupa a linha; link e renomear ficam lado a lado. */
+  .sala-file-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sala-file-actions .fp-trigger { grid-column: 1 / -1; }
+
+  /* Abrir/Sair dividem a linha; o link público ocupa a linha inteira. */
+  .room-actions .btn:first-child { grid-column: auto; }
+  .room-actions a.btn-share { grid-column: 1 / -1; }
+
+  .sala-stats {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 14px;
+  }
+
+  /* Card de arquivo: ícone + texto na primeira linha, ação na segunda. */
+  .sala-file-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    text-align: left;
+    padding: 16px;
+  }
+
+  .sala-file-actions {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .sala-file-actions .btn,
+  .sala-file-card .btn-download {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .sala-file-icon { width: 40px; font-size: 27px; }
+
+  .sala-file-meta { justify-content: flex-start; }
+}
+
+/* Telefone compacto (320–359): nenhum controle cria overflow. */
+@media (max-width: 359px) {
+  body.app-page,
+  body.sala-page { font-size: 14.5px; }
+
+  .header { padding-inline: 10px; }
+
+  .header-left h1 { font-size: 15px; }
+
+  .header-right .btn { min-width: 42px; padding-inline: 8px; }
+
+  .dashboard-content,
+  .main-content,
+  .sala-container,
+  .collection-page { padding-inline: 10px; }
+
+  .dashboard-panels { padding: 12px 10px; }
+
+  .room-card { padding: 14px 12px; }
+
+  .room-actions > .btn,
+  .room-actions > a.btn {
+    grid-column: 1 / -1 !important;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  .stat-card { gap: 10px; }
+
+  .sala-info { padding: 18px 13px; }
+
+  .collection-public-card { padding: 16px 13px; }
+
+  body.auth-page { padding-inline: 10px; }
+}
+
+/* Desktop largo: mais respiro sem esticar linhas de texto. */
+@media (min-width: 1680px) {
+  .dashboard-content { padding-block: 32px 48px; }
+  .dashboard-workspace-bar { min-height: 76px; }
+  .dashboard-workspace-bar h2 { max-width: 24ch; }
+  .dashboard-panels { padding: 30px; }
+  .sala-container { padding-block: 36px 52px; }
+}
+
+/* Ultrawide / alta densidade: conteúdo centrado, cards maiores. */
+@media (min-width: 2160px) {
+  :root { --content-max: 1760px; }
+
+  .dashboard-content { width: min(100%, 1760px); max-width: 1760px; }
+  .dashboard-panels { padding: 34px; }
+  .rooms-grid { grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+  .main-content { max-width: 1760px; }
+}
+
+/* --------------------------------------------------------------------------
+   ACESSIBILIDADE E MOVIMENTO
+   -------------------------------------------------------------------------- */
+
+@media (pointer: coarse) {
+  :where(.btn, .nav-item, .dashboard-tab, .modal-close, .icon-btn) {
+    min-height: var(--tap-target);
+  }
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .theme-toggle {
+    width: var(--tap-target);
+    height: var(--tap-target);
+    min-width: var(--tap-target);
+    min-height: var(--tap-target);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  :where(.room-card, .stat-card, .sala-file-card, .dashboard-tab, .btn) {
+    transition: none;
+  }
+}
+
+/* Compatibilidade: navegadores antigos sem dvh continuam com altura útil. */
+@supports not (height: 100dvh) {
+  body.app-page,
+  body.sala-page,
+  body.collection-page,
+  body.auth-page,
+  .sala-container { min-height: 100vh; }
+
+  .dashboard-sidebar { max-height: calc(100vh - var(--header-h) - 28px); }
+  .modal-content { max-height: calc(100vh - 24px - var(--safe-top) - var(--safe-bottom)); }
+  .sala-media { max-height: 70vh; }
+
+  @media (max-width: 760px) {
+    .dashboard-sidebar { height: 100vh; max-height: 100vh; }
+  }
+}

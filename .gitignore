@@ -26,3 +26,6 @@ skills-lock.json
 /tmp-*
 /transforms*.ps1
 /scripts/_preview-test.mjs
+
+# Saídas locais da auditoria visual (capturas atuais, diffs e relatório)
+/test-results/
