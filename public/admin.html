@@ -198,7 +198,7 @@
 
   <div id="toastContainer" class="toast-container"></div>
 
-  <script src="/js/upload.js?v=20261112c"></script>
+  <script src="/js/upload.js?v=20261121b"></script>
   <script>
     let lastUsersSig = '', lastRoomsSig = '', lastNotifsSig = '', uploading = 0;
     let driveStatusRequest = null, driveStatusSequence = 0, lastDriveStatus = null;
@@ -770,7 +770,9 @@
       uploading++;
       try {
         const result = await uploadToRoom(roomId, list, text => { if (!/%$/.test(text)) showToast(text,'info'); });
-        if (result.sent) showToast(result.sent === 1 ? 'Arquivo enviado!' : result.sent + ' arquivos enviados!');
+        const pendingCount = (result.files || []).filter(file => file.pending).length;
+        if (pendingCount) showToast(pendingCount === 1 ? 'Arquivo salvo; o envio continua em segundo plano.' : pendingCount + ' arquivos salvos; o envio continua em segundo plano.', 'info');
+        else if (result.sent) showToast(result.sent === 1 ? 'Arquivo enviado!' : result.sent + ' arquivos enviados!');
         const warn = skippedMessage(result);
         if (warn) showToast(warn, 'error');
         lastRoomsSig = ''; loadRooms();
@@ -1004,6 +1006,13 @@
   <script src="/js/announce.js?v=20261107d"></script>
   <script src="/js/admin-select.js?v=20261014a"></script>
 <script src="/js/cyber.js?v=20261112f"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js?v=20261121d').then(reg => {
+      console.log('[SW] Registrado:', reg.scope);
+    }).catch(err => console.warn('[SW] Falha ao registrar:', err));
+  }
+</script>
 </body>
 </html>
 

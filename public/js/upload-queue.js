@@ -3,6 +3,10 @@
   'use strict';
 
   const tasks = new Map();
+  // O SW pode concluir antes de a página associar o backgroundId à tarefa.
+  // Guardamos o resultado para não deixar a tarefa presa em "Em segundo plano".
+  const completedBackgrounds = new Set();
+  const failedBackgrounds = new Set();
   const IDLE_MINIMIZE_MS = 5000;
   let nextId = 1;
   let launcher, panel, list, count;
@@ -349,11 +353,25 @@
       });
       if (controller.signal.aborted || task.state === 'cancelled') return { ok: false, cancelled: true };
       if (value && value.backgroundPending) {
-        task.state = 'queued';
-        task.label = 'Em segundo plano';
-        task.progress = 0;
         task.backgroundId = value.backgroundId;
         task.backgroundRetry = value.backgroundRetry || null;
+        const finishedId = task.backgroundId != null ? String(task.backgroundId) : '';
+        if (finishedId && completedBackgrounds.has(finishedId)) {
+          completedBackgrounds.delete(finishedId);
+          task.state = 'done';
+          task.progress = 100;
+          task.label = 'Concluído';
+          task.error = '';
+        } else if (finishedId && failedBackgrounds.has(finishedId)) {
+          failedBackgrounds.delete(finishedId);
+          task.state = 'failed';
+          task.label = 'Precisa de atenção';
+          task.error = 'O envio em segundo plano falhou. Tente novamente.';
+        } else {
+          task.state = 'queued';
+          task.label = 'Em segundo plano';
+          task.progress = 0;
+        }
       } else {
         task.completedValue = value;
         task.phase = 'finalizing';
@@ -440,11 +458,15 @@
     },
     completeBackground(id) {
       if (id == null) return;
+      const key = String(id);
+      let matched = false;
       for (const task of tasks.values()) {
-        if (task.backgroundId != null && String(task.backgroundId) === String(id)) {
-          task.state = 'done'; task.progress = 100; task.label = 'Concluído'; task.error = ''; task.backgroundRetry = null; render();
+        if (task.backgroundId != null && String(task.backgroundId) === key) {
+          task.state = 'done'; task.progress = 100; task.label = 'Concluído'; task.error = ''; task.backgroundRetry = null; matched = true;
         }
       }
+      if (!matched) completedBackgrounds.add(key);
+      render();
     },
     retryBackground(id, requestRetry) {
       const task = [...tasks.values()].find(entry => entry.backgroundId != null && String(entry.backgroundId) === String(id));
@@ -463,7 +485,13 @@
       };
       render();
     },
-    failBackground(id, requestRetry) { this.retryBackground(id, requestRetry); }
+    failBackground(id, requestRetry) {
+      if (id == null) return;
+      const key = String(id);
+      const task = [...tasks.values()].find(entry => entry.backgroundId != null && String(entry.backgroundId) === key);
+      if (!task) failedBackgrounds.add(key);
+      this.retryBackground(id, requestRetry);
+    }
   };
   window.addEventListener('fileshare:direct-chat-open', positionQueue);
   window.addEventListener('fileshare:direct-chat-close', positionQueue);

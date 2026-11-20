@@ -23,6 +23,16 @@
     .then(u => { if (u && u.max_upload_bytes) limitBytes = Number(u.max_upload_bytes); if (u && u.id) currentUserId = String(u.id); driveUploadEnabled = Boolean(u && u.drive_upload_enabled); blobUploadEnabled = Boolean(u && u.blob_upload_enabled); window.fillLimitNotes(); })
     .catch(() => {});
   const driveChunkSize = 4 * 1024 * 1024;
+  // Em celular/tablet, o envio sai da pagina e vai para o Service Worker antes
+  // de comecar. Assim, sair do navegador nao cancela a transferencia: a fila
+  // persistida em IndexedDB retoma quando o navegador voltar ou em Background Sync.
+  const backgroundUploadPreferred = (() => {
+    try {
+      return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') ||
+        (window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
+    } catch (_) { return false; }
+  })();
+  window.__fsBackgroundUploadPreferred = backgroundUploadPreferred;
 
   function uploadAbortError() {
     const error = new Error('Envio cancelado.');
@@ -208,6 +218,15 @@
         if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
         if (typeof options.onCancelable === 'function') options.onCancelable(true);
         driveSession = prep.data;
+        if (backgroundUploadPreferred) {
+          const queueId = await queueDriveUpload({ file, session: driveSession, roomId, chatOnly: options.chatOnly, replyToId: options.replyToId });
+          if (queueId != null) {
+            say('Arquivo salvo no aparelho; enviando em segundo plano.');
+            uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
+            sent++;
+            continue;
+          }
+        }
         const finished = await uploadDriveInChunks(driveSession, file, reportProgress, options.signal, session => { driveSession = session; }, true);
         if (typeof options.onCancelable === 'function') options.onCancelable(false);
         if (typeof options.onPhase === 'function') options.onPhase('finalizing');
@@ -244,6 +263,15 @@
         if (!blobUploadEnabled && file.size > 100 * 1024 * 1024) throw new Error('Arquivos acima de 100 MB exigem Blob multipart, que não está disponível neste ambiente.');
         const prep = await postJson('/api/rooms/' + roomId + '/upload-url', { name: file.name, size: file.size, type: file.type }, options.signal);
         if (prep.status === 501) {
+          if (backgroundUploadPreferred) {
+            const queueId = await queueLegacyUpload({ file, roomId, chatOnly: options.chatOnly, replyToId: options.replyToId });
+            if (queueId != null) {
+              say('Arquivo salvo no aparelho; enviando em segundo plano.');
+              uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
+              sent++;
+              continue;
+            }
+          }
           const rest = files.slice(i);
           if (typeof options.onPhase === 'function') options.onPhase('uploading');
           if (typeof options.onCancelable === 'function') options.onCancelable(true);
@@ -259,6 +287,15 @@
         uploadUrl = prep.data.presignedUrl;
         pathname = prep.data.pathname;
         bgKind = 'presigned';
+        if (backgroundUploadPreferred) {
+          const queueId = await queuePresignedUpload({ file, pathname, uploadUrl, roomId, chatOnly: options.chatOnly, replyToId: options.replyToId });
+          if (queueId != null) {
+            say('Arquivo salvo no aparelho; enviando em segundo plano.');
+            uploaded.push({ id: 'pending', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', pending: true, queueId });
+            sent++;
+            continue;
+          }
+        }
         await putWithProgress(uploadUrl, file, reportProgress, options.signal);
         uploadCompleted = true;
       }
@@ -322,15 +359,6 @@
   // o navegador volta online (Background Sync). Funciona mesmo se a
   // aba for fechada.
   // ---------------------------------------------------------------
-  async function toArrayBuffer(file) {
-    return new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
-      r.readAsArrayBuffer(file);
-    });
-  }
-
   window.enqueueBackgroundUpload = async function (item) {
     if (!navigator.serviceWorker) {
       throw new Error('Service Worker não está ativo.');
@@ -342,16 +370,15 @@
       item.ownerId = String(user.id || '');
     }
     if (!item.ownerId) throw new Error('Não foi possível associar o envio à conta atual.');
-    const needsFileBytes = item.kind === 'presigned' && item.stage === 'upload' && item.file;
-    const buffer = needsFileBytes ? await toArrayBuffer(item.file) : null;
+    // File/Blob é clonado pelo structured clone do IndexedDB: o Service Worker
+    // consegue retomar o envio sem manter os bytes duplicados em ArrayBuffer na RAM.
     const queuedItem = { ...item };
-    // File não transferido seria clonado junto com a mensagem, duplicando RAM;
-    // envie os bytes uma única vez pelo ArrayBuffer transferível.
-    if (item.kind !== 'drive') delete queuedItem.file;
+    if (!queuedItem.file && item.kind !== 'drive' && item.kind !== 'legacy') {
+      throw new Error('O arquivo não está disponível para o envio em segundo plano.');
+    }
     const registration = await navigator.serviceWorker.ready;
     const worker = navigator.serviceWorker.controller || registration.active;
     if (!worker) throw new Error('Service Worker ainda não está pronto.');
-    // O ArrayBuffer viaja com a mensagem (transferable) para o SW recriar o Blob.
     const channel = new MessageChannel();
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => { channel.port1.close(); reject(new Error('Tempo esgotado ao salvar o upload para segundo plano.')); }, 15000);
@@ -363,10 +390,7 @@
       };
       channel.port1.onerror = () => { clearTimeout(timeout); channel.port1.close(); reject(new Error('Canal do Service Worker com erro.')); };
       try {
-        worker.postMessage(
-          { type: 'fs-enqueue-upload', item: queuedItem, buffer },
-          buffer ? [channel.port2, buffer] : [channel.port2]
-        );
+        worker.postMessage({ type: 'fs-enqueue-upload', item: queuedItem }, [channel.port2]);
       } catch (error) {
         clearTimeout(timeout);
         channel.port1.close();
@@ -404,6 +428,25 @@
         // pelo caminho do servidor, que guarda a sessão cifrada.
         roomId: roomId || null, friendId: friendId || null, driveSession: session ? { ...session, direct: null } : session, file,
         name: file.name, size: file.size, mime: file.type || 'application/octet-stream',
+        chatOnly: !!chatOnly, replyToId: replyToId || null,
+        ownerId: String(document.body.dataset.userId || '')
+      });
+    } catch (error) {
+      if (/quota|DataCloneError|dados insuficientes|falha ao salvar upload na fila/i.test(String(error && error.message || error))) {
+        console.warn('[Upload] Armazenamento local indisponível; usando envio normal.', error);
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async function queueLegacyUpload({ file, roomId, chatOnly, replyToId }) {
+    if (!navigator.serviceWorker || !navigator.serviceWorker.controller || !window.enqueueBackgroundUpload) return null;
+    try {
+      return await window.enqueueBackgroundUpload({
+        kind: 'legacy', stage: 'upload', destinationType: 'room', roomId,
+        uploadId: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(16).slice(2)),
+        file, name: file.name, size: file.size, mime: file.type || 'application/octet-stream',
         chatOnly: !!chatOnly, replyToId: replyToId || null,
         ownerId: String(document.body.dataset.userId || '')
       });
@@ -493,8 +536,8 @@
           if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio ao Google Drive.');
           onCancelable(true);
           let driveSession = prep.data;
-          // Em conversas diretas, a fila só é usada quando a rede já caiu.
-          if (!navigator.onLine) {
+          // Em conversas diretas, a fila é usada no celular ou quando a rede caiu.
+          if (backgroundUploadPreferred || !navigator.onLine) {
             const queueId = await queueDriveUpload({ file, session: driveSession, friendId, replyToId: options.replyToId });
             if (queueId != null) {
               say('Arquivo salvo no aparelho; aguardará a conexão para continuar o envio.');
@@ -536,7 +579,7 @@
           if (!prep.ok) throw new Error(prep.data.error || 'Falha ao preparar o envio');
           if (!prep.data.presignedUrl) throw new Error('Falha ao preparar o envio (link indisponível).');
           pathname = prep.data.pathname;
-          if (!navigator.onLine) {
+          if (backgroundUploadPreferred || !navigator.onLine) {
             const queueId = await queuePresignedUpload({ file, pathname, uploadUrl: prep.data.presignedUrl, friendId, replyToId: options.replyToId });
             if (queueId != null) {
               say('Arquivo salvo no aparelho; aguardará a conexão para continuar o envio.');

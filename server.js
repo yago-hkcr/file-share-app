@@ -4293,8 +4293,18 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
 
   const inserted = [];
   const chatOnly = (req.body && req.body.chat_only) ? 1 : 0;
+  const requestedUploadId = String((req.body && req.body.upload_id) || '').toLowerCase();
+  const validUploadId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(requestedUploadId) ? requestedUploadId : '';
   for (const file of req.files) {
-    const id = uuidv4();
+    const id = validUploadId || uuidv4();
+    const existing = validUploadId ? await one('SELECT id, room_id, uploaded_by, original_name, size, mime_type, chat_only FROM files WHERE id = $1', [id]) : null;
+    if (existing) {
+      if (existing.room_id !== room.id || existing.uploaded_by !== req.user.id) {
+        return res.status(409).json({ error: 'Identificador de upload já usado por outra conta ou sala.' });
+      }
+      inserted.push({ id: existing.id, original_name: existing.original_name, size: num(existing.size), mime_type: existing.mime_type, chat_only: num(existing.chat_only) });
+      continue;
+    }
     const name = Buffer.from(file.originalname, 'latin1').toString('utf8'); // corrige acentos vindos do multipart
     let storedName = id; // legado: arquivo guardado no Postgres
     if (await googleDriveConnected()) {

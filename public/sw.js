@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 
-const CACHE_NAME = 'fileshare-v39-shares-push';
+const CACHE_NAME = 'fileshare-v43-upload-race';
 const ASSETS = [
   '/css/social.css?v=20261112b',
   '/css/upload-queue.css?v=20261112b',
@@ -29,8 +29,8 @@ const ASSETS = [
   '/js/mobile.js?v=20261014o',
   '/js/gfx.js?v=20261112b',
   '/js/fx.js?v=20261112b',
-  '/js/upload-queue.js?v=20261105a',
-  '/js/upload.js?v=20261112c',
+  '/js/upload-queue.js?v=20261121a',
+  '/js/upload.js?v=20261121b',
   '/js/google-drive-upload.mjs?v=20261112b',
   '/js/social.js?v=20261112a',
   '/js/personal.js?v=20261119a',
@@ -172,7 +172,8 @@ function replayUpload(item) {
     const user = await resp.json();
     if (String(user.id) !== String(item.ownerId)) throw new Error('Este upload pertence a outra conta; entre na conta original para retomá-lo.');
   });
-  if ((!pathname && !isDrive) || (kind === 'presigned' && item.stage === 'upload' && !uploadUrl)) {
+  if ((!pathname && !isDrive && kind !== 'legacy') || (kind === 'presigned' && item.stage === 'upload' && !uploadUrl) ||
+      (kind === 'legacy' && !file)) {
     return Promise.reject(new Error('Upload pendente sem dados suficientes para retomada.'));
   }
   const postToChat = async () => {
@@ -220,6 +221,28 @@ function replayUpload(item) {
   if (item.stage === 'complete') return Promise.resolve();
   if (item.stage === 'message') return verifyOwner.then(postToChat);
   if (item.stage === 'register') return verifyOwner.then(register);
+  if (kind === 'legacy' && item.stage === 'upload') {
+    return verifyOwner.then(async () => {
+      const form = new FormData();
+      form.append('files', file, name || file.name || 'arquivo');
+      if (item.chatOnly) form.append('chat_only', '1');
+      if (item.uploadId) form.append('upload_id', item.uploadId);
+      const response = await fetch(targetPath + '/files', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: form,
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Falha ao enviar arquivo (' + response.status + ')');
+      const inserted = Array.isArray(result) ? result[0] : result;
+      if (!inserted || !inserted.id) throw new Error('O servidor não confirmou o arquivo enviado.');
+      item.fileId = inserted.id;
+      item.stage = item.chatOnly ? 'message' : 'complete';
+      await updatePendingUpload(item);
+      if (item.stage === 'message') return postToChat();
+    });
+  }
   if (isDrive && item.stage === 'upload' && file && item.driveSession && item.driveSession.upload_id) {
     return verifyOwner.then(async () => {
       let current = item.driveSession;
@@ -318,7 +341,16 @@ self.addEventListener('sync', event => {
   if (event.tag === SYNC_TAG) event.waitUntil(processUploadQueue());
 });
 
-async function processUploadQueue() {
+// Um único drenar por vez. O evento `sync` e a mensagem imediata da página
+// podem disparar quase juntos; sem esta trava os dois leriam a mesma fila e
+// enviariam o mesmo arquivo duas vezes.
+let uploadDrain = null;
+function processUploadQueue() {
+  if (!uploadDrain) uploadDrain = drainUploadQueue().finally(() => { uploadDrain = null; });
+  return uploadDrain;
+}
+
+async function drainUploadQueue() {
   let items;
   try { items = await getPendingUploads(); } catch (e) { return; }
   let firstFailure = null;
@@ -354,10 +386,11 @@ self.addEventListener('message', event => {
   const port = event.ports && event.ports[0];
   // Recria o Blob a partir do ArrayBuffer transferido
   if (buffer) item.file = new Blob([buffer], { type: (item.file && item.file.type) || 'application/octet-stream' });
-  if (!item.ownerId || (!item.pathname && item.kind !== 'drive') || !['presigned', 'multipart', 'drive'].includes(item.kind) ||
+  if (!item.ownerId || (!item.pathname && item.kind !== 'drive' && item.kind !== 'legacy') || !['presigned', 'multipart', 'drive', 'legacy'].includes(item.kind) ||
       (item.destinationType === 'dm' && !item.friendId) ||
-      (item.stage === 'upload' && item.kind === 'presigned' && (!buffer || !item.uploadUrl)) ||
+      (item.stage === 'upload' && item.kind === 'presigned' && ((!item.file && !buffer) || !item.uploadUrl)) ||
       (item.stage === 'upload' && item.kind === 'drive' && (!item.file || !item.driveSession || !item.driveSession.upload_id)) ||
+      (item.stage === 'upload' && item.kind === 'legacy' && (!item.file || !item.roomId)) ||
       !['upload', 'register', 'message', 'complete'].includes(item.stage)) {
     if (port) port.postMessage({ type: 'fs-enqueue-error', error: 'Dados insuficientes para salvar o upload pendente.' });
     return;
@@ -373,9 +406,15 @@ self.addEventListener('message', event => {
   })).then(newId => {
     item.id = newId;
     if (port) port.postMessage({ type: 'fs-enqueued', id: newId });
+    // Processa imediatamente enquanto o evento ainda mantém o SW vivo. Em
+    // navegadores sem Background Sync (Safari/iOS), esta é a única chance de
+    // iniciar a transferência antes de a página ser suspensa; a fila continua
+    // persistida e será retomada na próxima abertura se o sistema interromper.
     self.registration.sync.register(SYNC_TAG).catch(err => {
-      console.warn('[SW] Background Sync indisponível; tentando processar a fila:', err);
-      processUploadQueue().catch(error => console.warn('[SW] Fila mantida para nova tentativa:', error));
+      console.warn('[SW] Background Sync indisponível; processando agora:', err);
+    });
+    return processUploadQueue().catch(error => {
+      console.warn('[SW] Fila mantida para nova tentativa:', error);
     });
   }).catch(err => {
     console.warn('[SW] Não foi possível enfileirar upload:', err);

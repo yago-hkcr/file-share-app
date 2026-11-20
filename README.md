@@ -53,6 +53,20 @@ alvos de toque, erros de JavaScript e comparacao pixel a pixel das telas estavei
 
 Configure `ADMIN_PASSWORD` e `SESSION_SECRET` no ambiente antes da inicialização. `ADMIN_PASSWORD` cria a conta administrativa `admin` apenas se ainda não houver uma conta; instalações existentes mantêm a senha cadastrada. `SESSION_SECRET` protege os cookies de sessão e deve permanecer estável entre reinicializações.
 
+## Envios persistentes no celular
+
+Em celulares e tablets, o arquivo é salvo no armazenamento local do navegador (IndexedDB) e a
+transferência fica sob responsabilidade do Service Worker. Sair da página não cancela o envio; se o
+sistema suspender o navegador, a fila é retomada automaticamente na próxima abertura. O servidor
+confirma cada arquivo no chat ou na sala depois do envio. O teste automatizado cobre encerramento da
+página, reinício do navegador, fila pendente e envio de mensagem com arquivo.
+
+Essa camada resolve perda de progresso e erros ao sair da página. Ela não consegue impedir que o
+sistema operacional encerre o processo do navegador; para continuidade garantida com o app fechado é
+necessário um companion nativo (Android com foreground service e iOS com `URLSession` em background).
+Arquivos acima de 100 MB ainda usam upload multipart direto e devem permanecer com a página aberta até
+o companion nativo entrar em operação.
+
 ## Deploy (Vercel + Supabase)
 
 Todos os dados (contas, salas, mensagens, arquivos) ficam no PostgreSQL do Supabase, acessado via `DATABASE_URL`
