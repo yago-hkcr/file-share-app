@@ -84,11 +84,12 @@ async function exists(pathname) {
       console.log(`+ ${pathname}`);
       continue;
     }
+    let temp = '';
     try {
       const result = await get(pathname, { access: 'private' });
       if (!result || !result.stream) throw new Error('Blob sem stream');
       const target = localStorage.absolutePath(pathname);
-      const temp = target + '.migrate-' + process.pid;
+      temp = target + '.migrate-' + process.pid;
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       await pipeline(Readable.fromWeb(result.stream), fs.createWriteStream(temp, { mode: 0o600 }));
       const actualSize = (await fs.promises.stat(temp)).size;
@@ -107,6 +108,7 @@ async function exists(pathname) {
       console.log(`✓ ${pathname} (${(await fs.promises.stat(target)).size} bytes)`);
     } catch (error) {
       failed++;
+      if (temp) await fs.promises.rm(temp, { force: true }).catch(() => {});
       console.error(`✗ ${pathname}: ${error && error.message ? error.message : error}`);
     }
   }

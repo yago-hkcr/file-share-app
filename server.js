@@ -786,7 +786,7 @@ function cleanUrl(value) {
   }
 }
 
-const DATABASE_URL = cleanUrl(process.env.DATABASE_URL || process.env.POSTGRES_URL);
+const DATABASE_URL = cleanUrl(process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED || process.env.POSTGRES_URL);
 if (!LOCAL_MODE && !DATABASE_URL) {
   console.error('❌ DATABASE_URL não definida. Configure a conexão PostgreSQL (Supabase) na Vercel (ou o .env.local).');
 }
