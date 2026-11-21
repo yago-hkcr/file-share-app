@@ -52,7 +52,7 @@ cd /opt/arquive
 cp deploy/oracle.env.example .env
 nano .env
 mkdir -p storage
-sudo chown -R "$(id -u)":"$(id -g)" storage
+sudo chown -R 1000:1000 storage  # UID do usuário node dentro do container
 ```
 
 Preencha o `.env`. O `docker-compose.yml` já define:
@@ -131,6 +131,7 @@ O que precisa de backup:
 Exemplo de backup local dos arquivos:
 
 ```bash
+sudo mkdir -p /var/backups
 sudo tar -C /opt/arquive -czf /var/backups/arquive-storage-$(date +%F).tgz storage
 ```
 
