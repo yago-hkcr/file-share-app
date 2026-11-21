@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 
-// Migra os objetos privados do Vercel Blob para o armazenamento local.
+// Migra os objetos privados do Vercel Blob para o armazenamento configurado
+// (STORAGE_PROVIDER=local ou s3).
 // Uso (no host novo, antes de desligar a Vercel):
 //   DATABASE_URL=... [SUPABASE_CA_CERT=...] BLOB_READ_WRITE_TOKEN=... \
-//   LOCAL_STORAGE_DIR=/app/storage node scripts/migrate-blob-to-local.mjs
+//   STORAGE_PROVIDER=local LOCAL_STORAGE_DIR=/app/storage node scripts/migrate-blob-to-local.mjs
+//   STORAGE_PROVIDER=s3 S3_BUCKET=... node scripts/migrate-blob-to-local.mjs
 //
 // O script é idempotente: arquivos já presentes no destino são ignorados.
 // Use --dry-run para apenas listar o que seria baixado.
@@ -13,14 +15,36 @@ import { createRequire } from 'node:module';
 
 // O restante do projeto é CommonJS; este script é ESM para usar import() dinâmico.
 const require = createRequire(import.meta.url);
+const { Readable } = require('stream');
+const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
-const { Readable } = require('stream');
-const { pipeline } = require('stream/promises');
-const { Pool } = require('pg');
-const { isBlobPath } = require('../lib/blob-paths');
-const localStorage = require('../lib/local-storage');
 
+// Permite rodar localmente com um .env preenchido, sem exportar variáveis.
+for (const file of ['.env.local', '.env']) {
+  const full = path.join(process.cwd(), file);
+  if (!fs.existsSync(full)) continue;
+  const newline = String.fromCharCode(10);
+  for (const line of fs.readFileSync(full, 'utf8').split(newline)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq < 1) continue;
+    const key = trimmed.slice(0, eq);
+    const value = trimmed.slice(eq + 1).replace(/^["']/, '').replace(/["']$/, '');
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+const { isBlobPath } = require('../lib/blob-paths');
+
+const storage = require('../lib/storage');
+
+const targetStorage = storage.sdk;
+if (!targetStorage) {
+  console.error('Defina STORAGE_PROVIDER=local ou STORAGE_PROVIDER=s3 antes de migrar.');
+  process.exit(1);
+}
 const dryRun = process.argv.includes('--dry-run');
 const databaseUrl = String(process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL || process.env.POSTGRES_URL || '').trim();
 if (!databaseUrl) {
@@ -65,13 +89,13 @@ async function collect() {
 }
 
 async function exists(pathname) {
-  try { await localStorage.head(pathname); return true; }
+  try { await targetStorage.head(pathname); return true; }
   catch (error) { if (error && error.name === 'BlobNotFoundError') return false; throw error; }
 }
 
 (async () => {
   const names = await collect();
-  console.log(`Encontrados ${names.length} objeto(s) no Vercel Blob.`);
+  console.log(`Encontrados ${names.length} objeto(s) no Vercel Blob. Destino: ${storage.provider}.`);
   let migrated = 0, skipped = 0, failed = 0;
   const { get } = await import('@vercel/blob');
   for (const pathname of names) {
@@ -84,31 +108,25 @@ async function exists(pathname) {
       console.log(`+ ${pathname}`);
       continue;
     }
-    let temp = '';
     try {
       const result = await get(pathname, { access: 'private' });
       if (!result || !result.stream) throw new Error('Blob sem stream');
-      const target = localStorage.absolutePath(pathname);
-      temp = target + '.migrate-' + process.pid;
-      await fs.promises.mkdir(path.dirname(target), { recursive: true });
-      await pipeline(Readable.fromWeb(result.stream), fs.createWriteStream(temp, { mode: 0o600 }));
-      const actualSize = (await fs.promises.stat(temp)).size;
       const expectedSize = Number(result.blob && result.blob.size);
-      if (Number.isFinite(expectedSize) && expectedSize > 0 && actualSize !== expectedSize) {
-        throw new Error(`tamanho divergente: esperado ${expectedSize}, recebido ${actualSize}`);
+      await targetStorage.put(pathname, Readable.fromWeb(result.stream), {
+        access: 'private',
+        contentType: (result.blob && result.blob.contentType) || targetStorage.contentTypeFor(pathname),
+        contentLength: Number.isFinite(expectedSize) && expectedSize > 0 ? expectedSize : undefined,
+        addRandomSuffix: false,
+        allowOverwrite: true
+      });
+      const written = await targetStorage.head(pathname);
+      if (Number.isFinite(expectedSize) && expectedSize > 0 && written.size !== expectedSize) {
+        throw new Error(`tamanho divergente: esperado ${expectedSize}, gravado ${written.size}`);
       }
-      await fs.promises.rename(temp, target);
-      await fs.promises.writeFile(target + '.meta.json', JSON.stringify({
-        size: actualSize,
-        contentType: (result.blob && result.blob.contentType) || localStorage.contentTypeFor(pathname),
-        pathname,
-        updatedAt: new Date().toISOString()
-      }), 'utf8');
       migrated++;
-      console.log(`✓ ${pathname} (${(await fs.promises.stat(target)).size} bytes)`);
+      console.log(`✓ ${pathname} (${written.size} bytes)`);
     } catch (error) {
       failed++;
-      if (temp) await fs.promises.rm(temp, { force: true }).catch(() => {});
       console.error(`✗ ${pathname}: ${error && error.message ? error.message : error}`);
     }
   }

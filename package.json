@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "node --check server.js && node --check api/index.js",
+    "build": "node --check server.js && node --check api/index.js && node --check lib/local-storage.js && node --check lib/storage.js && node --check lib/s3-storage.js",
     "local:install": "npm install && npm --prefix local-runtime install",
     "local:start": "node local-runtime/start.cjs",
     "test:visual": "node test/visual/responsive-audit.mjs",
@@ -17,6 +17,8 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1175.0",
+    "@aws-sdk/s3-request-presigner": "^3.1175.0",
     "@vercel/blob": "^2.9.0",
     "bcryptjs": "^2.4.3",
     "cookie-session": "^2.1.0",

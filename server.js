@@ -66,7 +66,12 @@ const IS_HOSTED = IS_VERCEL || process.env.IS_HOSTED === '1';
 // provedor 'blob' continua sendo o padrão para não alterar a produção atual.
 const STORAGE_PROVIDER = String(process.env.STORAGE_PROVIDER || 'blob').trim().toLowerCase();
 const USE_LOCAL_STORAGE = STORAGE_PROVIDER === 'local';
-const localStorageSdk = require('./lib/local-storage');
+const USE_S3_STORAGE = STORAGE_PROVIDER === 's3';
+const USE_MANAGED_STORAGE = USE_LOCAL_STORAGE || USE_S3_STORAGE;
+const storageSdk = USE_LOCAL_STORAGE || USE_S3_STORAGE
+  ? require('./lib/storage').sdk
+  : null;
+const localStorageSdk = USE_LOCAL_STORAGE ? storageSdk : null;
 
 const LOCAL_MODE = !IS_VERCEL && process.env.FILESHARE_LOCAL === '1';
 const LOCAL_DATA_DIR = path.resolve(process.env.FILESHARE_DATA_DIR || path.join(__dirname, 'data', 'local'));
@@ -137,9 +142,9 @@ async function verifyPassword(value, storedHash) {
 // (BLOB_STORE_ID + VERCEL_OIDC_TOKEN, injetados automaticamente). Sem essas variáveis
 // (ex.: rodando local sem `vercel env pull`), cai no Postgres como antes.
 // ---------------------------------------------------------------------------
-const blobSdk = () => USE_LOCAL_STORAGE ? Promise.resolve(localStorageSdk) : import('@vercel/blob');
+const blobSdk = () => USE_MANAGED_STORAGE ? Promise.resolve(storageSdk) : import('@vercel/blob');
 const blobClientSdk = () => import('@vercel/blob/client');
-const blobEnabled = () => USE_LOCAL_STORAGE || (!LOCAL_MODE && Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN));
+const blobEnabled = () => USE_MANAGED_STORAGE || (!LOCAL_MODE && Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN));
 const isBlobStoreSuspended = error => Boolean(error && (
   error.name === 'BlobStoreSuspendedError'
   || /store has been suspended|billing state is suspended|limits-exceeded-suspended/i.test(String(error.message || ''))
@@ -1010,10 +1015,17 @@ async function presignBlobDownloadUrl(pathname, asDownload = false, displayName 
   const { issueSignedToken, presignUrl } = await blobSdk();
   const validUntil = Date.now() + 60 * 60 * 1000;
   const token = await issueSignedToken({ pathname, operations: ['get'], validUntil });
-  const signed = await presignUrl(token, { operation: 'get', pathname, access: 'private', validUntil });
+  const signed = await presignUrl(token, {
+    operation: 'get', pathname, access: 'private', validUntil,
+    ...(USE_MANAGED_STORAGE ? {
+      download: asDownload,
+      displayName,
+      contentType: storageSdk.contentTypeFor(pathname)
+    } : {})
+  });
   const url = new URL(signed.presignedUrl);
-  if (asDownload) url.searchParams.set('download', '1');
-  if (USE_LOCAL_STORAGE && displayName) url.searchParams.set('name', String(displayName).slice(0, 255));
+  // O Blob da Vercel não assina content-disposition; o adaptador local/S3 assina.
+  if (!USE_MANAGED_STORAGE && asDownload) url.searchParams.set('download', '1');
   return url.toString();
 }
 
@@ -1657,6 +1669,20 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 const SESSION_COOKIE = IS_HOSTED ? '__Host-fileshare_session' : 'fileshare_session';
 const REMEMBER_COOKIE = IS_HOSTED ? '__Host-fs_remember' : 'fs_remember';
 const GOOGLE_DRIVE_RETURN_COOKIE = 'fs_google_drive_return_origin';
+// Os uploads/downloads S3 vão direto do navegador ao bucket; o CSP precisa
+// liberar esse host em img/media/frame/connect, não apenas o Blob da Vercel.
+const S3_CSP_ORIGINS = (() => {
+  if (!USE_S3_STORAGE) return '';
+  const origins = new Set();
+  try {
+    const endpoint = new URL(String(process.env.S3_ENDPOINT || ''));
+    if (endpoint.origin && endpoint.origin !== 'null') origins.add(endpoint.origin);
+  } catch (_) {}
+  // R2, B2, AWS e Storj podem usar hosts virtuais do bucket.
+  ['https://*.r2.cloudflarestorage.com', 'https://*.backblazeb2.com', 'https://*.amazonaws.com', 'https://gateway.storjshare.io']
+    .forEach(origin => origins.add(origin));
+  return [...origins].join(' ');
+})();
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -1666,10 +1692,10 @@ const CONTENT_SECURITY_POLICY = [
   "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
   "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com",
-  "img-src 'self' data: blob: https://*.blob.vercel-storage.com https://*.googleusercontent.com",
-  "media-src 'self' blob: https://*.blob.vercel-storage.com",
-  "connect-src 'self' https://cdn.jsdelivr.net https://vercel.com https://*.blob.vercel-storage.com https://oauth2.googleapis.com https://www.googleapis.com",
-  "frame-src 'self' blob: https://*.blob.vercel-storage.com",
+  "img-src 'self' data: blob: https://*.blob.vercel-storage.com https://*.googleusercontent.com" + (S3_CSP_ORIGINS ? ' ' + S3_CSP_ORIGINS : ''),
+  "media-src 'self' blob: https://*.blob.vercel-storage.com" + (S3_CSP_ORIGINS ? ' ' + S3_CSP_ORIGINS : ''),
+  "connect-src 'self' https://cdn.jsdelivr.net https://vercel.com https://*.blob.vercel-storage.com https://oauth2.googleapis.com https://www.googleapis.com" + (S3_CSP_ORIGINS ? ' ' + S3_CSP_ORIGINS : ''),
+  "frame-src 'self' blob: https://*.blob.vercel-storage.com" + (S3_CSP_ORIGINS ? ' ' + S3_CSP_ORIGINS : ''),
   "worker-src 'self' blob: https://cdn.jsdelivr.net"
 ].join('; ') + (IS_HOSTED ? '; upgrade-insecure-requests' : '');
 app.use((req, res, next) => {
@@ -3336,8 +3362,8 @@ app.get('/api/me', requireAuth, wrap(async (req, res) => {
   const driveEnabled = await googleDriveConnected();
   const blobsEnabled = blobEnabled();
   res.json({ ...user, unread_notifications: num(unread && unread.count), drive_upload_enabled: driveEnabled, blob_upload_enabled: blobsEnabled,
-    multipart_upload_enabled: !USE_LOCAL_STORAGE,
-    max_upload_bytes: blobsEnabled ? MAX_BLOB_UPLOAD_BYTES : driveEnabled ? MAX_DIRECT_BYTES : MAX_FILE_BYTES });
+    multipart_upload_enabled: !USE_MANAGED_STORAGE,
+    max_upload_bytes: blobsEnabled ? (USE_S3_STORAGE ? MAX_DIRECT_BYTES : MAX_BLOB_UPLOAD_BYTES) : driveEnabled ? MAX_DIRECT_BYTES : MAX_FILE_BYTES });
 }));
 
 // OAuth do Google Drive: somente ADM pode iniciar/concluir a conexão da conta dedicada.
@@ -4467,7 +4493,8 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
 // 2) o navegador envia o arquivo direto ao Blob (PUT)
 // 3) /files/register: o servidor confere o envio e grava o arquivo no banco
 // ---------------------------------------------------------------------------
-const MAX_DIRECT_BYTES = USE_LOCAL_STORAGE ? 10 * 1024 ** 3 : 100 * 1024 * 1024;
+// S3/R2 limita um PUT único a 5 GiB; o disco local não tem esse teto.
+const MAX_DIRECT_BYTES = USE_LOCAL_STORAGE ? 10 * 1024 ** 3 : USE_S3_STORAGE ? 5 * 1024 ** 3 : 100 * 1024 * 1024;
 // URL de upload assinada: janela curta para reduzir o risco de um link vazado
 // continuar gravável. A fila de upload solicita uma nova URL ao tentar de novo.
 const PRESIGN_UPLOAD_TTL_MS = 6 * 60 * 60 * 1000;

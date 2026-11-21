@@ -75,7 +75,17 @@ pública do sistema já valida o TLS. As tabelas são criadas automaticamente no
 
 Na Vercel, os arquivos usam Vercel Blob (`STORAGE_PROVIDER=blob`, padrão) com upload direto do navegador.
 O limite de 4 MB por requisição da Vercel vale apenas para o caminho legado em Postgres; arquivos maiores
-usam Blob. Para sair da Vercel, veja a seção Oracle abaixo.
+usam Blob.
+
+## Hospedagem sem Vercel: Render Free + S3 (recomendado)
+
+O app roda no **Render Free** e os arquivos ficam em um bucket **S3 privado** (Cloudflare R2,
+Backblaze B2, MinIO ou outro compatível). O navegador negocia URLs assinadas e envia/baixa os bytes
+direto do bucket; o servidor só guarda os metadados no Neon. Assim não existe Fast Origin Transfer
+nem limite de 4 MB no caminho dos arquivos.
+
+O guia completo, incluindo CORS, domínio, migração, cron e checklist, está em
+[deploy/RENDER.md](deploy/RENDER.md). O `render.yaml` na raiz cria o serviço Docker no plano free.
 
 ## Hospedagem fora da Vercel (Oracle Always Free)
 

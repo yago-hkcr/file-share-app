@@ -3,6 +3,8 @@
 Esta instalação mantém o app Node/Express e os arquivos no disco da VM.
 O banco continua no Postgres atual (Neon/Supabase) ou em um Postgres local, se preferir.
 
+> Para uma alternativa sem VM, veja [RENDER.md](RENDER.md): Render Free + bucket S3.
+
 ## 1. Criar a VM
 
 No Oracle Cloud, crie uma instância **Always Free**:
