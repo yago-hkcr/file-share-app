@@ -1,0 +1,7 @@
+# Arquivos lidos por Docker/Caddy precisam de LF mesmo no Windows.
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+deploy/Caddyfile text eol=lf
+deploy/*.md text eol=lf
+deploy/*.example text eol=lf
+scripts/*.mjs text eol=lf

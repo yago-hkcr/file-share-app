@@ -1,0 +1,36 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      IS_HOSTED: "1"
+      STORAGE_PROVIDER: local
+      LOCAL_STORAGE_DIR: /app/storage
+      PORT: "3000"
+    volumes:
+      - ./storage:/app/storage
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-www.arquive.online}
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-arquive.online}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

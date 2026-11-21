@@ -10,7 +10,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { pathToFileURL } = require('url');
-const { Readable } = require('stream');
+const { Readable, Transform } = require('stream');
 const { once } = require('events');
 const { isBlobPath } = require('./lib/blob-paths');
 const {
@@ -45,6 +45,8 @@ const IS_VERCEL = Boolean(process.env.VERCEL);
 
 // ---------------------------------------------------------------------------
 // Variáveis de ambiente (localmente lê o .env.local; na Vercel já vêm prontas)
+// Carregue antes de decidir storage/HTTPS para que .env funcione também fora
+// do Docker.
 // ---------------------------------------------------------------------------
 if (!IS_VERCEL) {
   for (const file of ['.env.local', '.env']) {
@@ -57,6 +59,15 @@ if (!IS_VERCEL) {
   }
 }
 
+// Instalação HTTPS fora da Vercel (Oracle/self-host). Mantém cookies __Host,
+// HSTS, trust proxy e a URL pública, sem herdar os limites da Vercel.
+const IS_HOSTED = IS_VERCEL || process.env.IS_HOSTED === '1';
+// Fora da Vercel (ex.: Oracle Always Free) os bytes ficam no disco local. O
+// provedor 'blob' continua sendo o padrão para não alterar a produção atual.
+const STORAGE_PROVIDER = String(process.env.STORAGE_PROVIDER || 'blob').trim().toLowerCase();
+const USE_LOCAL_STORAGE = STORAGE_PROVIDER === 'local';
+const localStorageSdk = require('./lib/local-storage');
+
 const LOCAL_MODE = !IS_VERCEL && process.env.FILESHARE_LOCAL === '1';
 const LOCAL_DATA_DIR = path.resolve(process.env.FILESHARE_DATA_DIR || path.join(__dirname, 'data', 'local'));
 const GOOGLE_DRIVE_REDIRECT_URI = process.env.GOOGLE_DRIVE_REDIRECT_URI || 'https://arquive.online/api/google-drive/oauth/callback';
@@ -66,7 +77,7 @@ let localLanServer = null;
 let localLanStartPromise = null;
 const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (LOCAL_MODE ? crypto.randomBytes(24).toString('base64url') : '');
 // Compartilhamento público de arquivo, notificações push e dispositivos.
-const DEVICE_COOKIE = IS_VERCEL ? '__Host-fs_device' : 'fs_device';
+const DEVICE_COOKIE = IS_HOSTED ? '__Host-fs_device' : 'fs_device';
 const FILE_SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const SHARE_ACCESS_TTL_MS = 60 * 60 * 1000;
 const VAPID_PUBLIC_KEY = String(process.env.VAPID_PUBLIC_KEY || '').trim();
@@ -126,9 +137,9 @@ async function verifyPassword(value, storedHash) {
 // (BLOB_STORE_ID + VERCEL_OIDC_TOKEN, injetados automaticamente). Sem essas variáveis
 // (ex.: rodando local sem `vercel env pull`), cai no Postgres como antes.
 // ---------------------------------------------------------------------------
-const blobSdk = () => import('@vercel/blob');
+const blobSdk = () => USE_LOCAL_STORAGE ? Promise.resolve(localStorageSdk) : import('@vercel/blob');
 const blobClientSdk = () => import('@vercel/blob/client');
-const blobEnabled = () => !LOCAL_MODE && Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
+const blobEnabled = () => USE_LOCAL_STORAGE || (!LOCAL_MODE && Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN));
 const isBlobStoreSuspended = error => Boolean(error && (
   error.name === 'BlobStoreSuspendedError'
   || /store has been suspended|billing state is suspended|limits-exceeded-suspended/i.test(String(error.message || ''))
@@ -782,7 +793,10 @@ if (!LOCAL_MODE && !DATABASE_URL) {
 const SUPABASE_CA_CERT = process.env.SUPABASE_CA_CERT_B64
   ? Buffer.from(process.env.SUPABASE_CA_CERT_B64, 'base64').toString('utf8')
   : String(process.env.SUPABASE_CA_CERT || '').replace(/\\n/g, '\n');
-if (!LOCAL_MODE && DATABASE_URL && !SUPABASE_CA_CERT) {
+// DATABASE_SSL=false permite um Postgres local (Docker/VM) sem TLS. O padrão
+// continua exigindo o certificado do Supabase para não baixar a segurança.
+const DATABASE_SSL = String(process.env.DATABASE_SSL || 'true').trim().toLowerCase() !== 'false';
+if (!LOCAL_MODE && DATABASE_URL && DATABASE_SSL && !SUPABASE_CA_CERT) {
   throw new Error('Defina SUPABASE_CA_CERT com o certificado raiz oficial do Supabase antes de iniciar.');
 }
 const sql = !LOCAL_MODE && DATABASE_URL ? new Pool({
@@ -792,10 +806,10 @@ const sql = !LOCAL_MODE && DATABASE_URL ? new Pool({
   max: 1,
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 5000,
-  ssl: {
+  ssl: DATABASE_SSL ? {
     rejectUnauthorized: true,
     ca: SUPABASE_CA_CERT
-  }
+  } : false
 }) : null;
 let localDatabasePromise = null;
 
@@ -994,13 +1008,14 @@ const BLOB_REDIRECT_MIN_BYTES = 1 * 1024 * 1024;
 // de GET (inline). Quando `asDownload` é true, anexa ?download=1 para forçar
 // Content-Disposition: attachment — usado nos caminhos /download, já que a CDN abre
 // arquivos grandes inline (imagem/PDF) em vez de baixar.
-async function presignBlobDownloadUrl(pathname, asDownload = false) {
+async function presignBlobDownloadUrl(pathname, asDownload = false, displayName = '') {
   const { issueSignedToken, presignUrl } = await blobSdk();
   const validUntil = Date.now() + 60 * 60 * 1000;
   const token = await issueSignedToken({ pathname, operations: ['get'], validUntil });
   const signed = await presignUrl(token, { operation: 'get', pathname, access: 'private', validUntil });
   const url = new URL(signed.presignedUrl);
   if (asDownload) url.searchParams.set('download', '1');
+  if (USE_LOCAL_STORAGE && displayName) url.searchParams.set('name', String(displayName).slice(0, 255));
   return url.toString();
 }
 
@@ -1637,12 +1652,12 @@ async function initDatabase() {
 // App
 // ---------------------------------------------------------------------------
 const app = express();
-app.set('trust proxy', IS_VERCEL ? 1 : false);
+app.set('trust proxy', IS_HOSTED ? 1 : false);
 
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-const SESSION_COOKIE = IS_VERCEL ? '__Host-fileshare_session' : 'fileshare_session';
-const REMEMBER_COOKIE = IS_VERCEL ? '__Host-fs_remember' : 'fs_remember';
+const SESSION_COOKIE = IS_HOSTED ? '__Host-fileshare_session' : 'fileshare_session';
+const REMEMBER_COOKIE = IS_HOSTED ? '__Host-fs_remember' : 'fs_remember';
 const GOOGLE_DRIVE_RETURN_COOKIE = 'fs_google_drive_return_origin';
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -1658,7 +1673,7 @@ const CONTENT_SECURITY_POLICY = [
   "connect-src 'self' https://cdn.jsdelivr.net https://vercel.com https://*.blob.vercel-storage.com https://oauth2.googleapis.com https://www.googleapis.com",
   "frame-src 'self' blob: https://*.blob.vercel-storage.com",
   "worker-src 'self' blob: https://cdn.jsdelivr.net"
-].join('; ') + (IS_VERCEL ? '; upgrade-insecure-requests' : '');
+].join('; ') + (IS_HOSTED ? '; upgrade-insecure-requests' : '');
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/f/') || ['/admin', '/dashboard', '/change-password'].includes(req.path) || req.path.startsWith('/sala/') || req.path.startsWith('/enviar/')) {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
@@ -1680,9 +1695,126 @@ app.use((req, res, next) => {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
   }
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
-  if (IS_VERCEL && req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  if (IS_HOSTED && req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
 });
+
+// ---------------------------------------------------------------------------
+// Armazenamento local (Oracle/self-host): PUT assinado grava direto no disco e
+// GET assinado entrega com Range. Fica antes do express.json para que arquivos
+// JSON grandes não sejam interpretados como corpo de API.
+// ---------------------------------------------------------------------------
+app.put('/api/storage/upload', wrap(async (req, res) => {
+  if (!USE_LOCAL_STORAGE) return res.status(404).json({ error: 'Armazenamento local desativado.' });
+  let payload;
+  try { payload = localStorageSdk.verifyToken(req.query.token); }
+  catch (error) { return res.status(401).json({ error: error.message || 'Token de upload inválido.' }); }
+  if (!payload.o.includes('put')) return res.status(403).json({ error: 'Token sem permissão de upload.' });
+  const maxBytes = Number(payload.m) || MAX_BLOB_UPLOAD_BYTES;
+  const declared = Number(req.headers['content-length']);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    res.set('Connection', 'close');
+    return res.status(413).json({ error: 'Arquivo maior que o limite autorizado.' });
+  }
+  const target = localStorageSdk.absolutePath(payload.p);
+  const temp = target + '.upload-' + crypto.randomBytes(8).toString('hex');
+  let size = 0;
+  let tooLarge = false;
+  try {
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    const meter = new Transform({
+      transform(chunk, _encoding, callback) {
+        size += chunk.length;
+        if (size > maxBytes) {
+          tooLarge = true;
+          req.destroy();
+          callback(new Error('Arquivo maior que o limite autorizado.'));
+          return;
+        }
+        callback(null, chunk);
+      }
+    });
+    await new Promise((resolve, reject) => {
+      const output = fs.createWriteStream(temp, { mode: 0o600 });
+      const source = req.pipe(meter);
+      source.pipe(output);
+      source.on('error', reject);
+      output.on('error', reject);
+      output.on('finish', resolve);
+    });
+    if (tooLarge) throw new Error('Arquivo maior que o limite autorizado.');
+    await fs.promises.rename(temp, target);
+    await fs.promises.writeFile(target + '.meta.json', JSON.stringify({
+      size,
+      contentType: String(req.get('content-type') || '').split(';')[0].trim() || localStorageSdk.contentTypeFor(payload.p),
+      pathname: payload.p,
+      updatedAt: new Date().toISOString()
+    }), 'utf8');
+    res.status(201).json({ ok: true, pathname: payload.p, size });
+  } catch (error) {
+    await fs.promises.rm(temp, { force: true }).catch(() => {});
+    if (tooLarge) {
+      res.set('Connection', 'close');
+      return res.status(413).json({ error: 'Arquivo maior que o limite autorizado.' });
+    }
+    if (!res.headersSent) res.status(400).json({ error: 'Não foi possível gravar o arquivo.' });
+    else res.destroy(error);
+  }
+}));
+
+app.get('/api/storage/object', wrap(async (req, res) => {
+  if (!USE_LOCAL_STORAGE) return res.status(404).end();
+  let payload;
+  try { payload = localStorageSdk.verifyToken(req.query.token); }
+  catch (error) { return res.status(401).send('Link de arquivo inválido ou expirado.'); }
+  if (!payload.o.includes('get')) return res.status(403).send('Link sem permissão de leitura.');
+  const target = localStorageSdk.absolutePath(payload.p);
+  let stat;
+  try { stat = await fs.promises.stat(target); }
+  catch (error) {
+    if (error && error.code === 'ENOENT') return res.status(404).send('Arquivo não encontrado.');
+    throw error;
+  }
+  let meta = {};
+  try { meta = JSON.parse(await fs.promises.readFile(target + '.meta.json', 'utf8')); } catch (_) {}
+  const contentType = meta.contentType || localStorageSdk.contentTypeFor(payload.p);
+  const requestedName = String(req.query.name || '').replace(/[\\/]/g, '').trim();
+  const fileName = (requestedName || path.basename(payload.p).replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, '')).replace(/[\r\n"\\]/g, '_');
+  const asciiName = fileName.replace(/[^\x20-\x7e]/g, '_');
+  res.set('Cache-Control', 'private, no-store');
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Type', contentType);
+  if (String(req.query.download || '') === '1') {
+    res.set('Content-Disposition', `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  } else {
+    res.set('Content-Disposition', `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  }
+  res.set('Accept-Ranges', 'bytes');
+  const range = String(req.headers.range || '');
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (!match) { res.status(416).set('Content-Range', `bytes */${stat.size}`).end(); return; }
+    let start = match[1] === '' ? null : Number(match[1]);
+    let end = match[2] === '' ? null : Number(match[2]);
+    if (start === null && end !== null) { start = Math.max(0, stat.size - end); end = stat.size - 1; }
+    if (start === null) start = 0;
+    if (end === null || end >= stat.size) end = stat.size - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= stat.size) {
+      return res.status(416).set('Content-Range', `bytes */${stat.size}`).end();
+    }
+    res.status(206);
+    res.set('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+    res.set('Content-Length', String(end - start + 1));
+    const stream = fs.createReadStream(target, { start, end });
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
+    return;
+  }
+  res.set('Content-Length', String(stat.size));
+  const stream = fs.createReadStream(target);
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
+}));
 
 app.use(express.json({ limit: '220kb' }));
 app.use(express.urlencoded({ extended: false, limit: '50kb', parameterLimit: 100 }));
@@ -1763,7 +1895,7 @@ app.use(cookieSession({
   maxAge: 365 * 24 * 60 * 60 * 1000, // login permanente: 1 ano (limite prático dos navegadores é 400 dias)
   path: '/',
   httpOnly: true,
-  secure: IS_VERCEL,
+  secure: IS_HOSTED,
   sameSite: 'lax'
 }));
 app.use(wrap(async (req, res, next) => { await ensureDatabase(); next(); }));
@@ -1782,18 +1914,18 @@ function readCookie(req, name) {
   return '';
 }
 function remCookieOpts(maxAgeMs) {
-  return { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
+  return { httpOnly: true, secure: IS_HOSTED, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
 }
 function clearRememberCookie(res) {
   // O prefixo __Host- exige Secure também na remoção; sem isso o navegador
   // pode ignorar o clear e manter o login persistente após o logout.
-  res.clearCookie(REMEMBER_COOKIE, { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/' });
+  res.clearCookie(REMEMBER_COOKIE, { httpOnly: true, secure: IS_HOSTED, sameSite: 'lax', path: '/' });
 }
 function deviceCookieOpts(maxAgeMs) {
-  return { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
+  return { httpOnly: true, secure: IS_HOSTED, sameSite: 'lax', path: '/', maxAge: maxAgeMs };
 }
 function clearDeviceCookie(res) {
-  res.clearCookie(DEVICE_COOKIE, { httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/' });
+  res.clearCookie(DEVICE_COOKIE, { httpOnly: true, secure: IS_HOSTED, sameSite: 'lax', path: '/' });
 }
 // Registra/atualiza o dispositivo do login e informa se ele é novo para o usuário.
 // O cookie fs_device é opaco (não contém dados pessoais) e permite revogar a sessão
@@ -1966,7 +2098,7 @@ const COLLECTION_UPLOAD_STALE_MS = 15 * 60 * 1000;
 const makeCollectionToken = () => crypto.randomBytes(32).toString('base64url');
 const cleanCollectionFileName = value => String(value || 'arquivo').replace(/[\u0000-\u001f\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_COLLECTION_NAME_BYTES) || 'arquivo';
 const collectionLeaseUntil = () => new Date(Date.now() + COLLECTION_ACCESS_LEASE_MS).toISOString().slice(0, 19).replace('T', ' ');
-const collectionCookieOptions = token => ({ httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: `/api/coletas/enviar/${encodeURIComponent(token)}`, maxAge: COLLECTION_ACCESS_LEASE_MS });
+const collectionCookieOptions = token => ({ httpOnly: true, secure: IS_HOSTED, sameSite: 'lax', path: `/api/coletas/enviar/${encodeURIComponent(token)}`, maxAge: COLLECTION_ACCESS_LEASE_MS });
 function clearCollectionAccessCookie(res, token) {
   if (res.headersSent) return;
   res.clearCookie(COLLECTION_ACCESS_COOKIE, { ...collectionCookieOptions(token), maxAge: undefined });
@@ -2021,7 +2153,7 @@ function reserveCollectionSession(req, res, token) {
   const existing = readCookie(req, COLLECTION_ACCESS_COOKIE);
   const browserSession = /^[a-f0-9]{64}$/i.test(String(existing || '')) ? existing : crypto.randomBytes(32).toString('hex');
   res.cookie(COLLECTION_ACCESS_COOKIE, browserSession, {
-    httpOnly: true, secure: IS_VERCEL, sameSite: 'lax',
+    httpOnly: true, secure: IS_HOSTED, sameSite: 'lax',
     path: `/api/coletas/enviar/${encodeURIComponent(token)}`, maxAge: COLLECTION_SESSION_COOKIE_MS
   });
   req.collectionAccessSessionHash = hashToken(browserSession);
@@ -2646,7 +2778,7 @@ const shareAccessCookieName = shareId => 'fs_share_' + shareId;
 const shareAccessValue = share => crypto.createHmac('sha256', sessionSecret()).update('file-share:' + share.id + ':' + share.token_hash).digest('hex');
 function setShareAccessCookie(req, res, share) {
   res.cookie(shareAccessCookieName(share.id), shareAccessValue(share), {
-    httpOnly: true, secure: IS_VERCEL, sameSite: 'lax', path: '/f/' + req.params.token, maxAge: SHARE_ACCESS_TTL_MS
+    httpOnly: true, secure: IS_HOSTED, sameSite: 'lax', path: '/f/' + req.params.token, maxAge: SHARE_ACCESS_TTL_MS
   });
 }
 function hasShareAccess(req, share) {
@@ -2731,11 +2863,11 @@ async function deliverFileShare(req, res, share, asDownload) {
   }
   if (isBlobPath(share.stored_name)) {
     if (asDownload) {
-      try { return res.redirect(302, await presignBlobDownloadUrl(share.stored_name, true)); }
+      try { return res.redirect(302, await presignBlobDownloadUrl(share.stored_name, true, name)); }
       catch (e) { return res.status(502).send('Não foi possível preparar o download.'); }
     }
     if (num(share.size) > BLOB_REDIRECT_MIN_BYTES) {
-      try { return res.redirect(302, await presignBlobDownloadUrl(share.stored_name)); }
+      try { return res.redirect(302, await presignBlobDownloadUrl(share.stored_name, false, name)); }
       catch (e) { return res.status(502).send('Não foi possível preparar a visualização.'); }
     }
     const ok = await pipeBlobToResponse(res, share.stored_name, share.size);
@@ -3055,7 +3187,7 @@ function baseUrlFor(req) {
   if (configured) return configured;
   // Em produção o domínio é fixo: evita que um cabeçalho Host/X-Forwarded-Host
   // forjado faça o link de redefinição apontar para um domínio controlado pelo atacante.
-  if (IS_VERCEL) return 'https://www.arquive.online';
+  if (IS_HOSTED) return 'https://www.arquive.online';
   const proto = String(req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
   const host = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
   return proto + '://' + host;
@@ -3206,6 +3338,7 @@ app.get('/api/me', requireAuth, wrap(async (req, res) => {
   const driveEnabled = await googleDriveConnected();
   const blobsEnabled = blobEnabled();
   res.json({ ...user, unread_notifications: num(unread && unread.count), drive_upload_enabled: driveEnabled, blob_upload_enabled: blobsEnabled,
+    multipart_upload_enabled: !USE_LOCAL_STORAGE,
     max_upload_bytes: blobsEnabled ? MAX_BLOB_UPLOAD_BYTES : driveEnabled ? MAX_DIRECT_BYTES : MAX_FILE_BYTES });
 }));
 
@@ -3344,7 +3477,7 @@ app.get('/api/cron/maintenance', wrap(async (req, res) => {
   const userAgent = String(req.get('user-agent') || '');
   const authorized = secret
     ? authorization === `Bearer ${secret}`
-    : Boolean(cronHeader) || /vercel-cron/i.test(userAgent) || !IS_VERCEL;
+    : Boolean(cronHeader) || /vercel-cron/i.test(userAgent) || !IS_HOSTED;
   if (!authorized) return res.status(401).json({ error: 'Não autorizado.' });
   return res.json(await runDriveMaintenance());
 }));
@@ -3497,23 +3630,23 @@ app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) =>
   const state = crypto.randomBytes(32).toString('base64url');
   const requestHost = String(req.get('host') || '').toLowerCase();
   const returnOrigin = `${req.protocol}://${requestHost}`;
-  const allowedReturnOrigin = IS_VERCEL
+  const allowedReturnOrigin = IS_HOSTED
     ? /^https:\/\/.+/.test(returnOrigin)
     : /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(returnOrigin);
   if (!allowedReturnOrigin) return res.status(400).send('Origem de retorno inválida para a conexão do Google Drive.');
   res.cookie(GOOGLE_DRIVE_STATE_COOKIE, state, {
     httpOnly: true,
-    secure: IS_VERCEL,
+    secure: IS_HOSTED,
     sameSite: 'lax',
-    ...(IS_VERCEL ? { domain: '.arquive.online' } : {}),
+    ...(IS_HOSTED ? { domain: '.arquive.online' } : {}),
     path: '/api/google-drive/oauth/callback',
     maxAge: 10 * 60 * 1000
   });
   res.cookie(GOOGLE_DRIVE_RETURN_COOKIE, returnOrigin, {
     httpOnly: true,
-    secure: IS_VERCEL,
+    secure: IS_HOSTED,
     sameSite: 'lax',
-    ...(IS_VERCEL ? { domain: '.arquive.online' } : {}),
+    ...(IS_HOSTED ? { domain: '.arquive.online' } : {}),
     path: '/api/google-drive/oauth/callback',
     maxAge: 10 * 60 * 1000
   });
@@ -3533,11 +3666,11 @@ app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {
   const receivedState = String(req.query.state || '');
   res.clearCookie(GOOGLE_DRIVE_STATE_COOKIE, {
     path: '/api/google-drive/oauth/callback',
-    ...(IS_VERCEL ? { domain: '.arquive.online' } : {})
+    ...(IS_HOSTED ? { domain: '.arquive.online' } : {})
   });
   res.clearCookie(GOOGLE_DRIVE_RETURN_COOKIE, {
     path: '/api/google-drive/oauth/callback',
-    ...(IS_VERCEL ? { domain: '.arquive.online' } : {})
+    ...(IS_HOSTED ? { domain: '.arquive.online' } : {})
   });
   const expectedBytes = Buffer.from(expectedState);
   const receivedBytes = Buffer.from(receivedState);
@@ -3545,7 +3678,7 @@ app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {
     return res.status(400).send('Não foi possível validar esta autorização OAuth. Inicie a conexão do Drive novamente pelo painel administrativo.');
   }
   if (req.query.error) {
-    const safeReturnOrigin = IS_VERCEL
+    const safeReturnOrigin = IS_HOSTED
       ? (/^https:\/\/.+/.test(returnOriginCookie) ? returnOriginCookie : 'https://arquive.online')
       : (/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(returnOriginCookie) ? returnOriginCookie : null);
     if (!safeReturnOrigin) return res.status(400).send('Não foi possível retornar ao painel administrativo. Abra o painel e conecte a conta novamente.');
@@ -3619,7 +3752,7 @@ app.get('/api/google-drive/oauth/callback', wrap(async (req, res) => {
     // Conectar outra conta não invalida os objetos de armazenamento das contas
     // já existentes; a conta reconectada acima teve seu cache removido.
     res.set('Cache-Control', 'no-store');
-    const safeReturnOrigin = IS_VERCEL
+    const safeReturnOrigin = IS_HOSTED
       ? (/^https:\/\/.+/.test(returnOriginCookie) ? returnOriginCookie : 'https://arquive.online')
       : (/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(returnOriginCookie) ? returnOriginCookie : null);
     if (!safeReturnOrigin) return res.status(400).send('Não foi possível retornar ao painel administrativo. Abra o painel e conecte a conta novamente.');
@@ -4166,7 +4299,7 @@ app.get('/download/library/:itemId', requireAuth, wrap(async (req, res) => {
   }
   // O download vai direto à CDN privada em qualquer tamanho, evitando retransmitir bytes pelo servidor.
   if (isLibraryBlobPath(item.stored_name)) {
-    try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name, true)); }
+    try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name, true, item.original_name)); }
     catch (err) { console.error('presign download Acervo:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
   }
   const bytes = await readLibraryBlob(item);
@@ -4206,7 +4339,7 @@ app.get('/preview/library/:itemId', requireAuth, wrap(async (req, res) => {
   }
   // Grandes arquivos (ex.: vídeo): redireciona ao Blob para o CDN entregar com suporte a Range.
   if (isLibraryBlobPath(item.stored_name) && num(item.size) > BLOB_REDIRECT_MIN_BYTES) {
-    try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name)); }
+    try { return res.redirect(302, await presignBlobDownloadUrl(item.stored_name, false, item.original_name)); }
     catch (err) { console.error('presign preview Acervo:', err && err.message); return res.status(502).send('Não foi possível preparar a visualização'); }
   }
   const bytes = await readLibraryBlob(item);
@@ -4336,7 +4469,7 @@ app.post('/api/rooms/:id/files', asMember, (req, res, next) => {
 // 2) o navegador envia o arquivo direto ao Blob (PUT)
 // 3) /files/register: o servidor confere o envio e grava o arquivo no banco
 // ---------------------------------------------------------------------------
-const MAX_DIRECT_BYTES = 100 * 1024 * 1024;
+const MAX_DIRECT_BYTES = USE_LOCAL_STORAGE ? 10 * 1024 ** 3 : 100 * 1024 * 1024;
 // URL de upload assinada: janela curta para reduzir o risco de um link vazado
 // continuar gravável. A fila de upload solicita uma nova URL ao tentar de novo.
 const PRESIGN_UPLOAD_TTL_MS = 6 * 60 * 60 * 1000;
@@ -5546,7 +5679,7 @@ app.get('/api/coletas/:id/arquivos/:uploadId/download', asMember, wrap(async (re
   const blobPath = file.library_stored_name || file.stored_name;
   if (isBlobPath(blobPath)) {
     // O arquivo vai direto à CDN privada; a Function só valida acesso e assina o redirect.
-    try { return res.redirect(302, await presignBlobDownloadUrl(blobPath, true)); }
+    try { return res.redirect(302, await presignBlobDownloadUrl(blobPath, true, file.original_name)); }
     catch (error) { console.error('presign download de coleta:', error && error.message); return res.status(502).send('Não foi possível preparar o download.'); }
   }
 
@@ -5655,7 +5788,7 @@ app.get('/download/:fileId', asMember, wrap(async (req, res) => {
 
   if (isBlobPath(file.stored_name)) {
     // Mesmo arquivos pequenos são entregues pela CDN privada para evitar um salto de streaming pela Function.
-    try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name, true)); }
+    try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name, true, file.original_name)); }
     catch (err) { console.error('presign download:', err && err.message); return res.status(502).send('Não foi possível preparar o download'); }
   }
 
@@ -5696,7 +5829,7 @@ app.get('/preview/:fileId', asMember, wrap(async (req, res) => {
     // Grandes arquivos (ex.: vídeo): redireciona ao Blob para o CDN entregar com suporte a
     // Range (busca no player), sem travar a função serverless em transfers longos.
     if (num(file.size) > BLOB_REDIRECT_MIN_BYTES) {
-      try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name)); }
+      try { return res.redirect(302, await presignBlobDownloadUrl(file.stored_name, false, file.original_name)); }
       catch (err) { console.error('presign preview:', err && err.message); return res.status(502).send('Não foi possível preparar a visualização'); }
     }
     let ok;

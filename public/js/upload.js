@@ -7,6 +7,7 @@
   let currentUserId = '';
   let driveUploadEnabled = false;
   let blobUploadEnabled = false;
+  let multipartUploadEnabled = true;
   let driveTransportPromise = null;
   const sizeLabel = b => {
     const gb = b / (1024 ** 3);
@@ -20,7 +21,7 @@
 
   const limitReady = fetch('/api/me')
     .then(r => r.json())
-    .then(u => { if (u && u.max_upload_bytes) limitBytes = Number(u.max_upload_bytes); if (u && u.id) currentUserId = String(u.id); driveUploadEnabled = Boolean(u && u.drive_upload_enabled); blobUploadEnabled = Boolean(u && u.blob_upload_enabled); window.fillLimitNotes(); })
+    .then(u => { if (u && u.max_upload_bytes) limitBytes = Number(u.max_upload_bytes); if (u && u.id) currentUserId = String(u.id); driveUploadEnabled = Boolean(u && u.drive_upload_enabled); blobUploadEnabled = Boolean(u && u.blob_upload_enabled); multipartUploadEnabled = !u || u.multipart_upload_enabled !== false; window.fillLimitNotes(); })
     .catch(() => {});
   const driveChunkSize = 4 * 1024 * 1024;
   // Em celular/tablet, o envio sai da pagina e vai para o Service Worker antes
@@ -239,7 +240,7 @@
         uploaded.push({ id: done.data.id, name: done.data.original_name || file.name, size: done.data.size || file.size, mime: done.data.mime_type || file.type || 'application/octet-stream' });
         sent++;
         continue;
-      } else if (file.size > 100 * 1024 * 1024 && blobUploadEnabled) {
+      } else if (file.size > 100 * 1024 * 1024 && blobUploadEnabled && multipartUploadEnabled) {
         bgKind = 'multipart';
         if (typeof options.onCancelable === 'function') options.onCancelable(false);
         try {
@@ -558,7 +559,7 @@
           sent++;
           continue;
         }
-        if (file.size > 100 * 1024 * 1024) {
+        if (file.size > 100 * 1024 * 1024 && multipartUploadEnabled) {
           onCancelable(false);
           if (!currentUserId) throw new Error('Não foi possível identificar sua conta para preparar o upload. Atualize a página e tente novamente.');
           const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';

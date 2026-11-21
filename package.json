@@ -10,7 +10,8 @@
     "local:start": "node local-runtime/start.cjs",
     "test:visual": "node test/visual/responsive-audit.mjs",
     "test:visual:quick": "node test/visual/responsive-audit.mjs --quick",
-    "test:visual:update": "node test/visual/responsive-audit.mjs --update-snapshots"
+    "test:visual:update": "node test/visual/responsive-audit.mjs --update-snapshots",
+    "migrate:storage": "node scripts/migrate-blob-to-local.mjs"
   },
   "engines": {
     "node": ">=18"

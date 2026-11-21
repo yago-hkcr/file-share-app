@@ -26,6 +26,7 @@
   let pendingLibraryEditor = null;
   let driveUploadEnabled = false;
   let blobUploadEnabled = false;
+  let multipartUploadEnabled = true;
   let driveTransportPromise = null;
 
   function loadGoogleDriveTransport() {
@@ -52,6 +53,7 @@
   const driveUploadReady = fetch('/api/me', { credentials: 'same-origin' }).then(response => response.json()).then(user => {
     driveUploadEnabled = Boolean(user && user.drive_upload_enabled);
     blobUploadEnabled = Boolean(user && user.blob_upload_enabled);
+    multipartUploadEnabled = !user || user.multipart_upload_enabled !== false;
   }).catch(() => {});
 
   function formatDate(value) {
@@ -404,7 +406,7 @@
         if (!done.ok) throw new Error(done.data.error || 'Falha ao registrar o arquivo do Google Drive.');
         return done.data;
       }
-      if (file.size > 100 * 1024 * 1024 && blobUploadEnabled) {
+      if (file.size > 100 * 1024 * 1024 && blobUploadEnabled && multipartUploadEnabled) {
         try {
           const { uploadPresigned } = await import('/js/vendor/vercel-blob-client.mjs');
           const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'arquivo';

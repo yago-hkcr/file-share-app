@@ -1,0 +1,15 @@
+{$DOMAIN:www.arquive.online} {
+	encode zstd gzip
+
+	# Uploads grandes passam pelo app; não corte a conexão no meio.
+	reverse_proxy app:3000 {
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+}
+
+{$ROOT_DOMAIN:arquive.online} {
+	redir https://{$DOMAIN:www.arquive.online}{uri} permanent
+}

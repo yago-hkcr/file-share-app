@@ -29,3 +29,7 @@ skills-lock.json
 
 # Saídas locais da auditoria visual (capturas atuais, diffs e relatório)
 /test-results/
+
+# Armazenamento local fora da Vercel
+/storage/
+/backups/

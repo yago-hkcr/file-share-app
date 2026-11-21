@@ -1,0 +1,12 @@
+node_modules
+.git
+.gitignore
+.env
+.env.*
+storage
+test-results
+test/visual/__screenshots__
+*.log
+.DS_Store
+local-runtime/node_modules
+android

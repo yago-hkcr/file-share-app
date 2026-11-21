@@ -77,6 +77,19 @@ Como a Vercel nao tem disco persistente, os arquivos sao gravados no proprio Pos
 corpo de uma requisicao a ~4,5 MB, entao o limite de envio e de 4 MB por vez. Para arquivos maiores,
 use Vercel Blob com upload direto do navegador.
 
+## Hospedagem fora da Vercel (Oracle Always Free)
+
+O app tambem roda como um servidor Node normal, com os arquivos em disco local.
+O guia completo esta em [deploy/ORACLE.md](deploy/ORACLE.md). O fluxo e:
+
+1. subir o `docker-compose.yml` na VM;
+2. migrar os objetos antigos do Vercel Blob com `npm run migrate:storage`;
+3. apontar `www.arquive.online` para o IP da VM;
+4. remover o `BLOB_READ_WRITE_TOKEN` do ambiente.
+
+O armazenamento local usa URLs de upload/download assinadas com HMAC e suporta
+`Range`, downloads retomaveis e arquivos grandes por PUT direto no servidor.
+
 ## Conexão OAuth do Google Drive
 
 O callback OAuth de produção é `https://arquive.online/api/google-drive/oauth/callback`. No Google Cloud Console, crie um cliente OAuth do tipo **Aplicativo da Web** e cadastre essa URI exatamente em **Authorized redirect URIs**. Mantenha o modo de consentimento em teste e a conta dedicada como usuário de teste durante a configuração.
