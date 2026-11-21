@@ -61,6 +61,13 @@ Preencha o `.env`. O `docker-compose.yml` já define:
 - `STORAGE_PROVIDER=local`;
 - `LOCAL_STORAGE_DIR=/app/storage`.
 
+Sobre o banco:
+
+- use `DATABASE_URL_UNPOOLED` se `DATABASE_URL` vier como `[SENSITIVE]`;
+- no Neon, `SUPABASE_CA_CERT_B64` pode ficar vazio (TLS validado pela raiz pública);
+- no Supabase, copie o certificado raiz do painel para `SUPABASE_CA_CERT_B64`;
+- `vercel env pull` não exporta valores marcados como secretos: copie esses pelo dashboard da Vercel.
+
 ## 5. Subir
 
 ```bash

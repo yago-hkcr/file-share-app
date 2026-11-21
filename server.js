@@ -794,11 +794,9 @@ const SUPABASE_CA_CERT = process.env.SUPABASE_CA_CERT_B64
   ? Buffer.from(process.env.SUPABASE_CA_CERT_B64, 'base64').toString('utf8')
   : String(process.env.SUPABASE_CA_CERT || '').replace(/\\n/g, '\n');
 // DATABASE_SSL=false permite um Postgres local (Docker/VM) sem TLS. O padrão
-// continua exigindo o certificado do Supabase para não baixar a segurança.
+// continua com TLS verificado: usa o CA do Supabase quando informado e, sem
+// ele, a raiz pública do sistema (Neon e a maioria dos provedores).
 const DATABASE_SSL = String(process.env.DATABASE_SSL || 'true').trim().toLowerCase() !== 'false';
-if (!LOCAL_MODE && DATABASE_URL && DATABASE_SSL && !SUPABASE_CA_CERT) {
-  throw new Error('Defina SUPABASE_CA_CERT com o certificado raiz oficial do Supabase antes de iniciar.');
-}
 const sql = !LOCAL_MODE && DATABASE_URL ? new Pool({
   connectionString: DATABASE_URL,
   // Cada instância serverless mantém seu próprio pool. Limitar a uma conexão
@@ -808,7 +806,7 @@ const sql = !LOCAL_MODE && DATABASE_URL ? new Pool({
   idleTimeoutMillis: 5000,
   ssl: DATABASE_SSL ? {
     rejectUnauthorized: true,
-    ca: SUPABASE_CA_CERT
+    ...(SUPABASE_CA_CERT ? { ca: SUPABASE_CA_CERT } : {})
   } : false
 }) : null;
 let localDatabasePromise = null;

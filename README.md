@@ -67,15 +67,15 @@ necessário um companion nativo (Android com foreground service e iOS com `URLSe
 Arquivos acima de 100 MB ainda usam upload multipart direto e devem permanecer com a página aberta até
 o companion nativo entrar em operação.
 
-## Deploy (Vercel + Supabase)
+## Deploy (Vercel + Postgres/Blob)
 
-Todos os dados (contas, salas, mensagens, arquivos) ficam no PostgreSQL do Supabase, acessado via `DATABASE_URL`
-(use a connection string do pooler do Supabase). Defina tambem `SUPABASE_CA_CERT_B64` com o certificado raiz
-em PEM codificado em Base64, baixado em **Database Settings → SSL Configuration** no painel Supabase; a conexão exige validação TLS
-do certificado e do hostname. As tabelas sao criadas automaticamente no primeiro acesso.
-Como a Vercel nao tem disco persistente, os arquivos sao gravados no proprio Postgres; a Vercel limita o
-corpo de uma requisicao a ~4,5 MB, entao o limite de envio e de 4 MB por vez. Para arquivos maiores,
-use Vercel Blob com upload direto do navegador.
+O banco fica no PostgreSQL atual (Neon ou Supabase), acessado via `DATABASE_URL`. A conexão usa TLS
+verificado; no Supabase, defina `SUPABASE_CA_CERT_B64` com o certificado raiz em Base64. No Neon, a raiz
+pública do sistema já valida o TLS. As tabelas são criadas automaticamente no primeiro acesso.
+
+Na Vercel, os arquivos usam Vercel Blob (`STORAGE_PROVIDER=blob`, padrão) com upload direto do navegador.
+O limite de 4 MB por requisição da Vercel vale apenas para o caminho legado em Postgres; arquivos maiores
+usam Blob. Para sair da Vercel, veja a seção Oracle abaixo.
 
 ## Hospedagem fora da Vercel (Oracle Always Free)
 
