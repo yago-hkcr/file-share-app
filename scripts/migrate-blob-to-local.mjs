@@ -3,12 +3,16 @@
 
 // Migra os objetos privados do Vercel Blob para o armazenamento local.
 // Uso (no host novo, antes de desligar a Vercel):
-//   DATABASE_URL=... SUPABASE_CA_CERT=... BLOB_READ_WRITE_TOKEN=... \
+//   DATABASE_URL=... [SUPABASE_CA_CERT=...] BLOB_READ_WRITE_TOKEN=... \
 //   LOCAL_STORAGE_DIR=/app/storage node scripts/migrate-blob-to-local.mjs
 //
 // O script é idempotente: arquivos já presentes no destino são ignorados.
 // Use --dry-run para apenas listar o que seria baixado.
 
+import { createRequire } from 'node:module';
+
+// O restante do projeto é CommonJS; este script é ESM para usar import() dinâmico.
+const require = createRequire(import.meta.url);
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
@@ -18,7 +22,7 @@ const { isBlobPath } = require('../lib/blob-paths');
 const localStorage = require('../lib/local-storage');
 
 const dryRun = process.argv.includes('--dry-run');
-const databaseUrl = String(process.env.DATABASE_URL || process.env.POSTGRES_URL || '').trim();
+const databaseUrl = String(process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL || process.env.POSTGRES_URL || '').trim();
 if (!databaseUrl) {
   console.error('Defina DATABASE_URL (ou POSTGRES_URL).');
   process.exit(1);
@@ -31,15 +35,17 @@ const useSsl = String(process.env.DATABASE_SSL || 'true').toLowerCase() !== 'fal
 const ca = process.env.SUPABASE_CA_CERT_B64
   ? Buffer.from(process.env.SUPABASE_CA_CERT_B64, 'base64').toString('utf8')
   : String(process.env.SUPABASE_CA_CERT || '').replace(/\\n/g, '\n');
-if (useSsl && !ca) {
-  console.error('Defina SUPABASE_CA_CERT (ou SUPABASE_CA_CERT_B64) ou use DATABASE_SSL=false para Postgres local.');
-  process.exit(1);
-}
+// Sem CA explícito, o TLS continua verificado pela raiz pública do sistema
+// (funciona no Neon); no Supabase, informe o certificado raiz.
+const cleanDatabaseUrl = (() => {
+  try { const url = new URL(databaseUrl); url.searchParams.delete('sslmode'); return url.toString(); }
+  catch (_) { return databaseUrl; }
+})();
 
 const pool = new Pool({
-  connectionString: databaseUrl,
+  connectionString: cleanDatabaseUrl,
   max: 2,
-  ssl: useSsl ? { rejectUnauthorized: true, ca } : false
+  ssl: useSsl ? { rejectUnauthorized: true, ...(ca ? { ca } : {}) } : false
 });
 
 async function collect() {
@@ -85,9 +91,14 @@ async function exists(pathname) {
       const temp = target + '.migrate-' + process.pid;
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       await pipeline(Readable.fromWeb(result.stream), fs.createWriteStream(temp, { mode: 0o600 }));
+      const actualSize = (await fs.promises.stat(temp)).size;
+      const expectedSize = Number(result.blob && result.blob.size);
+      if (Number.isFinite(expectedSize) && expectedSize > 0 && actualSize !== expectedSize) {
+        throw new Error(`tamanho divergente: esperado ${expectedSize}, recebido ${actualSize}`);
+      }
       await fs.promises.rename(temp, target);
       await fs.promises.writeFile(target + '.meta.json', JSON.stringify({
-        size: (await fs.promises.stat(target)).size,
+        size: actualSize,
         contentType: (result.blob && result.blob.contentType) || localStorage.contentTypeFor(pathname),
         pathname,
         updatedAt: new Date().toISOString()
