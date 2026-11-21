@@ -982,10 +982,11 @@ async function resolvePersonalLibraryLocation(userId, body = {}) {
 // ---------------------------------------------------------------------------
 const LIBRARY_BLOB_PREFIX = 'library/';
 const isLibraryBlobPath = name => typeof name === 'string' && name.startsWith(LIBRARY_BLOB_PREFIX);
-// Preview grande e downloads de qualquer tamanho podem ir direto à CDN privada do Blob,
-// sem retransmitir os bytes pela função serverless. O limite também preserva o streaming
-// existente de previews pequenos; downloads sempre preferem o caminho direto.
-const BLOB_REDIRECT_MIN_BYTES = 100 * 1024 * 1024;
+// Preview e downloads podem ir direto à CDN privada do Blob, sem retransmitir
+// os bytes pela função serverless. O limite de 1 MB preserva streaming apenas
+// para arquivos pequenos; acima disso o CDN entrega com Range e evita consumir
+// Fast Origin Transfer (o limite fair-use que pausa projetos Hobby).
+const BLOB_REDIRECT_MIN_BYTES = 1 * 1024 * 1024;
 
 // Gera uma URL (GET) temporária para um blob privado via CDN.
 // Na SDK @vercel/blob 2.x, get(pathname,{access:'private'}) NÃO devolve url/downloadUrl
