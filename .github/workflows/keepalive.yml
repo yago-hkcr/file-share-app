@@ -1,0 +1,64 @@
+name: Keep Arquive Awake
+
+on:
+  schedule:
+    # Every 5 minutes - prevents Render Free from sleeping (750h/mo allows 24/7)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping health endpoint
+        env:
+          ARQUIVE_URL: ${{ secrets.ARQUIVE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          URL="${ARQUIVE_URL:-https://www.arquive.online}"
+          URL="${URL%/}"
+
+          echo "→ Pinging $URL/health"
+          HTTP_CODE=$(curl -fsS -o /tmp/health.json -w "%{http_code}" --max-time 25 "$URL/health" || true)
+          echo "HTTP $HTTP_CODE"
+          cat /tmp/health.json 2>/dev/null || true
+          echo
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::warning::Health check returned $HTTP_CODE"
+            # Retry once after a short wait (cold start)
+            sleep 15
+            HTTP_CODE=$(curl -fsS -o /tmp/health.json -w "%{http_code}" --max-time 30 "$URL/health" || true)
+            echo "Retry HTTP $HTTP_CODE"
+            cat /tmp/health.json 2>/dev/null || true
+            echo
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "::error::Arquive health check failed with $HTTP_CODE"
+              exit 1
+            fi
+          fi
+
+          echo "✓ Health OK"
+
+          if [ -n "${CRON_SECRET:-}" ]; then
+            echo "→ Pinging maintenance cron"
+            M_CODE=$(curl -fsS -o /tmp/cron.json -w "%{http_code}" --max-time 30 \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$URL/api/cron/maintenance" || true)
+            echo "Maintenance HTTP $M_CODE"
+            cat /tmp/cron.json 2>/dev/null || true
+            echo
+            if [ "$M_CODE" != "200" ]; then
+              echo "::warning::Maintenance cron returned $M_CODE"
+            else
+              echo "✓ Maintenance OK"
+            fi
+          else
+            echo "ℹ CRON_SECRET not set - skipping maintenance ping"
+          fi

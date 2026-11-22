@@ -6,8 +6,10 @@ services:
     region: frankfurt
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    healthCheckPath: /
+    healthCheckPath: /health
     autoDeploy: true
+    # Free tier: 750 hours/month. Sleeps after ~15 min idle;
+    # .github/workflows/keepalive.yml pings every 5 min to prevent sleeping.
     envVars:
       - key: NODE_ENV
         value: production
