@@ -666,7 +666,10 @@ function directChunkBytes(size) {
 function driveUploadOrigin(req) {
   const origin = String(req.get('origin') || '');
   if (origin && /^https?:\/\/[^/\s]{1,200}$/i.test(origin)) return origin;
-  return `${req.protocol}://${String(req.get('host') || '')}`;
+  const forwardedHost = String(req.get('x-forwarded-host') || '').split(',')[0].trim();
+  const host = forwardedHost || String(req.get('host') || '');
+  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+  return `${proto}://${host}`;
 }
 
 // A sessão não pode mais ser usada: encerra a reserva antiga e abre outra,
@@ -802,6 +805,9 @@ const SUPABASE_CA_CERT = process.env.SUPABASE_CA_CERT_B64
 // continua com TLS verificado: usa o CA do Supabase quando informado e, sem
 // ele, a raiz pública do sistema (Neon e a maioria dos provedores).
 const DATABASE_SSL = String(process.env.DATABASE_SSL || 'true').trim().toLowerCase() !== 'false';
+const DATABASE_HOST = (() => {
+  try { return new URL(DATABASE_URL).hostname; } catch (e) { return undefined; }
+})();
 const sql = !LOCAL_MODE && DATABASE_URL ? new Pool({
   connectionString: DATABASE_URL,
   // Cada instância serverless mantém seu próprio pool. Limitar a uma conexão
@@ -811,7 +817,8 @@ const sql = !LOCAL_MODE && DATABASE_URL ? new Pool({
   idleTimeoutMillis: 5000,
   ssl: DATABASE_SSL ? {
     rejectUnauthorized: true,
-    ...(SUPABASE_CA_CERT ? { ca: SUPABASE_CA_CERT } : {})
+    ...(SUPABASE_CA_CERT ? { ca: SUPABASE_CA_CERT } : {}),
+    ...(DATABASE_HOST ? { servername: DATABASE_HOST } : {})
   } : false
 }) : null;
 let localDatabasePromise = null;
@@ -2020,7 +2027,11 @@ app.use((req, res, next) => {
   const origin = req.get('origin');
   if (origin) {
     try {
-      const expected = new URL(`${req.protocol}://${req.get('host')}`).origin;
+      // Atrás do Cloudflare Tunnel/Worker o Host original chega em
+      // X-Forwarded-Host; use-o para validar a origem pública correta.
+      const forwardedHost = String(req.get('x-forwarded-host') || '').split(',')[0].trim();
+      const requestHost = forwardedHost || req.get('host');
+      const expected = new URL(`${req.protocol}://${requestHost}`).origin;
       if (new URL(origin).origin !== expected) return res.status(403).json({ error: 'Origem da solicitação não permitida.' });
     } catch (error) {
       return res.status(403).json({ error: 'Origem da solicitação não permitida.' });
@@ -3652,7 +3663,7 @@ app.get('/api/admin/google-drive/oauth/start', asAdmin, wrap(async (req, res) =>
     return res.status(503).send('Configure GOOGLE_DRIVE_CLIENT_ID e GOOGLE_DRIVE_CLIENT_SECRET no ambiente do servidor antes de conectar o Drive.');
   }
   const state = crypto.randomBytes(32).toString('base64url');
-  const requestHost = String(req.get('host') || '').toLowerCase();
+  const requestHost = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim().toLowerCase();
   const returnOrigin = `${req.protocol}://${requestHost}`;
   const allowedReturnOrigin = IS_HOSTED
     ? /^https:\/\/.+/.test(returnOrigin)
