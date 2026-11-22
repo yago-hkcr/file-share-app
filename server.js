@@ -1696,12 +1696,12 @@ const CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
   "frame-ancestors 'self'",
   "form-action 'self'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
   "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com",
   "img-src 'self' data: blob: https://*.blob.vercel-storage.com https://*.googleusercontent.com" + (S3_CSP_ORIGINS ? ' ' + S3_CSP_ORIGINS : ''),
   "media-src 'self' blob: https://*.blob.vercel-storage.com" + (S3_CSP_ORIGINS ? ' ' + S3_CSP_ORIGINS : ''),
-  "connect-src 'self' https://cdn.jsdelivr.net https://vercel.com https://*.blob.vercel-storage.com https://oauth2.googleapis.com https://www.googleapis.com" + (S3_CSP_ORIGINS ? ' ' + S3_CSP_ORIGINS : ''),
+  "connect-src 'self' https://cdn.jsdelivr.net https://vercel.com https://*.blob.vercel-storage.com https://oauth2.googleapis.com https://www.googleapis.com https://cloudflareinsights.com" + (S3_CSP_ORIGINS ? ' ' + S3_CSP_ORIGINS : ''),
   "frame-src 'self' blob: https://*.blob.vercel-storage.com" + (S3_CSP_ORIGINS ? ' ' + S3_CSP_ORIGINS : ''),
   "worker-src 'self' blob: https://cdn.jsdelivr.net"
 ].join('; ') + (IS_HOSTED ? '; upgrade-insecure-requests' : '');
