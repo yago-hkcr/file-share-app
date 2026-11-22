@@ -1,27 +1,51 @@
-# Render Free + S3 — Arquive sem Vercel
+# Render Free + Blob + Cloudflare — Arquive no ar sem Vercel
 
-Este é o caminho recomendado para tirar o site da Vercel sem alugar uma VM:
+Este é o caminho em produção para manter o site fora da Vercel e sem depender
+ do PC ligado:
 
 ```text
-Navegador ──► Render Free (Node/Express + Neon) ──► metadados no Postgres
-     │
-     └──────────────► bucket S3 privado (upload/download direto)
+Navegador ──► Cloudflare DNS ──► Render Free (Node/Express)
+                    │                    ├── metadados no Postgres/Supabase
+                    │                    └── bytes no Vercel Blob
+                    └── status.arquive.online (Worker + cron)
 ```
 
-O Render serve apenas HTML, APIs e metadados. Os bytes dos arquivos vão do
-navegador direto para o bucket e do bucket direto para o navegador. Por isso o
-limite de Fast Origin Transfer da Vercel não existe e o plano free do Render
-não gasta banda com os arquivos.
+O Render serve HTML, APIs e metadados. Os bytes continuam no Blob gerenciado
+(`STORAGE_PROVIDER=blob`). O domínio principal não usa mais o túnel local.
+
+## Estado atual (produção)
+
+| Item | Valor |
+| --- | --- |
+| Origem | Render Free, serviço `arquive`, região Frankfurt |
+| Domínio | `www.arquive.online` → CNAME `arquive.onrender.com` (DNS only) |
+| Apex | `arquive.online` → CNAME Render, que responde 301 para `www` |
+| TLS | Certificado do Render, custom domains **verified** |
+| Storage | `STORAGE_PROVIDER=blob` + `BLOB_READ_WRITE_TOKEN` |
+| Keepalive | GitHub Actions a cada 5 min **e** Worker cron a cada 5 min |
+| Status | <https://status.arquive.online> (Cloudflare Worker, independente do Render) |
+| Alertas | Workflow abre/atualiza issue `arquive-incident` no GitHub quando falha |
+| Health | `GET /health` com `status`, `storage`, `uptime_seconds` e `commit` |
+
+> O túnel `origin.arquive.online` e o Worker antigo `calm-base-7b71` foram
+> removidos. O site não depende mais do computador local.
 
 ## Custos e limites
 
 | Peça | Free tier | Observação |
 | --- | --- | --- |
-| Render Web Service | 750 h/mês, 512 MB | Dorme após ~15 min sem acesso; primeira visita pode demorar ~1 min |
-| Cloudflare R2 | 10 GB, egress US$ 0 | Pode pedir cartão para ativar, mas não cobra dentro do free |
-| Backblaze B2 | 10 GB, 1 GB/dia de download | Alternativa se não quiser cartão; mesmo adaptador S3 |
-| Neon | plano free atual | Banco já existente; use a URL direta (`DATABASE_URL_UNPOOLED`) |
-| Vercel | US$ 0 | Continua como rollback; o Blob antigo é a fonte da migração |
+| Render Web Service | 750 h/mês, 512 MB | Dois keepalives independentes evitam o sono de 15 min |
+| Cloudflare Worker | 100k req/dia + cron | Serve a página de status e acorda o Render |
+| Vercel Blob | cota atual | Funciona, mas é a peça que ainda depende da conta Vercel |
+| Postgres/Supabase | cota atual | Banco já existente |
+| Cloudflare R2 | 10 GB, egress US$ 0 | Migração opcional para remover o Blob (pode pedir cartão) |
+| Backblaze B2 | 10 GB, 1 GB/dia | Alternativa S3 sem R2 |
+
+## Migração opcional para R2/S3 (remove o Vercel Blob)
+
+As seções abaixo descrevem o caminho opcional S3. Não são necessárias para o
+funcionamento atual; hoje a produção usa Blob.
+
 
 ## 1. Criar o bucket
 
@@ -124,33 +148,45 @@ Depois da migração, remova `BLOB_READ_WRITE_TOKEN` do `.env` local e do
 ambiente. O Blob antigo pode ser desligado quando você confirmar que os
 downloads estão funcionando.
 
-## 4. Domínio
+## 4. Domínio (estado atual na Cloudflare)
 
-No Render, serviço `arquive` → **Settings → Custom Domains**:
+No Render, serviço `arquive` → **Settings → Custom Domains**, os dois domínios
+estão **verified**:
 
-1. Adicione `www.arquive.online`.
-2. No Hostinger, troque o registro atual da Vercel por:
-   - `www` → CNAME para o endereço `*.onrender.com` informado pelo Render;
-   - `arquive.online` → ALIAS/ANAME para o Render, ou redirecionamento para
-     `https://www.arquive.online` (o Render não emite certificado para um
-     domínio que ainda aponta para a Vercel).
-3. Espere o certificado TLS do Render ficar **Issued**.
-4. Só então remova o domínio da Vercel, se quiser. Manter a Vercel como
-   rollback não custa nada enquanto ela estiver bloqueada.
+1. `www.arquive.online` → CNAME `arquive.onrender.com`, **DNS only** (sem
+   proxy laranja). O TLS é emitido pelo Render.
+2. `arquive.online` → CNAME `arquive.onrender.com`, **DNS only**. O Render
+   responde `301` para `https://www.arquive.online` preservando path e query.
+3. `status.arquive.online` → CNAME `www.arquive.online`, **proxied**, com a
+   rota `status.arquive.online/*` apontando para o Worker `arquive-keepalive`.
 
-## 5. Manter acordado e cron
+Não é preciso usar ALIAS/ANAME: a Cloudflare achata o CNAME no apex. Não
+aponte `www` para a Vercel; a Vercel está bloqueada por fair use e o Blob é
+usado apenas como storage.
 
-O Render free dorme após ~15 min. Para o site não abrir com 1 min de atraso:
+## 5. Manter acordado, monitorar e alertar
 
-- UptimeRobot free: monitor HTTP `https://www.arquive.online/` a cada 5–10 min;
-- cron-job.org free: o mesmo monitor, se preferir.
+O Render free dorme após ~15 min. Hoje há duas camadas independentes:
 
-Cron diário de manutenção (4h):
+1. **GitHub Actions** (`.github/workflows/keepalive.yml`): a cada 5 min chama
+   `/health` no domínio público e, se falhar, tenta `arquive.onrender.com`.
+   Em falha, abre/atualiza uma issue com a label `arquive-incident`; quando
+   volta, fecha a issue automaticamente.
+2. **Cloudflare Worker `arquive-keepalive`**: cron `*/5 * * * *` na borda da
+   Cloudflare, também chama `/health`. Serve a página
+   <https://status.arquive.online> com checagem ao vivo do domínio e da origem.
+
+O `CRON_SECRET` está configurado como secret no GitHub e no Render; o workflow
+ também chama `/api/cron/maintenance` a cada 5 min.
 
 ```text
 GET https://www.arquive.online/api/cron/maintenance
 Header: Authorization: Bearer <CRON_SECRET>
 ```
+
+Se quiser uma terceira camada, adicione UptimeRobot em
+`https://www.arquive.online/health` a cada 5 min. Não é necessário para o
+funcionamento atual.
 
 ## 6. Checklist de aceite
 
