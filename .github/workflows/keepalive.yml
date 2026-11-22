@@ -10,6 +10,10 @@ concurrency:
   group: keepalive
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   ping:
     runs-on: ubuntu-latest
@@ -23,34 +27,50 @@ jobs:
           set -euo pipefail
           URL="${ARQUIVE_URL:-https://www.arquive.online}"
           URL="${URL%/}"
+          FALLBACK="https://arquive.onrender.com"
+          ACTIVE=""
 
-          echo "→ Pinging $URL/health"
-          HTTP_CODE=$(curl -fsS -o /tmp/health.json -w "%{http_code}" --max-time 25 "$URL/health" || true)
-          echo "HTTP $HTTP_CODE"
-          cat /tmp/health.json 2>/dev/null || true
-          echo
+          # Tenta o domínio público e, se ele falhar, o endereço direto do
+          # Render. Assim o serviço continua acordado mesmo se houver problema
+          # de DNS/custom domain.
+          for BASE in "$URL" "$FALLBACK"; do
+            echo "→ Pinging $BASE/health"
+            HTTP_CODE=$(curl -fsS -o /tmp/health.json -w "%{http_code}" --max-time 25 "$BASE/health" || true)
+            echo "HTTP $HTTP_CODE"
+            cat /tmp/health.json 2>/dev/null || true
+            echo
 
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::warning::Health check returned $HTTP_CODE"
-            # Retry once after a short wait (cold start)
+            if [ "$HTTP_CODE" = "200" ]; then
+              ACTIVE="$BASE"
+              break
+            fi
+
+            echo "::warning::Health check returned $HTTP_CODE from $BASE"
+            # Retry once after a short wait (cold start).
             sleep 15
-            HTTP_CODE=$(curl -fsS -o /tmp/health.json -w "%{http_code}" --max-time 30 "$URL/health" || true)
+            HTTP_CODE=$(curl -fsS -o /tmp/health.json -w "%{http_code}" --max-time 30 "$BASE/health" || true)
             echo "Retry HTTP $HTTP_CODE"
             cat /tmp/health.json 2>/dev/null || true
             echo
-            if [ "$HTTP_CODE" != "200" ]; then
-              echo "::error::Arquive health check failed with $HTTP_CODE"
-              exit 1
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              ACTIVE="$BASE"
+              break
             fi
+          done
+
+          if [ -z "$ACTIVE" ]; then
+            echo "::error::Arquive health check failed on both $URL and $FALLBACK"
+            exit 1
           fi
 
-          echo "✓ Health OK"
+          echo "✓ Health OK via $ACTIVE"
 
           if [ -n "${CRON_SECRET:-}" ]; then
             echo "→ Pinging maintenance cron"
             M_CODE=$(curl -fsS -o /tmp/cron.json -w "%{http_code}" --max-time 30 \
               -H "Authorization: Bearer $CRON_SECRET" \
-              "$URL/api/cron/maintenance" || true)
+              "$ACTIVE/api/cron/maintenance" || true)
             echo "Maintenance HTTP $M_CODE"
             cat /tmp/cron.json 2>/dev/null || true
             echo
@@ -62,3 +82,75 @@ jobs:
           else
             echo "ℹ CRON_SECRET not set - skipping maintenance ping"
           fi
+
+      - name: Open or update incident issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const label = 'arquive-incident';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch (error) {
+              await github.rest.issues.createLabel({
+                owner, repo, name: label,
+                color: 'd73a4a',
+                description: 'Falha de disponibilidade do Arquive'
+              });
+            }
+
+            const open = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: label, per_page: 10
+            });
+
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              `O keepalive do Arquive falhou em **${new Date().toISOString()}**.`,
+              '',
+              `- Run: ${runUrl}`,
+              '- Health: https://www.arquive.online/health',
+              '- Fallback: https://arquive.onrender.com/health',
+              '- Painel: https://dashboard.render.com/web/srv-dc12357f3r2c73bbsg70',
+              '',
+              'Verifique os logs do Render e o status do Blob/Supabase.'
+            ].join('\n');
+
+            if (open.data.length) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: open.data[0].number, body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo,
+                title: '🚨 Arquive indisponível',
+                body,
+                labels: [label]
+              });
+            }
+
+      - name: Resolve incident issue
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const label = 'arquive-incident';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const open = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: label, per_page: 10
+            });
+
+            for (const issue of open.data) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: `✅ Saúde restabelecida em **${new Date().toISOString()}**.\n\nRun: ${runUrl}`
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: issue.number, state: 'closed'
+              });
+            }

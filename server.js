@@ -2753,7 +2753,13 @@ const page = name => path.join(__dirname, 'public', name);
 app.get('/health', (req, res) => {
   res.set('Cache-Control', 'no-store');
   // email_configured: ajuda a diagnosticar a recuperação de senha por e-mail (não expõe segredos).
-  res.json({ status: 'ok', email_configured: mailConfigured() });
+  res.json({
+    status: 'ok',
+    email_configured: mailConfigured(),
+    storage: STORAGE_PROVIDER,
+    uptime_seconds: Math.round(process.uptime()),
+    commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || null
+  });
 });
 
 app.get('/', wrap(async (req, res) => {
@@ -2769,6 +2775,12 @@ app.get('/register', (req, res) => res.sendFile(page('register.html')));
 app.get('/privacidade', (req, res) => {
   res.set('Cache-Control', 'public, max-age=3600');
   res.sendFile(page('privacidade.html'));
+});
+// Atalho público para a página de status (servida pela borda da Cloudflare,
+// independente do Render).
+app.get('/status', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.redirect(302, 'https://status.arquive.online/');
 });
 app.get('/forgot-password', (req, res) => res.sendFile(page('forgot-password.html')));
 app.get('/reset-password', (req, res) => res.sendFile(page('reset-password.html')));

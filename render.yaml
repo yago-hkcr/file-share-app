@@ -16,28 +16,18 @@ services:
       - key: IS_HOSTED
         value: "1"
       - key: STORAGE_PROVIDER
-        value: s3
+        value: blob
       - key: APP_BASE_URL
         value: https://www.arquive.online
       - key: DATABASE_SSL
         value: "true"
-      - key: S3_FORCE_PATH_STYLE
-        value: "true"
-      - key: S3_REGION
-        sync: false
       - key: DATABASE_URL
         sync: false
-      - key: S3_ENDPOINT
+      - key: BLOB_READ_WRITE_TOKEN
         sync: false
-      - key: S3_BUCKET
-        sync: false
-      - key: S3_ACCESS_KEY_ID
-        sync: false
-      - key: S3_SECRET_ACCESS_KEY
+      - key: SUPABASE_CA_CERT_B64
         sync: false
       - key: SESSION_SECRET
-        sync: false
-      - key: ADMIN_PASSWORD
         sync: false
       - key: CRON_SECRET
         sync: false
@@ -51,7 +41,19 @@ services:
         sync: false
       - key: GOOGLE_DRIVE_CLIENT_SECRET
         sync: false
-      - key: RESEND_API_KEY
-        sync: false
-      - key: MAIL_FROM
-        sync: false
+      # Para migrar do Blob para Cloudflare R2/S3 no futuro:
+      # 1. troque STORAGE_PROVIDER para s3;
+      # 2. descomente as variáveis abaixo;
+      # 3. aplique deploy/r2-cors.json no bucket.
+      # - key: S3_FORCE_PATH_STYLE
+      #   value: "true"
+      # - key: S3_REGION
+      #   sync: false
+      # - key: S3_ENDPOINT
+      #   sync: false
+      # - key: S3_BUCKET
+      #   sync: false
+      # - key: S3_ACCESS_KEY_ID
+      #   sync: false
+      # - key: S3_SECRET_ACCESS_KEY
+      #   sync: false
